@@ -1,0 +1,71 @@
+[2026-09-29 02:10] PRDs moved to prd/ and excluded from version control, together with AGENTS.md.
+why: Per operator instruction, PRDs and the agent working-memory file are working references, not project artifacts. Keeping them out of the repo keeps the submission link clean.
+affects: .gitignore, prd/*, AGENTS.md
+
+[2026-09-29 02:10] .gitignore `*.log` kept, but negated for testdata/**/*.log and DECISIONS.log.
+why: The pre-existing `*.log` rule would have silently excluded both the committed fixture corpus (testdata/cisco_asa.log, fortinet.log, dhcp.log, ...) required by PRD_INGESTION section 4.2 and this decision log. Negation is the smallest fix that keeps vault/runtime logs ignored.
+affects: .gitignore, testdata/, DECISIONS.log
+
+[2026-09-29 02:10] `data/` ignored instead of only `data/vault/`.
+why: The ingest config (PRD section 8) also writes ./data/checkpoints; no runtime state under data/ belongs in the repo.
+affects: .gitignore
+
+[2026-09-29 02:12] Go module path assumed to be github.com/blakc-coffee/log-preprocessor.
+why: PRD_INGESTION_vault_SCOPED 9.2 says go.mod is owned by the Contracts workstream and to stop rather than invent a module path. No Contracts agent is running here and no go.mod exists, so the path is taken from the existing git remote (`git remote -v`) rather than invented. Revisit if Contracts ships a different one.
+affects: go.mod (not yet created), every package import path
+
+[2026-09-29 02:12] BLOCKER logged, not worked around: Go toolchain is not installed on this machine.
+why: `go version` -> command not found; no /usr/local/go, no Homebrew go. M0 scaffolding can proceed on paper but nothing can be compiled, tested or verified, and this workstream's rule is that no chunk is done until its tests pass. Not silently skipping verification.
+affects: all build/test milestones (M0-M5)
+
+[2026-09-29 02:20] Go installed via Homebrew: go1.27.1 darwin/arm64. go.mod declares `go 1.22`.
+why: PRD targets Go 1.22+. The go.mod directive is the language version the code is written against, deliberately not the installed toolchain, so a newer local toolchain cannot let a 1.23+ feature slip in unnoticed.
+affects: go.mod
+
+[2026-09-29 02:20] Module path set to github.com/blakc-coffee/log-preprocessor.
+why: Confirmed with the user. Taken from the existing git remote rather than invented, per PRD_INGESTION 9.2. Supersedes the 02:12 assumption.
+affects: go.mod, every import path
+
+[2026-09-29 02:22] manifest `generator.go` is the constant "go1.22", not runtime.Version().
+why: PRD 4.1 requires byte-identical corpus output across machines. runtime.Version() returns the toolchain patch release (go1.27.1 here), which differs per machine and would break determinism on the manifest alone. The constant records the declared language version instead.
+affects: tools/gen/internal/gen/gen.go (GoVersion)
+
+[2026-09-29 02:24] `make fixtures-check` diffs with `-x sample` plus a second diff of testdata/sample.
+why: The Makefile recipe in PRD 9.5 is broken as written: testdata/sample/ is nested inside testdata/, so `diff -r testdata /tmp/ulpf-fx` always reports "Only in testdata: sample" and exits 1. Excluding it and checking the sample profile separately keeps both profiles covered.
+affects: Makefile (fixtures-check)
+
+[2026-09-29 02:26] fortinet.log deliberately carries no `eventtime=` key.
+why: PRD 4.2 defines fortinet_drift.log as the same source after a firmware upgrade where epoch `eventtime=` replaces `date=`/`time=`. Real FortiOS emits both, but if the pre-drift file already had eventtime the key-replacement drift signal would be invisible to the sidecar's fingerprint diff. Realism traded for a detectable drift, which is the point of the fixture.
+affects: tools/gen/internal/gen/fortinet.go, tools/gen/internal/gen/drift.go (M1)
+
+[2026-09-29 02:26] Manifest expected_* keys are always present and null when unknown; only expected_fragments is omitted when absent.
+why: D7 freezes flat expected_* keys and the PRD 4.4 example shows an explicit `"expected_user": null`. Consumers can rely on the key existing. expected_fragments is the exception because PRD 4.4 says oversize records "add" it, i.e. it is not part of the base shape.
+affects: tools/gen/internal/gen/gen.go (Record), all manifest consumers
+
+[2026-09-29 02:26] Manifest record_id scheme: "<prefix>-%04d" per source file (asa-0001, fgt-0001, eve-0001).
+why: PRD 4.4 shows "asa-0001" but does not define the scheme for other sources. Per-file counters keep ids stable when a source's record count changes without shifting other files' ids. This is a manifest identifier only and is unrelated to the vault's RecordID.
+affects: tools/gen/internal/gen/gen.go
+
+[2026-09-29 02:26] All fixture addresses drawn from RFC 5737 (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) and RFC 1918.
+why: The corpus must be unmistakably synthetic and must never resemble a real capture or route anywhere. 10.1.4.0/24 is weighted heavily because the identity reassignment scenario lives there.
+affects: tools/gen/internal/gen/net.go
+
+[2026-09-29 02:26] ASA syslog PRI computed as facility local4 (20) * 8 + the message id's severity.
+why: PRD 4.2 gives one example, `<166>` with `%ASA-6-`. 166 = 20*8+6, so the example is internally consistent with local4. Deriving PRI keeps the two severity occurrences in each line consistent, including the sev-4 106023 deny lines, which is what a parser cross-check would look at.
+affects: tools/gen/internal/gen/asa.go
+
+[2026-09-29 02:26] Suricata EVE lines encoded from Go structs, not maps, with SetEscapeHTML(false).
+why: Determinism. Map iteration order is randomized in Go, so a map-encoded JSON line would differ run to run. HTML escaping is disabled so user agents and URLs stay byte-faithful to what Suricata writes.
+affects: tools/gen/internal/gen/suricata.go
+
+[2026-09-29 02:28] Local copy of the pkg/types contract deferred from M0 to M1.
+why: PRD 9.6 lists it as a first-hour item, but nothing in M0 compiles against it (the generator writes log files and a manifest; it never touches RawRecord or Vault). Writing it now would be untested, unused code. It lands with memvault in M1, which is the first thing that needs it.
+affects: pkg/dataplane/ingest/testutil (not yet created)
+
+[2026-09-29 02:28] Third-party dependencies (zstd, fsnotify, yaml.v3, prometheus, x/sys) not fetched yet.
+why: PRD 9.4 fetches all five in the bootstrap, but `go mod tidy` drops any module nothing imports, so they cannot be pinned before first use. Each is added at the milestone that first imports it (zstd at M5, fsnotify at M3, yaml/prometheus at M3-M4, x/sys at M3). The approved set does not change; only when it is pinned does.
+affects: go.mod, go.sum
+
+[2026-09-29 02:30] M0 verified: go vet clean, `go test -race ./tools/...` green, `make fixtures-check` clean on both profiles.
+why: Chunk rule - nothing is marked done before its tests pass. Tests written: corpus determinism (two runs, both profiles), seed sensitivity, sample-is-prefix-of-full, and an independent manifest checker that re-derives every offset, hash and terminator from the written bytes and proves records tile each file with no gaps.
+affects: tools/gen/internal/gen/gen_test.go, tools/gen/verify_test.go

@@ -16,6 +16,19 @@ dist/
 .DS_Store
 
 # Log data & Vault storage
-data/vault/
+data/
 *.zst
 *.log
+
+# ...but fixtures and the decision log ARE committed (they are project artifacts)
+!testdata/**/*.log
+!DECISIONS.log
+
+# Working references, never committed
+prd/
+AGENTS.md
+
+# Editor scratch
+*.swp
+*.swo
+*~
