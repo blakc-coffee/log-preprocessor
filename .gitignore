@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Go
+bin/
+*.exe
+*.test
+
+# Node / Frontend
+node_modules/
+dist/
+.DS_Store
+
+# Log data & Vault storage
+data/vault/
+*.zst
+*.log
