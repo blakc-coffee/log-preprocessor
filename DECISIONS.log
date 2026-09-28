@@ -223,3 +223,36 @@ affects: pkg/dataplane/vault/record/record.go, pkg/dataplane/vault/segment.go, d
 [2026-09-29 04:56] M2.1 verified: gofmt and go vet clean, go test -race green on all packages.
 why: Chunk rule. Segment header (72B) and footer (100B) codecs done, with every covered byte proven to be checksummed by flipping it, and the header-cannot-be-read-as-a-footer case asserted.
 affects: pkg/dataplane/vault/segment.go, segment_test.go
+
+[2026-09-29 05:30] A read-only Open is lenient about structural damage; a writer refuses.
+why: This was a design gap, not a preference. Open originally refused on any damaged segment, which meant `vaultctl verify` could never REPORT a tamper - it could only fail to start, and "could not open" is far less useful to an operator than "segment 2 does not match its footer root". A writer must still refuse, because appending to a broken history buries the evidence under valid-looking new chain links. Damage found during a read-only open is recorded and surfaced by VerifyChain, which reports it ahead of anything the ledger walk finds: a ledger can look perfectly consistent precisely because it was the thing that was edited.
+affects: pkg/dataplane/vault/{recover.go,read.go,vault.go}, cmd/vaultctl (M2.6)
+
+[2026-09-29 05:30] Crash simulated by snapshotting the directory mid-run rather than by killing a process.
+why: In sync=always every acknowledged record is already fsynced, so a copy taken while the active segment is open is byte-identical to what kill -9 would leave. That gives the same on-disk states deterministically, in milliseconds, with no process management in the test. It does NOT replace the 200-cycle kill -9 suite, which is still M5 and is what the success metric is measured on.
+affects: pkg/dataplane/vault/recover_test.go
+
+[2026-09-29 05:30] Torn tails tested at every byte offset, not at a sample of offsets.
+why: The claim is that an acknowledged record never disappears. A sampled test would leave the boundary between "last intact record" and "first torn byte" mostly unexercised, and that boundary is the entire failure mode. Cutting the last write at all ~1200 offsets of a 12-record segment and asserting that exactly the whole records survive is cheap and leaves nothing to chance.
+affects: pkg/dataplane/vault/recover_test.go
+
+[2026-09-29 05:30] The recovered flag is set before sealing, not patched onto the seal afterwards.
+why: The first version appended the ledger line and then set Recovered on the in-memory copy, so disk said false and memory said true, and the flag silently vanished on the next reopen. An operator asking which segments a crash closed needs an answer that survives a restart.
+affects: pkg/dataplane/vault/{vault.go,recover.go}
+
+[2026-09-29 05:30] Recovery reads each record's length prefix before reading the record.
+why: The first version speculatively read max_frame_bytes for every record, so recovering a segment of 200-byte syslog lines would have allocated a megabyte per record. Two small reads beat one large speculative one.
+affects: pkg/dataplane/vault/recover.go
+
+[2026-09-29 05:30] flock via stdlib syscall.Flock rather than golang.org/x/sys/unix.
+why: PRD 10 lists x/sys for SO_REUSEPORT and flock. syscall.Flock is in the standard library and works on both linux and darwin, so the dependency buys nothing here. x/sys is still needed at M3 for SO_REUSEPORT, and will be added then.
+affects: pkg/dataplane/vault/vault.go, go.mod
+
+[2026-09-29 05:30] A cancelled context during PutBatch stops the caller waiting; it does not cancel the commit.
+why: The batch is already queued and will be written. Abandoning it mid-flight is exactly the partially-applied batch PutBatch promises cannot happen, and a record the vault wrote but never acknowledged is far less harmful than a batch half of which exists.
+affects: pkg/dataplane/vault/vault.go
+
+[2026-09-29 05:32] M2.2 and M2.3 verified. TAMPER MATRIX: 10 rows, 0 undetected.
+why: Chunk rule. The on-disk vault passes the same conformance suite as memvault in five configurations (SealEvery 8 and 2, group-commit delay, sync=interval, sync=none), 1069 subtests in the package, race clean. TestAgreesWithMemvault asserts the two implementations produce identical leaf hashes, roots, chain heads and interchangeable proofs, so building against memvault and switching at Gate 1 is safe. Detected rows: flipped byte in a record, deleted record, truncated segment, deleted middle segment, swapped segments, edited footer root, edited ledger root, ledger line removed from the middle, emptied chain.log, edited segment header. Each names the offending segment and a specific reason.
+Still outstanding for M2: vaultctl (M2.6). Still outstanding overall: the 200-cycle kill -9 suite (M5), which is what the "0 acknowledged records lost" metric is actually measured on - today's crash coverage is directory snapshots, which is not the same claim.
+affects: pkg/dataplane/vault/
