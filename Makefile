@@ -45,7 +45,7 @@ crash: ## Run the vault kill -9 crash suite (slow)
 
 fuzz: ## Run the ingest/vault fuzz targets for 30s each
 	go test -run '^$$' -fuzz FuzzOctet -fuzztime 30s ./pkg/dataplane/ingest/frame
-	go test -run '^$$' -fuzz FuzzRecordDecode -fuzztime 30s ./pkg/dataplane/vault
+	go test -run '^$$' -fuzz FuzzRecordDecode -fuzztime 30s ./pkg/dataplane/vault/record
 
 bench: ## Run the ingest/vault benchmarks (report hardware and sync mode with any number)
 	go test -run '^$$' -bench . -benchmem ./pkg/dataplane/vault/ ./pkg/dataplane/ingest/...

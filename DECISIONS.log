@@ -165,3 +165,39 @@ affects: Makefile
 [2026-09-29 03:46] M1.2-M1.4 verified: gofmt and go vet clean, go test -race green across all packages, make fixtures-check clean.
 why: Chunk rule. Corpus complete at 13 files plus merkle_vectors.json. Identity cross-checks added per PRD 12.4: truth intervals matched against DHCPACK/DHCPRELEASE lines, RADIUS sessions confined to their lease, no per-address overlap, resolution cases re-resolved from the intervals, manifest expected_user matched to the answer key, and both special cases (one user on two addresses, overlapping RADIUS/VPN evidence) asserted present.
 affects: tools/gen/internal/gen/identity_test.go, pkg/dataplane/vault/merkle/*_test.go
+
+[2026-09-29 04:20] Record codec pulled forward from M2 into M1, as its own package pkg/dataplane/vault/record.
+why: Two deviations, one reason. memvault needs to encode records to hash them, and if it invents its own encoding it is a lookalike rather than a reference implementation: components built against it would see different leaf hashes and roots than they get from the real vault. Sharing one codec makes memvault produce byte-identical proofs. A separate package rather than the PRD's vault/record.go because memvault must import it without importing the whole on-disk vault. The codec was M2's first sub-chunk anyway, so nothing is built twice.
+affects: pkg/dataplane/vault/record/, pkg/dataplane/vault/memvault/, M2 scope
+
+[2026-09-29 04:20] Decode rejects any body that would not re-encode to itself, and rejects unknown flag bits.
+why: Two spellings of one record would give that record two different Merkle leaves, so a canonical encoding is a correctness requirement, not tidiness. Rejecting unknown flag bits stops an older reader silently ignoring a flag a newer writer set. Both are asserted by FuzzRecordDecode, which ran 10.8M executions with no failures.
+affects: pkg/dataplane/vault/record/record.go
+
+[2026-09-29 04:20] ParseFramed checks the declared length against the cap before consulting the buffer.
+why: The length field comes from disk, and disk content is as hostile as the network in the tamper threat model. Checking first means a corrupt or crafted length can never drive an allocation.
+affects: pkg/dataplane/vault/record/record.go
+
+[2026-09-29 04:20] PutBatch is all-or-nothing: every record is encoded and validated before any is stored.
+why: The real vault writes a batch as one write and one fsync, so a half-applied batch is not a state it can be in; memvault must not be able to reach one either or code written against memvault will assume the wrong thing. A rejected batch also consumes no RecordIDs. Asserted by TestBatchIsAtomic.
+affects: pkg/dataplane/vault/memvault/memvault.go
+
+[2026-09-29 04:20] memvault.Verify returns OK with Sealed=false for a record in the active segment, rather than an error.
+why: The record is stored and intact; its segment simply has no root yet (D2). Making that an error would force every caller to special-case the normal path, since most records are verified before their segment seals. Callers distinguish on VerifyResult.Sealed.
+affects: pkg/dataplane/vault/memvault/memvault.go, vaulttest
+
+[2026-09-29 04:20] vaulttest.Factory carries SealEvery rather than probing for it.
+why: The suite has to know how many records force a seal to test proofs, ErrNotSealed and head advancement, and there is nothing in types.Vault that exposes it. An explicit field is honest; guessing by writing until a seal appears would make failures unreadable.
+affects: pkg/dataplane/vault/vaulttest/vaulttest.go
+
+[2026-09-29 04:20] Conformance suite mutation-tested against four deliberate breakages of memvault.
+why: A conformance suite that passes everything is worse than none, because it licenses the claim that two implementations agree. Checked: RecordIDs starting at 0 (24 subtest failures), chain hash without its domain prefix (8), proofs reporting leaf index 0 (4), one byte dropped from Raw on write (10). All four caught; memvault restored and re-verified afterwards.
+affects: pkg/dataplane/vault/vaulttest/, pkg/dataplane/vault/memvault/
+
+[2026-09-29 04:20] Makefile fuzz target points at ./pkg/dataplane/vault/record, not ./pkg/dataplane/vault.
+why: Follows the codec's move into its own package. Same target name, FuzzRecordDecode, as the PRD specifies.
+affects: Makefile
+
+[2026-09-29 04:22] M1 COMPLETE and verified: gofmt and go vet clean, go test -race green on all packages, 40 conformance subtests passing across two segment sizes, FuzzRecordDecode 30s / 10.8M execs clean, make fixtures-check byte-identical on both profiles.
+why: Chunk rule. Hand-offs now unblocked: testdata/ (13 files + manifest + identity_truth.json + merkle_vectors.json) for everyone, memvault + vaulttest for Parsing and Packaging, identity fixtures and truth for Contracts, merkle_vectors.json for Frontend. READMEs written for all six packages.
+affects: all owned packages
