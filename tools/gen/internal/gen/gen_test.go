@@ -37,6 +37,9 @@ func TestSeedChangesOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range Sources() {
+		if s.Sample == 0 {
+			continue
+		}
 		x := readFile(t, filepath.Join(a, s.Name))
 		y := readFile(t, filepath.Join(b, s.Name))
 		if bytes.Equal(x, y) {
@@ -58,6 +61,9 @@ func TestSampleIsPrefixOfFull(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range Sources() {
+		if s.Sample == 0 {
+			continue // not present in the sample profile at all
+		}
 		f := readFile(t, filepath.Join(full, s.Name))
 		p := readFile(t, filepath.Join(sample, s.Name))
 		if !bytes.HasPrefix(f, p) {
@@ -73,6 +79,9 @@ func TestNoEmptyRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range Sources() {
+		if s.Sample == 0 {
+			continue
+		}
 		if b := readFile(t, filepath.Join(dir, s.Name)); len(b) == 0 {
 			t.Errorf("%s: empty", s.Name)
 		}

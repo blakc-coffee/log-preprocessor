@@ -26,6 +26,12 @@ Every timestamp is IST (+05:30). Formats that carry no zone of their own
 ## Files
 
 - `cisco_asa.log`
+- `crlf.log`
 - `fortinet.log`
+- `fortinet_drift.log`
+- `malformed.log`
+- `multiline.log`
+- `oversize.log`
+- `palo_alto_unknown.log`
 - `suricata.json`
 - `manifest.json` — ground truth: byte ranges, SHA-256s and expected parse results.

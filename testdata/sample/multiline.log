@@ -1,0 +1,211 @@
+2026-09-28T09:00:43.262+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user frank
+	at com.example.net.SocketFactory.connect(SocketFactory.java:149)
+Caused by: java.io.IOException: broken pipe
+	... 15 more
+2026-09-28T09:01:03.468+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user alice
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:98)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 10 more
+2026-09-28T09:01:18.680+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user grace
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:43)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:240)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:284)
+Caused by: javax.net.ssl.SSLHandshakeException: certificate expired
+	... 2 more
+2026-09-28T09:01:45.416+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user ivan
+	at com.example.net.SocketFactory.connect(SocketFactory.java:185)
+	at com.example.net.SocketFactory.connect(SocketFactory.java:216)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:361)
+Caused by: java.io.IOException: broken pipe
+	... 17 more
+2026-09-28T09:02:42.913+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user frank
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:238)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:102)
+	at java.base/java.lang.Thread.run(Thread.java:82)
+Caused by: javax.net.ssl.SSLHandshakeException: certificate expired
+	... 15 more
+2026-09-28T09:03:06.955+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user bob
+	at com.example.net.SocketFactory.connect(SocketFactory.java:275)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:254)
+	at java.base/java.lang.Thread.run(Thread.java:42)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 9 more
+2026-09-28T09:03:18.179+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user frank
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:175)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:123)
+	at com.example.net.SocketFactory.connect(SocketFactory.java:301)
+	at java.base/java.lang.Thread.run(Thread.java:187)
+	at java.base/java.lang.Thread.run(Thread.java:406)
+Caused by: java.io.IOException: broken pipe
+	... 7 more
+2026-09-28T09:04:11.044+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user carol
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:113)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:66)
+	at java.base/java.lang.Thread.run(Thread.java:121)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:205)
+Caused by: java.lang.IllegalStateException: tunnel already established
+	... 5 more
+2026-09-28T09:05:08.169+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user frank
+	at com.example.net.SocketFactory.connect(SocketFactory.java:151)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:316)
+	at com.example.net.SocketFactory.connect(SocketFactory.java:195)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 7 more
+2026-09-28T09:05:48.464+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user erin
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:248)
+Caused by: java.io.IOException: broken pipe
+	... 16 more
+2026-09-28T09:06:07.913+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user ivan
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:407)
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:141)
+Caused by: javax.net.ssl.SSLHandshakeException: certificate expired
+	... 8 more
+2026-09-28T09:06:10.624+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user alice
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:226)
+	at java.base/java.lang.Thread.run(Thread.java:110)
+Caused by: java.lang.IllegalStateException: tunnel already established
+	... 17 more
+2026-09-28T09:06:57.685+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user erin
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:127)
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:23)
+Caused by: java.lang.IllegalStateException: tunnel already established
+	... 5 more
+2026-09-28T09:06:59.357+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user bob
+	at java.base/java.lang.Thread.run(Thread.java:176)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:54)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:37)
+Caused by: java.io.IOException: broken pipe
+	... 8 more
+2026-09-28T09:07:18.528+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user ivan
+	at com.example.net.SocketFactory.connect(SocketFactory.java:134)
+Caused by: java.io.IOException: broken pipe
+	... 9 more
+2026-09-28T09:07:54.469+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user erin
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:414)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:41)
+	at java.base/java.lang.Thread.run(Thread.java:389)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 20 more
+2026-09-28T09:08:27.105+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user erin
+	at com.example.net.SocketFactory.connect(SocketFactory.java:261)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:105)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 12 more
+2026-09-28T09:08:36.135+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user carol
+	at com.example.net.SocketFactory.connect(SocketFactory.java:46)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 5 more
+2026-09-28T09:09:12.360+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user frank
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:332)
+	at java.base/java.lang.Thread.run(Thread.java:158)
+Caused by: javax.net.ssl.SSLHandshakeException: certificate expired
+	... 14 more
+2026-09-28T09:10:03.011+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user bob
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:119)
+	at java.base/java.lang.Thread.run(Thread.java:97)
+Caused by: java.lang.IllegalStateException: tunnel already established
+	... 10 more
+2026-09-28T09:10:17.076+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user ivan
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:406)
+	at com.example.net.SocketFactory.connect(SocketFactory.java:91)
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:285)
+Caused by: javax.net.ssl.SSLHandshakeException: certificate expired
+	... 9 more
+2026-09-28T09:11:02.955+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user ivan
+	at com.example.net.SocketFactory.connect(SocketFactory.java:306)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:318)
+Caused by: java.lang.IllegalStateException: tunnel already established
+	... 6 more
+2026-09-28T09:11:55.982+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user ivan
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:116)
+	at java.base/java.lang.Thread.run(Thread.java:404)
+	at java.base/java.lang.Thread.run(Thread.java:363)
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:382)
+Caused by: java.lang.IllegalStateException: tunnel already established
+	... 4 more
+2026-09-28T09:12:33.930+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user carol
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:278)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 4 more
+2026-09-28T09:12:46.140+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user grace
+	at com.example.net.SocketFactory.connect(SocketFactory.java:69)
+	at com.example.net.SocketFactory.connect(SocketFactory.java:129)
+Caused by: java.io.IOException: broken pipe
+	... 2 more
+2026-09-28T09:13:03.498+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user bob
+	at com.example.net.SocketFactory.connect(SocketFactory.java:254)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:400)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:197)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 12 more
+2026-09-28T09:13:07.735+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user frank
+	at java.base/java.lang.Thread.run(Thread.java:116)
+Caused by: java.lang.IllegalStateException: tunnel already established
+	... 17 more
+2026-09-28T09:13:42.940+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user frank
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:373)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 11 more
+2026-09-28T09:14:33.722+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user alice
+	at com.example.net.SocketFactory.connect(SocketFactory.java:253)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:162)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:26)
+Caused by: java.io.IOException: broken pipe
+	... 10 more
+2026-09-28T09:15:30.097+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user heidi
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:273)
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:123)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:288)
+	at java.base/java.lang.Thread.run(Thread.java:30)
+Caused by: javax.net.ssl.SSLHandshakeException: certificate expired
+	... 11 more
+2026-09-28T09:15:45.587+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user grace
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:73)
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:169)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:243)
+Caused by: java.io.IOException: broken pipe
+	... 4 more
+2026-09-28T09:16:39.076+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user carol
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:140)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:82)
+Caused by: javax.net.ssl.SSLHandshakeException: certificate expired
+	... 16 more
+2026-09-28T09:17:30.894+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user erin
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:411)
+	at com.example.vpn.Dispatcher.dispatch(Dispatcher.java:369)
+Caused by: java.io.IOException: broken pipe
+	... 17 more
+2026-09-28T09:17:56.400+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user dave
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:294)
+	at com.example.net.SocketFactory.connect(SocketFactory.java:256)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 19 more
+2026-09-28T09:18:02.985+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user ivan
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:80)
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:297)
+	at java.base/java.lang.Thread.run(Thread.java:206)
+Caused by: javax.net.ssl.SSLHandshakeException: certificate expired
+	... 3 more
+2026-09-28T09:18:51.875+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user alice
+	at com.example.net.SocketFactory.connect(SocketFactory.java:99)
+Caused by: java.lang.IllegalStateException: tunnel already established
+	... 17 more
+2026-09-28T09:19:08.819+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user heidi
+	at com.example.net.SocketFactory.connect(SocketFactory.java:191)
+	at com.example.net.SocketFactory.connect(SocketFactory.java:82)
+Caused by: javax.net.ssl.SSLHandshakeException: certificate expired
+	... 3 more
+2026-09-28T09:19:41.998+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user ivan
+	at com.example.net.SocketFactory.connect(SocketFactory.java:192)
+Caused by: java.io.IOException: broken pipe
+	... 20 more
+2026-09-28T09:20:19.157+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user erin
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:292)
+	at com.example.vpn.SessionHandler.setup(SessionHandler.java:235)
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:241)
+Caused by: java.io.IOException: broken pipe
+	... 2 more
+2026-09-28T09:21:01.170+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user dave
+	at com.example.vpn.TunnelPool.acquire(TunnelPool.java:112)
+Caused by: java.net.SocketTimeoutException: connect timed out
+	... 9 more

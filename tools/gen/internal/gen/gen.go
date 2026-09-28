@@ -211,6 +211,12 @@ func Sources() []*Source {
 		asaSource(),
 		fortinetSource(),
 		suricataSource(),
+		paloAltoSource(),
+		fortinetDriftSource(),
+		malformedSource(),
+		oversizeSource(),
+		multilineSource(),
+		crlfSource(),
 	}
 }
 
@@ -260,6 +266,12 @@ func Run(opts Options) error {
 		}
 		n := s.Full
 		if opts.Sample {
+			// Sample == 0 means the source is deliberately absent from the
+			// sample profile; oversize.log is excluded because the sample set
+			// exists to be small.
+			if s.Sample == 0 {
+				continue
+			}
 			n = s.Sample
 		}
 		w := &Writer{name: s.Name, idPrefix: s.IDPrefix, defTerm: s.Term}

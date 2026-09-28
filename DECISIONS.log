@@ -69,3 +69,47 @@ affects: go.mod, go.sum
 [2026-09-29 02:30] M0 verified: go vet clean, `go test -race ./tools/...` green, `make fixtures-check` clean on both profiles.
 why: Chunk rule - nothing is marked done before its tests pass. Tests written: corpus determinism (two runs, both profiles), seed sensitivity, sample-is-prefix-of-full, and an independent manifest checker that re-derives every offset, hash and terminator from the written bytes and proves records tile each file with no gaps.
 affects: tools/gen/internal/gen/gen_test.go, tools/gen/verify_test.go
+
+[2026-09-29 03:05] palo_alto_unknown.log is bare CSV with no syslog header.
+why: PAN-OS can write TRAFFIC logs either way. Bare CSV is the harder and more valuable case: the sniffer classifies it `csv` (PRD 5.3 rule 5) instead of `syslog3164`, and with no header line and several FUTURE_USE placeholder columns, a column's meaning can only be recovered from value shapes. That is exactly what the semantic typing classifier is measured on (>=90% of typed columns correct).
+affects: tools/gen/internal/gen/paloalto.go, sniff tests (M4), intel sidecar typing tests
+
+[2026-09-29 03:05] Palo Alto rows use the documented 47-column PAN-OS traffic layout, asserted in a test.
+why: PRD 4.2 says "40+ fields" without fixing the count. A short row silently shifts every column after it and, with no header, nothing else would catch it. TestPaloAltoColumnCount also asserts no row contains '=', because a stray one would flip the format sniffer from csv to kv.
+affects: tools/gen/internal/gen/paloalto.go
+
+[2026-09-29 03:05] Ground truth (expected_src_ip etc.) recorded even for expect="unknown_format" records.
+why: Palo Alto and drift records have no parser at first, but they are the corpus the quarantine -> propose -> approve -> replay path is demonstrated on. Without recorded truth there is nothing to check the replayed result against.
+affects: manifest records for palo_alto_unknown.log and fortinet_drift.log
+
+[2026-09-29 03:05] fortinet_drift.log carries four independent drift signals, guarded by a test.
+why: PRD 4.2 lists renamed keys, reordering, new fields and epoch eventtime. Implemented as: srcip/dstip/srcport/dstport -> src/dst/sport/dport; date=/time= -> nanosecond eventtime=; action="deny"/"accept" -> unquoted action=blocked/passed; new srcmac/dstcountry/utmaction/craction keys. TestDriftActuallyDrifts asserts both files' key sets, so the drift demo cannot silently become a no-op.
+affects: tools/gen/internal/gen/drift.go
+
+[2026-09-29 03:05] A record of exactly max_frame_bytes is ONE record, not two.
+why: The framer (M3) flushes a full buffer only once it knows more content follows, i.e. one byte of lookahead. Without it, a record whose length lands exactly on the limit emits a full fragment plus a trailing zero-length FragCont fragment. A byte of lookahead is cheaper to implement than that boundary case is to explain. oversize.log deliberately includes the exact-limit record, and manifest expected_fragments is 1/1/2 for 70KiB / 1MiB / 1.5MiB.
+affects: tools/gen/internal/gen/oversize.go, pkg/dataplane/ingest/frame (M3), manifest expected_fragments
+
+[2026-09-29 03:05] oversize.log is excluded from the sample profile (Sample: 0).
+why: The sample set exists so other workstreams can grab something small within the first hour; 2.6 MiB of padding defeats that. The full corpus carries it. Source.Sample == 0 now means "absent from the sample profile".
+affects: tools/gen/internal/gen/{gen.go,oversize.go}
+
+[2026-09-29 03:05] malformed.log categories are interleaved by a deterministic shuffle, not emitted in blocks.
+why: The 50-record sample profile is a prefix of the full file. Emitting 20 truncated, then 20 invalid-UTF-8, and so on would give the sample only the first two or three categories. The shuffle draws a fixed number of values before any record is written, which preserves the prefix property.
+affects: tools/gen/internal/gen/malformed.go
+
+[2026-09-29 03:05] malformed.log binary-noise records exclude 0x00 as well as 0x0A and 0x0D.
+why: 0x0A/0x0D must be excluded for correctness - a framer would split the record and the manifest would describe something unreproducible. 0x00 is excluded so the six categories stay separable: TestMalformedComposition counts NUL-bearing records, and noise that happened to roll a 0x00 made that count 21 instead of 20. Found by the test, not by inspection.
+affects: tools/gen/internal/gen/malformed.go
+
+[2026-09-29 03:05] Drift key assertions are space-prefixed where a key can be the tail of another key.
+why: The first version of TestDriftActuallyDrifts asserted fortinet_drift.log does not contain "time=", which fails because "eventtime=" contains it. A substring probe on a kv format proves nothing without a boundary. "date=" is exempt: it is the first key on a pre-drift line and so has no leading space.
+affects: tools/gen/internal/gen/fixtures_test.go
+
+[2026-09-29 03:05] multiline.log records are whole events, and MultilineStart is exported.
+why: One manifest record is one 3-8 line event, with the internal newlines part of Raw and only the event's final terminator excluded from byte_end, matching PRD 5.2 ("continuation lines append including their original terminators"). The RE2 pattern the source config needs is exported as gen.MultilineStart and asserted against the generated file, so the config and the corpus cannot drift apart.
+affects: tools/gen/internal/gen/multiline.go, configs/ingest.dev.yaml (M3)
+
+[2026-09-29 03:06] M1.1 verified: gofmt clean, go vet clean, go test -race green, make fixtures-check clean.
+why: Chunk rule. Corpus now has 9 of 13 files. Tests added: malformed composition, oversize fragment boundary (including exactly-at-limit), multiline framing against MultilineStart, Palo Alto column count and csv-not-kv, and the drift key-set diff.
+affects: tools/gen/internal/gen/fixtures_test.go, testdata/

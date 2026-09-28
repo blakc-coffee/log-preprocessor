@@ -38,3 +38,9 @@ var servicePorts = []int{22, 25, 53, 80, 110, 143, 389, 443, 445, 3306, 3389, 54
 
 // servicePort returns a well-known destination port.
 func servicePort(rng *rand.Rand) int { return servicePorts[rng.IntN(len(servicePorts))] }
+
+// identityUsers is the invented user roster shared by every fixture that names
+// a person: the multiline VPN gateway events, the RADIUS and OpenVPN identity
+// logs, and identity_truth.json. Keeping one roster is what lets the identity
+// scenario cross-reference them.
+var identityUsers = []string{"alice", "bob", "carol", "dave", "erin", "frank", "grace", "heidi", "ivan", "judy"}

@@ -76,3 +76,10 @@ func emitFortinet(w *Writer, rng *rand.Rand, n int) {
 		w.EmitString(line, "", e)
 	}
 }
+
+func crlfSource() *Source {
+	return &Source{
+		Name: "crlf.log", IDPrefix: "crlf", Term: TermCRLF,
+		Full: 50, Sample: 50, Emit: emitFortinet,
+	}
+}
