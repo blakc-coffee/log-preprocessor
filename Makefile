@@ -21,8 +21,15 @@ fixtures-check: ## Prove the generator is deterministic (regenerate into a temp 
 	rm -rf /tmp/ulpf-fx /tmp/ulpf-fx-sample
 	go run ./tools/gen --seed $(SEED) --out /tmp/ulpf-fx
 	go run ./tools/gen --seed $(SEED) --profile sample --out /tmp/ulpf-fx-sample
-	diff -r -x sample testdata /tmp/ulpf-fx
+	# testdata/ also holds two artifacts this generator does not write:
+	# sample/ (the other profile) and merkle_vectors.json (written by
+	# `go test ./pkg/dataplane/vault/merkle -run TestWriteVectors -update`,
+	# which has its own drift check).
+	diff -r -x sample -x merkle_vectors.json testdata /tmp/ulpf-fx
 	diff -r testdata/sample /tmp/ulpf-fx-sample
+
+merkle-vectors: ## Regenerate testdata/merkle_vectors.json (tell Frontend and Contracts when it changes)
+	go test ./pkg/dataplane/vault/merkle -run TestWriteVectors -update
 
 build: ## Build ingestd and vaultctl with CGO disabled
 	CGO_ENABLED=0 go build -o bin/ ./cmd/ingestd ./cmd/vaultctl
@@ -43,4 +50,4 @@ fuzz: ## Run the ingest/vault fuzz targets for 30s each
 bench: ## Run the ingest/vault benchmarks (report hardware and sync mode with any number)
 	go test -run '^$$' -bench . -benchmem ./pkg/dataplane/vault/ ./pkg/dataplane/ingest/...
 
-.PHONY: help fixtures fixtures-sample fixtures-check build test race crash fuzz bench
+.PHONY: help fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench

@@ -1,0 +1,200 @@
+Sep 28 08:59:59 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.7 from aa:bb:cc:cd:79:68 (laptop-alice) via eth1
+Sep 28 09:00:00 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.7 to aa:bb:cc:cd:79:68 (laptop-alice) via eth1
+Sep 28 09:00:00 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.18.143 from aa:bb:cc:63:2c:96 (host-040) via eth1
+Sep 28 09:00:36 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.8 from aa:bb:cc:b7:e4:cb (laptop-bob) via eth1
+Sep 28 09:00:37 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.8 to aa:bb:cc:b7:e4:cb (laptop-bob) via eth1
+Sep 28 09:00:39 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.2.10.105 from aa:bb:cc:3c:8f:3c (host-200) via eth1 (found)
+Sep 28 09:01:13 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.9 from aa:bb:cc:8a:06:2d (laptop-carol) via eth1
+Sep 28 09:01:14 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.9 to aa:bb:cc:8a:06:2d (laptop-carol) via eth1
+Sep 28 09:01:15 dhcp01 dhcpd[1123]: DHCPOFFER on 10.3.19.18 to aa:bb:cc:04:55:0a (host-189) via eth1
+Sep 28 09:01:23 dhcp01 dhcpd[1123]: DHCPOFFER on 10.1.23.219 to aa:bb:cc:5e:0a:1d (host-063) via eth1
+Sep 28 09:01:49 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:11:29:e7 via eth1
+Sep 28 09:01:50 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.10 from aa:bb:cc:4e:ad:42 (laptop-dave) via eth1
+Sep 28 09:01:51 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.10 to aa:bb:cc:4e:ad:42 (laptop-dave) via eth1
+Sep 28 09:02:06 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.16.106 from aa:bb:cc:f0:d0:78 (host-107) via eth1 (found)
+Sep 28 09:02:13 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:61:08:c2 via eth1
+Sep 28 09:02:24 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.18.83 from aa:bb:cc:3e:e3:dd (host-218) via eth1
+Sep 28 09:02:27 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.11 from aa:bb:cc:a3:08:bc (laptop-erin) via eth1
+Sep 28 09:02:28 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.11 to aa:bb:cc:a3:08:bc (laptop-erin) via eth1
+Sep 28 09:02:47 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.24.113 from aa:bb:cc:e4:a9:d0 (host-150) via eth1
+Sep 28 09:03:04 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.12 from aa:bb:cc:74:21:2e (phone-alice) via eth1
+Sep 28 09:03:05 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.12 to aa:bb:cc:74:21:2e (phone-alice) via eth1
+Sep 28 09:03:20 dhcp01 dhcpd[1123]: DHCPACK on 10.1.18.233 to aa:bb:cc:2b:5c:25 (host-298) via eth1
+Sep 28 09:03:27 dhcp01 dhcpd[1123]: DHCPOFFER on 10.3.15.131 to aa:bb:cc:29:23:da (host-282) via eth1
+Sep 28 09:03:41 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.13 from aa:bb:cc:f0:fa:f8 (laptop-grace) via eth1
+Sep 28 09:03:42 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.13 to aa:bb:cc:f0:fa:f8 (laptop-grace) via eth1
+Sep 28 09:03:44 dhcp01 dhcpd[1123]: DHCPOFFER on 10.4.11.93 to aa:bb:cc:09:8b:72 (host-332) via eth1
+Sep 28 09:04:08 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:f6:02:af via eth1
+Sep 28 09:04:18 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.14 from aa:bb:cc:6d:53:f9 (laptop-heidi) via eth1
+Sep 28 09:04:19 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.14 to aa:bb:cc:6d:53:f9 (laptop-heidi) via eth1
+Sep 28 09:04:30 dhcp01 dhcpd[1123]: DHCPACK on 10.1.8.196 to aa:bb:cc:04:42:26 (host-185) via eth1
+Sep 28 09:04:38 dhcp01 dhcpd[1123]: DHCPOFFER on 10.1.16.136 to aa:bb:cc:3a:48:c6 (host-273) via eth1
+Sep 28 09:04:55 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.15 from aa:bb:cc:3a:87:b4 (laptop-ivan) via eth1
+Sep 28 09:04:56 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.15 to aa:bb:cc:3a:87:b4 (laptop-ivan) via eth1
+Sep 28 09:05:05 dhcp01 dhcpd[1123]: DHCPOFFER on 10.2.11.225 to aa:bb:cc:fb:48:d5 (host-395) via eth1
+Sep 28 09:05:06 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.14.83 from aa:bb:cc:35:21:94 (host-257) via eth1
+Sep 28 09:05:42 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.4.21.45 from aa:bb:cc:09:96:77 (host-339) via eth1 (found)
+Sep 28 09:05:55 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.2.12.128 from aa:bb:cc:e6:ee:b3 (host-142) via eth1
+Sep 28 09:06:09 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.2.8.219 from aa:bb:cc:f0:d9:ea (host-101) via eth1 (found)
+Sep 28 09:06:38 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.3.14.171 from aa:bb:cc:0e:e5:04 (host-316) via eth1 (found)
+Sep 28 09:07:01 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.24.105 from aa:bb:cc:fd:84:46 (host-387) via eth1
+Sep 28 09:07:18 dhcp01 dhcpd[1123]: DHCPACK on 10.3.23.169 to aa:bb:cc:54:22:0c (host-024) via eth1
+Sep 28 09:07:27 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:6d:0e:5b via eth1
+Sep 28 09:07:35 dhcp01 dhcpd[1123]: DHCPACK on 10.1.13.102 to aa:bb:cc:6f:fb:af (host-094) via eth1
+Sep 28 09:07:51 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.2.12.127 from aa:bb:cc:0e:d6:d9 (host-319) via eth1 (found)
+Sep 28 09:08:20 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.22.48 from aa:bb:cc:65:74:9f (host-050) via eth1 (found)
+Sep 28 09:08:50 dhcp01 dhcpd[1123]: DHCPOFFER on 10.3.7.12 to aa:bb:cc:2b:5d:b8 (host-297) via eth1
+Sep 28 09:09:31 dhcp01 dhcpd[1123]: DHCPACK on 10.4.24.77 to aa:bb:cc:61:12:34 (host-073) via eth1
+Sep 28 09:10:15 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:5b:c3:a7 via eth1
+Sep 28 09:10:34 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:54:25:32 via eth1
+Sep 28 09:10:36 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.3.5.90 from aa:bb:cc:5e:02:3e (host-066) via eth1 (found)
+Sep 28 09:10:56 dhcp01 dhcpd[1123]: DHCPOFFER on 10.2.22.200 to aa:bb:cc:eb:89:ca (host-167) via eth1
+Sep 28 09:11:41 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:61:12:34 via eth1
+Sep 28 09:11:57 dhcp01 dhcpd[1123]: DHCPACK on 10.1.8.17 to aa:bb:cc:32:cc:f3 (host-249) via eth1
+Sep 28 09:12:34 dhcp01 dhcpd[1123]: DHCPACK on 10.4.20.34 to aa:bb:cc:32:db:1e (host-242) via eth1
+Sep 28 09:13:13 dhcp01 dhcpd[1123]: DHCPOFFER on 10.4.11.184 to aa:bb:cc:35:1c:db (host-252) via eth1
+Sep 28 09:13:37 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.2.18.142 from aa:bb:cc:29:14:1c (host-288) via eth1 (found)
+Sep 28 09:13:40 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.4.18.82 from aa:bb:cc:f0:ce:e5 (host-108) via eth1 (found)
+Sep 28 09:14:09 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.3.8.237 from aa:bb:cc:29:22:47 (host-281) via eth1
+Sep 28 09:14:40 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.2.15.59 from aa:bb:cc:41:e5:a8 (host-222) via eth1
+Sep 28 09:15:13 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.3.21.197 from aa:bb:cc:0e:e1:de (host-310) via eth1
+Sep 28 09:15:46 dhcp01 dhcpd[1123]: DHCPOFFER on 10.3.18.3 to aa:bb:cc:04:43:b9 (host-184) via eth1
+Sep 28 09:16:03 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.2.9.118 from aa:bb:cc:ff:d5:c1 (host-373) via eth1
+Sep 28 09:16:42 dhcp01 dhcpd[1123]: DHCPACK on 10.1.22.150 to aa:bb:cc:6f:f8:89 (host-092) via eth1
+Sep 28 09:17:23 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.17.117 from aa:bb:cc:09:88:4c (host-330) via eth1
+Sep 28 09:17:58 dhcp01 dhcpd[1123]: DHCPACK on 10.3.16.168 to aa:bb:cc:59:70:99 (host-005) via eth1
+Sep 28 09:18:05 dhcp01 dhcpd[1123]: DHCPOFFER on 10.3.12.173 to aa:bb:cc:ff:d1:08 (host-370) via eth1
+Sep 28 09:18:37 dhcp01 dhcpd[1123]: DHCPACK on 10.1.8.83 to aa:bb:cc:0c:99:d5 (host-320) via eth1
+Sep 28 09:18:45 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.2.7.5 from aa:bb:cc:35:11:d6 (host-259) via eth1 (found)
+Sep 28 09:19:18 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.18.161 from aa:bb:cc:5b:bb:c8 (host-011) via eth1
+Sep 28 09:19:30 dhcp01 dhcpd[1123]: DHCPACK on 10.3.7.3 to aa:bb:cc:eb:75:53 (host-168) via eth1
+Sep 28 09:19:47 dhcp01 dhcpd[1123]: DHCPACK on 10.3.18.136 to aa:bb:cc:ee:8d:28 (host-114) via eth1
+Sep 28 09:19:50 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.3.6.212 from aa:bb:cc:6d:0e:5b (host-087) via eth1
+Sep 28 09:20:11 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:ff:d1:08 via eth1
+Sep 28 09:20:30 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.8.176 from aa:bb:cc:6d:13:14 (host-082) via eth1
+Sep 28 09:20:37 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:05:21:28 via eth1
+Sep 28 09:21:03 dhcp01 dhcpd[1123]: DHCPOFFER on 10.3.17.236 to aa:bb:cc:09:89:df (host-331) via eth1
+Sep 28 09:21:25 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.2.10.141 from aa:bb:cc:04:3f:00 (host-187) via eth1 (found)
+Sep 28 09:21:31 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:05:24:4e via eth1
+Sep 28 09:22:03 dhcp01 dhcpd[1123]: DHCPOFFER on 10.4.19.156 to aa:bb:cc:f2:fd:be (host-138) via eth1
+Sep 28 09:22:15 dhcp01 dhcpd[1123]: DHCPOFFER on 10.2.9.235 to aa:bb:cc:44:28:f8 (host-235) via eth1
+Sep 28 09:22:59 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.3.20.27 from aa:bb:cc:2b:5a:92 (host-299) via eth1 (found)
+Sep 28 09:23:31 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.2.10.7 from aa:bb:cc:32:cb:60 (host-248) via eth1
+Sep 28 09:24:02 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.4.11.191 from aa:bb:cc:fd:84:46 (host-387) via eth1 (found)
+Sep 28 09:24:26 dhcp01 dhcpd[1123]: DHCPOFFER on 10.4.14.140 to aa:bb:cc:41:eb:f4 (host-226) via eth1
+Sep 28 09:24:47 dhcp01 dhcpd[1123]: DHCPOFFER on 10.2.23.192 to aa:bb:cc:54:25:32 (host-026) via eth1
+Sep 28 09:25:07 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.16.32 from aa:bb:cc:f6:0d:b4 (host-129) via eth1
+Sep 28 09:25:12 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.3.19.66 from aa:bb:cc:44:33:fd (host-232) via eth1 (found)
+Sep 28 09:25:21 dhcp01 dhcpd[1123]: DHCPACK on 10.1.14.127 to aa:bb:cc:ee:98:2d (host-113) via eth1
+Sep 28 09:25:54 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:ff:d4:2e via eth1
+Sep 28 09:26:09 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.3.11.83 from aa:bb:cc:63:2c:96 (host-040) via eth1 (found)
+Sep 28 09:26:13 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.21.182 from aa:bb:cc:63:2b:03 (host-043) via eth1 (found)
+Sep 28 09:26:41 dhcp01 dhcpd[1123]: DHCPOFFER on 10.1.8.10 to aa:bb:cc:f0:d0:78 (host-107) via eth1
+Sep 28 09:27:18 dhcp01 dhcpd[1123]: DHCPACK on 10.1.13.5 to aa:bb:cc:59:83:7d (host-009) via eth1
+Sep 28 09:27:29 dhcp01 dhcpd[1123]: DHCPOFFER on 10.2.17.222 to aa:bb:cc:5e:03:d1 (host-067) via eth1
+Sep 28 09:27:42 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.10.221 from aa:bb:cc:6d:0f:ee (host-084) via eth1
+Sep 28 09:27:43 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.7.230 from aa:bb:cc:63:2f:bc (host-046) via eth1 (found)
+Sep 28 09:28:14 dhcp01 dhcpd[1123]: DHCPOFFER on 10.2.14.219 to aa:bb:cc:f0:ce:e5 (host-108) via eth1
+Sep 28 09:28:38 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:eb:75:53 via eth1
+Sep 28 09:28:48 dhcp01 dhcpd[1123]: DHCPACK on 10.2.22.114 to aa:bb:cc:fb:47:42 (host-394) via eth1
+Sep 28 09:29:04 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.3.12.35 from aa:bb:cc:70:00:68 (host-099) via eth1 (found)
+Sep 28 09:29:10 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:29:14:1c via eth1
+Sep 28 09:29:52 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:ff:d4:2e via eth1
+Sep 28 09:30:08 dhcp01 dhcpd[1123]: DHCPACK on 10.1.11.156 to aa:bb:cc:e4:ab:63 (host-151) via eth1
+Sep 28 09:30:43 dhcp01 dhcpd[1123]: DHCPOFFER on 10.3.21.234 to aa:bb:cc:f5:fd:f6 (host-127) via eth1
+Sep 28 09:31:18 dhcp01 dhcpd[1123]: DHCPACK on 10.3.20.226 to aa:bb:cc:f0:d3:9e (host-105) via eth1
+Sep 28 09:32:02 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.22.64 from aa:bb:cc:37:68:0a (host-260) via eth1
+Sep 28 09:32:29 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.2.23.101 from aa:bb:cc:5b:c5:3a (host-017) via eth1
+Sep 28 09:33:14 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.16.145 from aa:bb:cc:2b:5f:4b (host-296) via eth1
+Sep 28 09:33:36 dhcp01 dhcpd[1123]: DHCPACK on 10.2.19.44 to aa:bb:cc:37:5e:98 (host-266) via eth1
+Sep 28 09:33:37 dhcp01 dhcpd[1123]: DHCPACK on 10.4.14.97 to aa:bb:cc:e4:b7:fb (host-159) via eth1
+Sep 28 09:34:21 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.4.9.227 from aa:bb:cc:6f:fd:42 (host-097) via eth1 (found)
+Sep 28 09:34:55 dhcp01 dhcpd[1123]: DHCPACK on 10.1.12.197 to aa:bb:cc:65:71:79 (host-056) via eth1
+Sep 28 09:35:05 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:e4:b3:42 via eth1
+Sep 28 09:35:47 dhcp01 dhcpd[1123]: DHCPACK on 10.3.21.247 to aa:bb:cc:f6:0d:b4 (host-129) via eth1
+Sep 28 09:35:50 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.3.7.15 from aa:bb:cc:44:2f:44 (host-231) via eth1 (found)
+Sep 28 09:36:33 dhcp01 dhcpd[1123]: DHCPOFFER on 10.3.16.53 to aa:bb:cc:05:24:4e (host-354) via eth1
+Sep 28 09:36:52 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.23.163 from aa:bb:cc:29:1f:21 (host-287) via eth1
+Sep 28 09:37:33 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:0e:e8:2a via eth1
+Sep 28 09:38:00 dhcp01 dhcpd[1123]: DHCPACK on 10.3.22.75 to aa:bb:cc:e6:f8:25 (host-144) via eth1
+Sep 28 09:38:19 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:32:e2:fd via eth1
+Sep 28 09:39:00 dhcp01 dhcpd[1123]: DHCPOFFER on 10.4.17.38 to aa:bb:cc:32:dc:b1 (host-243) via eth1
+Sep 28 09:39:44 dhcp01 dhcpd[1123]: DHCPACK on 10.1.5.202 to aa:bb:cc:eb:8b:5d (host-166) via eth1
+Sep 28 09:40:04 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.6.38 from aa:bb:cc:0e:e6:97 (host-317) via eth1 (found)
+Sep 28 09:40:35 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.3.19.137 from aa:bb:cc:05:2a:9a (host-350) via eth1
+Sep 28 09:40:43 dhcp01 dhcpd[1123]: DHCPOFFER on 10.2.12.23 to aa:bb:cc:44:22:ac (host-239) via eth1
+Sep 28 09:41:22 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:01:fb:b0 via eth1
+Sep 28 09:41:36 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.9.224 from aa:bb:cc:07:49:b5 (host-346) via eth1
+Sep 28 09:41:43 dhcp01 dhcpd[1123]: DHCPOFFER on 10.1.10.203 to aa:bb:cc:3a:4d:7f (host-274) via eth1
+Sep 28 09:41:50 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.2.14.72 from aa:bb:cc:3c:9b:d4 (host-208) via eth1
+Sep 28 09:42:32 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.2.13.77 from aa:bb:cc:ee:8e:bb (host-115) via eth1
+Sep 28 09:42:53 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.14.56 from aa:bb:cc:37:5b:72 (host-268) via eth1
+Sep 28 09:43:25 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.4.9 from aa:bb:cc:8a:06:2d (laptop-carol) via eth1 (found)
+Sep 28 09:43:25 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:0e:d5:46 via eth1
+Sep 28 09:43:54 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:f2:f7:72 via eth1
+Sep 28 09:44:23 dhcp01 dhcpd[1123]: DHCPACK on 10.2.11.24 to aa:bb:cc:04:55:0a (host-189) via eth1
+Sep 28 09:44:49 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:09:8d:05 via eth1
+Sep 28 09:45:23 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.13.175 from aa:bb:cc:3e:cc:40 (host-217) via eth1
+Sep 28 09:45:46 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.7.27 from aa:bb:cc:09:96:77 (host-339) via eth1 (found)
+Sep 28 09:46:25 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:02:00:69 via eth1
+Sep 28 09:46:37 dhcp01 dhcpd[1123]: DHCPACK on 10.4.7.210 to aa:bb:cc:29:20:b4 (host-280) via eth1
+Sep 28 09:46:52 dhcp01 dhcpd[1123]: DHCPOFFER on 10.4.19.21 to aa:bb:cc:e9:35:29 (host-175) via eth1
+Sep 28 09:47:35 dhcp01 dhcpd[1123]: DHCPOFFER on 10.3.17.57 to aa:bb:cc:fd:85:d9 (host-386) via eth1
+Sep 28 09:47:47 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.4.5.204 from aa:bb:cc:5d:ff:18 (host-064) via eth1 (found)
+Sep 28 09:47:52 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:fd:81:20 via eth1
+Sep 28 09:48:03 dhcp01 dhcpd[1123]: DHCPACK on 10.4.15.99 to aa:bb:cc:37:63:51 (host-265) via eth1
+Sep 28 09:48:09 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:f0:ce:e5 via eth1
+Sep 28 09:48:22 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:63:3a:c1 via eth1
+Sep 28 09:48:28 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.3.14.155 from aa:bb:cc:61:08:c2 (host-079) via eth1
+Sep 28 09:49:03 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.3.18.245 from aa:bb:cc:ee:8d:28 (host-114) via eth1 (found)
+Sep 28 09:49:19 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.2.23.179 from aa:bb:cc:3a:4d:7f (host-274) via eth1 (found)
+Sep 28 09:49:31 dhcp01 dhcpd[1123]: DHCPACK on 10.2.17.240 to aa:bb:cc:44:33:fd (host-232) via eth1
+Sep 28 09:49:38 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.4.15 from aa:bb:cc:3a:87:b4 (laptop-ivan) via eth1 (found)
+Sep 28 09:50:09 dhcp01 dhcpd[1123]: DHCPOFFER on 10.1.11.106 to aa:bb:cc:41:e5:a8 (host-222) via eth1
+Sep 28 09:50:19 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.16.230 from aa:bb:cc:41:dd:c9 (host-229) via eth1
+Sep 28 09:50:52 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:02:06:b5 via eth1
+Sep 28 09:51:37 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:32:df:d7 via eth1
+Sep 28 09:51:59 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:e9:48:0d via eth1
+Sep 28 09:52:11 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:57:38:4e via eth1
+Sep 28 09:52:33 dhcp01 dhcpd[1123]: DHCPOFFER on 10.3.21.139 to aa:bb:cc:05:27:74 (host-352) via eth1
+Sep 28 09:52:37 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.15 from aa:bb:cc:4e:ad:42 (laptop-dave) via eth1
+Sep 28 09:52:38 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.15 to aa:bb:cc:4e:ad:42 (laptop-dave) via eth1
+Sep 28 09:52:53 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.4.10.198 from aa:bb:cc:e9:33:96 (host-174) via eth1
+Sep 28 09:53:38 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:f6:0f:47 via eth1
+Sep 28 09:53:59 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.4.10 from aa:bb:cc:4e:ad:42 (laptop-dave) via eth1 (found)
+Sep 28 09:54:04 dhcp01 dhcpd[1123]: DHCPACK on 10.4.19.91 to aa:bb:cc:e9:35:29 (host-175) via eth1
+Sep 28 09:54:14 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:eb:81:eb via eth1
+Sep 28 09:54:31 dhcp01 dhcpd[1123]: DHCPACK on 10.2.5.84 to aa:bb:cc:6d:14:a7 (host-083) via eth1
+Sep 28 09:54:32 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.3.7.118 from aa:bb:cc:3a:4a:59 (host-272) via eth1 (found)
+Sep 28 09:55:10 dhcp01 dhcpd[1123]: DHCPACK on 10.1.18.99 to aa:bb:cc:02:19:11 (host-360) via eth1
+Sep 28 09:55:19 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:eb:8b:5d via eth1
+Sep 28 09:55:30 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:0e:d6:d9 via eth1
+Sep 28 09:55:48 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:5e:08:8a via eth1
+Sep 28 09:55:58 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.10 from aa:bb:cc:3a:87:b4 (laptop-ivan) via eth1
+Sep 28 09:55:59 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.10 to aa:bb:cc:3a:87:b4 (laptop-ivan) via eth1
+Sep 28 09:56:24 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.4.12.76 from aa:bb:cc:6d:0b:35 (host-089) via eth1 (found)
+Sep 28 09:56:41 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:02:17:7e via eth1
+Sep 28 09:56:44 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.2.13.124 from aa:bb:cc:37:64:e4 (host-262) via eth1
+Sep 28 09:56:48 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:ee:95:07 via eth1
+Sep 28 09:57:19 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:11:2b:7a via eth1
+Sep 28 09:57:44 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.2.17.34 from aa:bb:cc:65:74:9f (host-050) via eth1 (found)
+Sep 28 10:00:47 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.4.7 from aa:bb:cc:cd:79:68 (laptop-alice) via eth1 (found)
+Sep 28 10:01:00 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.4.12 from aa:bb:cc:74:21:2e (phone-alice) via eth1 (found)
+Sep 28 10:01:44 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.12 from aa:bb:cc:b7:e4:cb (laptop-bob) via eth1
+Sep 28 10:01:45 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.12 to aa:bb:cc:b7:e4:cb (laptop-bob) via eth1
+Sep 28 10:01:58 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.4.14 from aa:bb:cc:6d:53:f9 (laptop-heidi) via eth1 (found)
+Sep 28 10:03:21 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.4.11 from aa:bb:cc:a3:08:bc (laptop-erin) via eth1 (found)
+Sep 28 10:06:04 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.7 from aa:bb:cc:f8:71:84 (laptop-frank) via eth1
+Sep 28 10:06:05 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.7 to aa:bb:cc:f8:71:84 (laptop-frank) via eth1
+Sep 28 10:07:11 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.4.8 from aa:bb:cc:b7:e4:cb (laptop-bob) via eth1 (found)
+Sep 28 10:08:10 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.8 from aa:bb:cc:f0:fa:f8 (laptop-grace) via eth1
+Sep 28 10:08:11 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.8 to aa:bb:cc:f0:fa:f8 (laptop-grace) via eth1
+Sep 28 10:13:10 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.4.13 from aa:bb:cc:f0:fa:f8 (laptop-grace) via eth1 (found)
+Sep 28 10:13:24 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.9 from aa:bb:cc:6d:53:f9 (laptop-heidi) via eth1
+Sep 28 10:13:25 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.9 to aa:bb:cc:6d:53:f9 (laptop-heidi) via eth1
+Sep 28 10:15:20 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.11 from aa:bb:cc:7b:d8:82 (laptop-judy) via eth1
+Sep 28 10:15:21 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.11 to aa:bb:cc:7b:d8:82 (laptop-judy) via eth1
+Sep 28 10:21:09 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.13 from aa:bb:cc:b7:e4:cb (laptop-bob) via eth1
+Sep 28 10:21:10 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.13 to aa:bb:cc:b7:e4:cb (laptop-bob) via eth1
+Sep 28 10:21:57 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.14 from aa:bb:cc:8a:06:2d (laptop-carol) via eth1
+Sep 28 10:21:58 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.14 to aa:bb:cc:8a:06:2d (laptop-carol) via eth1

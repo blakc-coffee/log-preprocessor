@@ -118,8 +118,12 @@ type Writer struct {
 	name     string
 	idPrefix string
 	defTerm  string
-	buf      bytes.Buffer
-	recs     []Record
+	// seed is the run seed. The identity emitters need it to rebuild the
+	// shared scenario, which is how four separate files agree on who held
+	// which address without sharing mutable state.
+	seed uint64
+	buf  bytes.Buffer
+	recs []Record
 }
 
 // Emit appends one record and its terminator, and records the manifest entry.
@@ -217,6 +221,10 @@ func Sources() []*Source {
 		oversizeSource(),
 		multilineSource(),
 		crlfSource(),
+		dhcpSource(),
+		radiusSource(),
+		openvpnSource(),
+		identityFirewallSource(),
 	}
 }
 
@@ -274,7 +282,7 @@ func Run(opts Options) error {
 			}
 			n = s.Sample
 		}
-		w := &Writer{name: s.Name, idPrefix: s.IDPrefix, defTerm: s.Term}
+		w := &Writer{name: s.Name, idPrefix: s.IDPrefix, defTerm: s.Term, seed: opts.Seed}
 		s.Emit(w, rngFor(opts.Seed, s.Name), n)
 
 		body := w.buf.Bytes()
@@ -292,6 +300,12 @@ func Run(opts Options) error {
 	}
 
 	if err := writeJSON(filepath.Join(opts.Out, "manifest.json"), m); err != nil {
+		return err
+	}
+	// identity_truth.json is ground truth, not a log, so it is deliberately
+	// absent from the manifest's files map: that map is iterated by the
+	// round-trip tests, which ingest every file in it.
+	if err := writeJSON(filepath.Join(opts.Out, "identity_truth.json"), buildTruth(opts.Seed)); err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(opts.Out, "README.md"), []byte(readme(opts)), 0o644)

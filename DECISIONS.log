@@ -113,3 +113,55 @@ affects: tools/gen/internal/gen/multiline.go, configs/ingest.dev.yaml (M3)
 [2026-09-29 03:06] M1.1 verified: gofmt clean, go vet clean, go test -race green, make fixtures-check clean.
 why: Chunk rule. Corpus now has 9 of 13 files. Tests added: malformed composition, oversize fragment boundary (including exactly-at-limit), multiline framing against MultilineStart, Palo Alto column count and csv-not-kv, and the drift key-set diff.
 affects: tools/gen/internal/gen/fixtures_test.go, testdata/
+
+[2026-09-29 03:40] Identity scenario derived from the run seed by a pure function, buildScenario(seed).
+why: Four files (dhcp.log, radius.log, openvpn.log, identity_firewall.log) plus identity_truth.json must agree on who held which address when, but each emitter gets its own independent RNG stream. A pure function of the seed gives all five the same answer with no shared mutable state and no ordering dependency between emitters.
+affects: tools/gen/internal/gen/{identity.go,identity_sources.go,truth.go,gen.go}
+
+[2026-09-29 03:40] NEW FILE not in the PRD's file table: identity_firewall.log.
+why: PRD 4.3 requires firewall events on both sides of each reassignment carrying expected_user, but PRD 4.2's file table names no file for them. Putting them in cisco_asa.log would mix a pure vendor-format fixture with scenario data and force the identity test to ingest 2000 irrelevant records. A separate file lets the identity test ingest exactly the 45 records it reasons about. Additive, so nothing that depends on the existing files is affected.
+affects: testdata/identity_firewall.log, manifest.json, B7 identity tests
+
+[2026-09-29 03:40] Truth intervals are half-open: [ack, release). Documented in the file itself.
+why: An address is bound from the DHCPACK up to but not including the release. Closed-at-both-ends intervals make the release instant ambiguous, and the whole scenario turns on gap boundaries being exact - the shortest gap is 45 seconds.
+affects: testdata/identity_truth.json, pkg/dataplane/identity (B7, Contracts)
+
+[2026-09-29 03:40] identity_truth.json carries resolution_cases in addition to intervals.
+why: PRD 4.3 specifies only {ip,user,host,mac,from,to}. The 45 (ip, time, expected_user) triples are also in the manifest, but only on the firewall records, so testing B7's resolver would mean ingesting a log first. Duplicating them in the answer key lets the resolver be unit-tested in isolation. A test asserts the two copies agree, so the duplication cannot rot.
+affects: testdata/identity_truth.json, B7 unit tests
+
+[2026-09-29 03:40] identity_truth.json is deliberately absent from the manifest's `files` map.
+why: That map is iterated by the round-trip tests, which ingest every file in it and assert byte-exact vault storage. identity_truth.json is an answer key, not a log, and ingesting it would be meaningless.
+affects: tools/gen/internal/gen/gen.go, tests/lossless_test.go (Packaging)
+
+[2026-09-29 03:40] Identity files are identical in the sample and full profiles.
+why: They are small (200/100/60/45 records) and they are the Contracts workstream's hand-off. A sliced sample would contain tenancies whose releases were cut off, making the answer key wrong for the sample set. Shipping the complete scenario in both profiles avoids a second, subtly different truth file.
+affects: tools/gen/internal/gen/identity_sources.go
+
+[2026-09-29 03:40] BUG FOUND AND FIXED: tenancy B on 10.1.4.12 was also alice, so that address was never reassigned.
+why: The second tenant was chosen as identityUsers[(i+5)%10], which for i=5 is alice - the same user the "same user on two addresses" override had just forced onto tenancy A. The address was leased to alice twice, so reassignment went untested there and a RADIUS cross-check failed. Now the second tenant walks forward until it differs from the first. Caught by TestIntervalsDoNotOverlapPerIP, not by inspection.
+affects: tools/gen/internal/gen/identity.go
+
+[2026-09-29 03:45] merkle package imports the local contract copy for VerifyChainLink only.
+why: PRD calls the package "pure, dependency-free". It has no vault dependency, which is the point; types.InclusionProof is the contract, not the vault. Every other function takes and returns plain arrays, so a caller that only needs inclusion verification pulls in nothing.
+affects: pkg/dataplane/vault/merkle/merkle.go
+
+[2026-09-29 03:45] Root(nil) returns SHA-256 of the empty string, per RFC 6962 MTH({}).
+why: The vault never seals an empty segment, so this should not arise. Returning the RFC value rather than a zero array means an empty root can never be confused with an unset one.
+affects: pkg/dataplane/vault/merkle/merkle.go
+
+[2026-09-29 03:45] FINDING: an RFC 6962 inclusion proof does not independently bind the tree size.
+why: TestTamperedProofsFail originally asserted that claiming the wrong size must fail. It does not: for n=100, 96 of 100 leaves still verify against a claimed size of 101 when the root is held fixed. This is correct behaviour, not a defect - the root is the commitment, and size and index only steer how the path is folded. Verified that the security-relevant property does hold: a proof from a tree of 100 verifies against the real root of a tree of 101 in 0 of 100 cases. The assertion was replaced with that one, and TestSizeAloneIsNotBinding documents the caveat. Recorded because the Frontend browser verifier and the Contracts Python tests will meet the same property and could easily assume the opposite.
+affects: pkg/dataplane/vault/merkle/merkle_test.go, frontend proof verifier, intel sidecar tests
+
+[2026-09-29 03:45] merkle_vectors.json has a drift check, not just an -update flag.
+why: PRD 12.1 specifies -update. Without a check, the committed file can silently fall out of step with the Go implementation while the browser and Python verifiers keep validating against the stale copy. TestWriteVectors now fails when the committed file differs, and TestVectorsAreSelfConsistent re-derives every hash from the leaf bodies the way an outside implementation would.
+affects: pkg/dataplane/vault/merkle/vectors_test.go, testdata/merkle_vectors.json
+
+[2026-09-29 03:45] `make fixtures-check` also excludes merkle_vectors.json from the diff.
+why: It lives in testdata/ but is written by the merkle test, not the corpus generator, so the generator's determinism diff reported it as an unexpected extra file. It has its own drift check.
+affects: Makefile
+
+[2026-09-29 03:46] M1.2-M1.4 verified: gofmt and go vet clean, go test -race green across all packages, make fixtures-check clean.
+why: Chunk rule. Corpus complete at 13 files plus merkle_vectors.json. Identity cross-checks added per PRD 12.4: truth intervals matched against DHCPACK/DHCPRELEASE lines, RADIUS sessions confined to their lease, no per-address overlap, resolution cases re-resolved from the intervals, manifest expected_user matched to the answer key, and both special cases (one user on two addresses, overlapping RADIUS/VPN evidence) asserted present.
+affects: tools/gen/internal/gen/identity_test.go, pkg/dataplane/vault/merkle/*_test.go
