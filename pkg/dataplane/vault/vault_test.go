@@ -497,3 +497,32 @@ func TestAgreesWithMemvault(t *testing.T) {
 		}
 	}
 }
+
+// TestZeroOptionsWork is a regression test. Open originally validated before
+// applying defaults, so every caller that left Sync empty and expected the
+// documented default was rejected with "unknown sync mode". vaultctl is such a
+// caller, and no unit test caught it because they all set Sync explicitly.
+func TestZeroOptionsWork(t *testing.T) {
+	v, err := vault.Open(vault.Options{Dir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("a vault with only Dir set would not open: %v", err)
+	}
+	defer v.Close()
+
+	if _, err := v.Put(context.Background(), rec(0)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestUnknownSyncModeIsStillRejected: the fix above must not have turned
+// validation off.
+func TestUnknownSyncModeIsStillRejected(t *testing.T) {
+	if v, err := vault.Open(vault.Options{Dir: t.TempDir(), Sync: "sometimes"}); err == nil {
+		v.Close()
+		t.Fatal("an unknown sync mode was accepted")
+	}
+	if v, err := vault.Open(vault.Options{}); err == nil {
+		v.Close()
+		t.Fatal("a vault with no directory was accepted")
+	}
+}

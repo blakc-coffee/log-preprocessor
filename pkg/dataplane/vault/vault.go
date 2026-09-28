@@ -229,10 +229,13 @@ const leafCacheSize = 4
 // rather than interleaving into the same segments. Recovery of a partially
 // written segment happens here; see recover.go.
 func Open(opts Options) (*Vault, error) {
+	// Defaults first, then validate. The other way round rejects every
+	// caller that leaves Sync empty and expects the documented default,
+	// which is exactly what vaultctl does.
+	opts.setDefaults()
 	if err := opts.validate(); err != nil {
 		return nil, err
 	}
-	opts.setDefaults()
 
 	if err := os.MkdirAll(opts.Dir, 0o700); err != nil {
 		return nil, err

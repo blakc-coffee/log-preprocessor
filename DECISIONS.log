@@ -256,3 +256,29 @@ affects: pkg/dataplane/vault/vault.go
 why: Chunk rule. The on-disk vault passes the same conformance suite as memvault in five configurations (SealEvery 8 and 2, group-commit delay, sync=interval, sync=none), 1069 subtests in the package, race clean. TestAgreesWithMemvault asserts the two implementations produce identical leaf hashes, roots, chain heads and interchangeable proofs, so building against memvault and switching at Gate 1 is safe. Detected rows: flipped byte in a record, deleted record, truncated segment, deleted middle segment, swapped segments, edited footer root, edited ledger root, ledger line removed from the middle, emptied chain.log, edited segment header. Each names the offending segment and a specific reason.
 Still outstanding for M2: vaultctl (M2.6). Still outstanding overall: the 200-cycle kill -9 suite (M5), which is what the "0 acknowledged records lost" metric is actually measured on - today's crash coverage is directory snapshots, which is not the same claim.
 affects: pkg/dataplane/vault/
+
+[2026-09-29 05:55] ProofJSON lives in the vault package, not in vaultctl.
+why: types.InclusionProof holds [32]byte arrays, which encoding/json renders as arrays of 32 numbers. Three consumers have to agree on the wire form - vaultctl, the Frontend browser verifier and the Contracts Python tests - so it belongs next to the vault rather than in one of them. Each proof also carries an `algorithm` block naming the three hashes and the RFC section, so nobody implementing a verifier has to infer the domain prefixes.
+affects: pkg/dataplane/vault/proofjson.go, cmd/vaultctl, frontend, intel sidecar
+
+[2026-09-29 05:55] BUG FOUND BY SMOKE TEST: Open validated before applying defaults.
+why: Options.validate ran first, so any caller that left Sync empty and expected the documented default was rejected with "unknown sync mode". vaultctl is exactly such a caller, and no unit test caught it because every test set Sync explicitly. Found the first time vaultctl was pointed at a real vault. Defaults now run first, with TestZeroOptionsWork as the regression test and TestUnknownSyncModeIsStillRejected to prove validation was not simply turned off.
+affects: pkg/dataplane/vault/vault.go
+
+[2026-09-29 05:55] BUG FOUND BY SMOKE TEST: `verify --deep` ran a shallow check.
+why: Go's flag package stops parsing at the first non-flag argument, so in `--dir X verify --deep` the --deep flag landed in Args() and was never parsed. The command printed "chain intact (shallow)" while the operator had asked for deep. A verification command that quietly does less than it says is worse than one that fails outright. Fixed by parsing repeatedly, taking one positional each time, so flags may appear anywhere. TestDeepFlagIsActuallyParsed covers both orderings.
+affects: cmd/vaultctl/main.go
+
+[2026-09-29 05:55] vaultctl's run() takes io.Writer rather than *os.File.
+why: Exit codes are contract, so they need tests, and that means running the command in-process and capturing its output. The change is two lines and removes the need for a subprocess harness.
+affects: cmd/vaultctl/main.go
+
+[2026-09-29 05:55] Raw payload is escaped before it reaches any vaultctl table or hexdump.
+why: A log line is attacker-controlled. Printed unescaped into a table it could carry terminal escape sequences or newlines that fake up another row, which is log injection against the operator's own terminal. Non-printable bytes become '.'; `get --raw` is the only path that emits bytes untouched, and it emits nothing else. Covered by TestPreviewEscapesControlBytes.
+affects: cmd/vaultctl/main.go
+
+[2026-09-29 06:00] M2 COMPLETE. End-to-end proof checked against the fixture corpus.
+why: Ingested all 2000 cisco_asa.log records into a real vault (4 sealed segments), then confirmed three independently computed SHA-256s agree: the source file's first line, `vaultctl get 1 --raw`, and the manifest's precomputed expected_sha256. `verify --deep` exits 0 on the intact vault and 1 on a one-byte tamper, naming the segment. A proof taken from the vault verifies through `verify-proof` with no vault present.
+Verified: gofmt and go vet clean, go test -race green across all packages, make fixtures-check clean, CGO_ENABLED=0 build of vaultctl.
+Outstanding: M3 (framers, sources, Pipeline, ingestd), M4, M5. The 200-cycle kill -9 suite is still M5 and is what the "0 acknowledged records lost" metric is measured on; today's crash coverage is directory snapshots, which reproduce the same on-disk states but are not the same claim. No throughput number has been measured, and none can be reported from this machine (macOS full-drive flush, PRD 11.2).
+affects: cmd/vaultctl/, pkg/dataplane/vault/
