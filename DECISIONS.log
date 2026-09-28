@@ -201,3 +201,25 @@ affects: Makefile
 [2026-09-29 04:22] M1 COMPLETE and verified: gofmt and go vet clean, go test -race green on all packages, 40 conformance subtests passing across two segment sizes, FuzzRecordDecode 30s / 10.8M execs clean, make fixtures-check byte-identical on both profiles.
 why: Chunk rule. Hand-offs now unblocked: testdata/ (13 files + manifest + identity_truth.json + merkle_vectors.json) for everyone, memvault + vaulttest for Parsing and Packaging, identity fixtures and truth for Contracts, merkle_vectors.json for Frontend. READMEs written for all six packages.
 affects: all owned packages
+
+[2026-09-29 04:45] Branch switched to feature/ingest-vault for M2 onward, per PRD 9.2.
+why: M0-M1 (fixtures, memvault) shipped on feature/fixtures. The vault and ingest work is the second branch the PRD defines.
+affects: git history
+
+[2026-09-29 04:50] Segment format: "sealed" is the presence of a valid footer on disk, nothing else.
+why: An index that says a segment is sealed can disagree with the file; a footer cannot. Recovery finds the segment it must repair by looking for the one without a valid footer, and ErrShort or ErrBadMagic from decodeFooter is the normal reading of "still active", not corruption.
+affects: pkg/dataplane/vault/segment.go, recovery (M2.4)
+
+[2026-09-29 04:50] Segment file names are fixed-width: seg-%012d.<ext>.
+why: A plain lexical sort of the directory is then also a numeric sort, so recovery and `vaultctl ls` can order segments without parsing them first. Asserted by TestSegmentName.
+affects: pkg/dataplane/vault/segment.go
+
+[2026-09-29 04:55] BUG FOUND AND FIXED AT THE ROOT: the zero time.Time encoded as 1754-08-30.
+why: Timestamps are stored as int64 Unix nanoseconds to keep headers fixed-width, and time.Time.UnixNano() is explicitly undefined outside 1678-2262 - the zero time (year 1) silently overflows to 1754. A record whose ReceivedAt was never set would have come back carrying a confident, wrong, eighteenth-century date, which is worse than an obviously empty one because nothing downstream would question it.
+Found by the segment header round-trip test, but the same defect was already in the record codec, which its own tests had missed by using time.Unix(0,0) rather than time.Time{}. Fixed once in record.TimeToNanos / TimeFromNanos, now used by both codecs: the zero time maps to the Unix epoch, and times outside the representable range are clamped rather than wrapped. Clamping rather than erroring because ordering comes from the sequence number, never from a timestamp, so a nonsense clock must not make a record unstorable.
+Consequence to document in docs/vault-format.md: "no time" and 1970-01-01T00:00:00Z are indistinguishable on disk.
+affects: pkg/dataplane/vault/record/record.go, pkg/dataplane/vault/segment.go, docs/vault-format.md (M5)
+
+[2026-09-29 04:56] M2.1 verified: gofmt and go vet clean, go test -race green on all packages.
+why: Chunk rule. Segment header (72B) and footer (100B) codecs done, with every covered byte proven to be checksummed by flipping it, and the header-cannot-be-read-as-a-footer case asserted.
+affects: pkg/dataplane/vault/segment.go, segment_test.go

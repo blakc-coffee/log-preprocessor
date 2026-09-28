@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"math"
 	"time"
 
 	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
@@ -127,7 +128,7 @@ func Encode(dst []byte, seq types.RecordID, r types.RawRecord) ([]byte, error) {
 
 	dst = append(dst, Version, flags)
 	dst = binary.BigEndian.AppendUint64(dst, uint64(seq))
-	dst = binary.BigEndian.AppendUint64(dst, uint64(r.ReceivedAt.UnixNano()))
+	dst = binary.BigEndian.AppendUint64(dst, uint64(TimeToNanos(r.ReceivedAt)))
 	dst = binary.BigEndian.AppendUint16(dst, uint16(len(r.SourceID)))
 	dst = append(dst, r.SourceID...)
 	dst = append(dst, byte(r.Origin.Kind))
@@ -229,7 +230,7 @@ func Decode(body []byte) (types.RecordID, types.RawRecord, error) {
 
 	r = types.RawRecord{
 		SourceID:   sourceID,
-		ReceivedAt: time.Unix(0, nanos).UTC(),
+		ReceivedAt: TimeFromNanos(nanos),
 		Origin:     types.Origin{Kind: kind, Addr: addr, Offset: off},
 		Term:       types.Terminator(flags & termMask),
 		Raw:        raw,
@@ -279,3 +280,41 @@ func ParseFramed(buf []byte, maxBody int) (body []byte, n int, err error) {
 	}
 	return body, FrameOverhead + length, nil
 }
+
+// Timestamps on disk are int64 Unix nanoseconds, which is what keeps a record
+// header fixed-width. That representation only spans 1678 to 2262, and
+// time.Time.UnixNano() is explicitly undefined outside it: the zero time
+// (year 1) silently overflows to 1754. Ingest stamps ReceivedAt with the
+// current time, so the range is never a practical limit, but a zero value
+// reaching the encoder must not turn into a plausible-looking wrong date.
+//
+// So: the zero time encodes as the Unix epoch and decodes back to it. A
+// caller who genuinely means "no time" and one who genuinely means
+// 1970-01-01T00:00:00Z are therefore indistinguishable on disk. That is
+// deliberate, and preferable to storing a date nobody chose.
+
+// minNanoTime and maxNanoTime bound what int64 Unix nanoseconds can express.
+var (
+	minNanoTime = time.Unix(0, math.MinInt64)
+	maxNanoTime = time.Unix(0, math.MaxInt64)
+)
+
+// TimeToNanos converts t for storage, mapping the zero time to the epoch and
+// clamping anything outside the representable range to its edge. Clamping
+// rather than failing keeps a nonsense clock from making a record unstorable;
+// ordering in this system comes from the sequence number, never from a
+// timestamp.
+func TimeToNanos(t time.Time) int64 {
+	switch {
+	case t.IsZero():
+		return 0
+	case t.Before(minNanoTime):
+		return math.MinInt64
+	case t.After(maxNanoTime):
+		return math.MaxInt64
+	}
+	return t.UnixNano()
+}
+
+// TimeFromNanos is the inverse of TimeToNanos, in UTC.
+func TimeFromNanos(n int64) time.Time { return time.Unix(0, n).UTC() }
