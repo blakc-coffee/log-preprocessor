@@ -1,14 +1,18 @@
 package identity
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
 	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
@@ -180,5 +184,102 @@ func TestIdentityTruthOnFixtures(t *testing.T) {
 		if a, b := users(r.ResolveAt(c.IP, at)), users(rev.ResolveAt(c.IP, at)); a != b {
 			t.Errorf("arrival order changed the answer for %s at %s: %q vs %q", c.IP, c.At, a, b)
 		}
+	}
+}
+
+// State is derived data, so a restart rebuilds it from the vault instead of loading a database. This is that
+// claim, tested: identity records go into a real vault, a fresh resolver replays them, and every answer and
+// every timeline equals the live resolver's, including after a second replay and after a partial replay
+// followed by the rest.
+func TestReplayFromVaultRebuildsTheSameState(t *testing.T) {
+	ctx := context.Background()
+	live := New(Config{})
+	mv := memvault.New(memvault.Options{SealEvery: 64})
+
+	type entry struct {
+		rec  types.RawRecord
+		fact types.IdentityFact
+	}
+	var entries []entry
+	for _, f := range loadFacts(t) {
+		raw, _ := json.Marshal(f)
+		entries = append(entries, entry{types.RawRecord{SourceID: f.SourceID, ReceivedAt: f.At, Origin: types.Origin{Kind: types.OriginFile, Addr: "x"}, Term: types.TermLF, Raw: raw}, f})
+	}
+	// mix in records that are not identity facts at all
+	var rs []types.RawRecord
+	for i, e := range entries {
+		rs = append(rs, e.rec)
+		if i%25 == 0 {
+			rs = append(rs, types.RawRecord{SourceID: "cisco_asa", ReceivedAt: e.fact.At, Term: types.TermLF, Raw: []byte("<166>Sep 28 2026 09:00:00 asa01 : not an identity record")})
+		}
+	}
+	receipts, err := mv.PutBatch(ctx, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the live resolver sees the same facts under the same record ids the vault assigned, as it would in the data plane
+	next := 0
+	for i, e := range entries {
+		for rs[next].SourceID == "cisco_asa" {
+			next++
+		}
+		f := e.fact
+		f.RecordID = receipts[next].ID
+		if _, err := live.Observe(f); err != nil {
+			t.Fatal(err)
+		}
+		next++
+		_ = i
+	}
+
+	extract := func(rec types.RawRecord, rc types.Receipt) (*types.IdentityFact, error) {
+		if !strings.HasPrefix(string(rec.Raw), "{") {
+			return nil, nil
+		}
+		var f types.IdentityFact
+		return &f, json.Unmarshal(rec.Raw, &f)
+	}
+	same := func(name string, r *Resolver) {
+		t.Helper()
+		for _, ip := range []string{"10.1.4.7", "10.1.4.8", "10.1.4.9", "10.1.4.10", "10.1.4.11", "10.1.4.12", "10.1.4.13", "10.1.4.14", "10.1.4.15", "10.8.0.249"} {
+			a, b := live.Timeline(ip, time.Time{}, time.Time{}), r.Timeline(ip, time.Time{}, time.Time{})
+			if !reflect.DeepEqual(a, b) {
+				t.Fatalf("%s: timeline of %s differs\n live: %+v\n got:  %+v", name, ip, a, b)
+			}
+			for m := 0; m < 200; m += 3 {
+				at := time.Date(2026, 9, 28, 3, 30, 0, 0, time.UTC).Add(time.Duration(m) * time.Minute)
+				if x, y := key(live.ResolveAt(ip, at)), key(r.ResolveAt(ip, at)); x != y {
+					t.Fatalf("%s: %s at +%dm: %q vs %q", name, ip, m, x, y)
+				}
+			}
+		}
+	}
+
+	fresh := New(Config{})
+	st, err := Replay(ctx, mv, 1, map[string]bool{"dhcp": true, "radius": true, "vpn": true}, extract, fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Facts != len(entries) || st.Skipped == 0 || st.Scanned != len(rs) {
+		t.Fatalf("stats %+v, want %d facts and the non-identity records skipped", st, len(entries))
+	}
+	same("full replay", fresh)
+
+	if _, err := Replay(ctx, mv, 1, nil, extract, fresh); err != nil { // replaying again changes nothing
+		t.Fatal(err)
+	}
+	same("second replay", fresh)
+
+	partial := New(Config{}) // a crash halfway through recovery, then the rest
+	half := types.RecordID(len(rs) / 2)
+	for _, from := range []types.RecordID{half, 1} {
+		if _, err := Replay(ctx, mv, from, nil, extract, partial); err != nil {
+			t.Fatal(err)
+		}
+	}
+	same("interrupted replay", partial)
+
+	if _, err := Replay(ctx, mv, 1, nil, func(types.RawRecord, types.Receipt) (*types.IdentityFact, error) { return nil, errors.New("boom") }, New(Config{})); err == nil {
+		t.Fatal("an extractor error must stop the replay and be reported with its record id")
 	}
 }

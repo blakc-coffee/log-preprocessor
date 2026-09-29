@@ -56,6 +56,8 @@ about 2.2M lookups/s, 9 allocs/op. Apple M2, macOS, Go 1.27.1. Not a target-hard
 
 State is in memory and O(facts): every fact is kept, and an address that was ever queried keeps a small record.
 Persistence is deliberately not built: the state is derived data, so after a restart replay the identity-source records
-from the vault (`POST /admin/replay` with `scope: source`); `Observe` is idempotent, so replaying is safe. SQLite
+from the vault (`POST /admin/replay` with `scope: source`); `Observe` is idempotent, so replaying is safe. `identity.Replay`
+is that recovery for a `types.Vault` and a fact extractor, and `TestReplayFromVaultRebuildsTheSameState` proves the rebuilt
+state (every timeline, every answer) equals the live one, also after a second replay and after an interrupted one. SQLite
 (`modernc.org/sqlite`, as PRD 6.3 names) is the upgrade if replay time ever matters. `Neighbours` for a user or host
 scans every address (O(addresses)); add a reverse index if the endpoint is polled on a large table.
