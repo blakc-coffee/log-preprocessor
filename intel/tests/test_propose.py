@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from ulpf_intel import dsl_eval
-from ulpf_intel.propose import propose_csv, propose_json, propose_kv_patch
+from ulpf_intel.propose import propose_csv, propose_json, propose_kv_patch, propose_text
 from ulpf_intel.validate import Thresholds, acceptance, local_dry_run, re2_violations
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -193,3 +193,133 @@ def test_reference_evaluator_matches_enums_exactly_like_the_spec():
     d = dsl_eval.load(doc)
     assert dsl_eval.extract(d, "p=tcp a=1 b=2 c=3").ocsf["n"] == 6
     assert dsl_eval.extract(d, "p=TCP a=1 b=2 c=3").ocsf["n"] == 0      # exact, not case-insensitive
+
+
+@pytest.fixture(scope="module")
+def asa():
+    ls = lines("cisco_asa.log")
+    return ls, propose_text("cisco_asa", ls, list(range(1, len(ls) + 1)), NOW)
+
+
+def test_text_proposal_matches_every_line_and_gets_time_protocol_and_addresses_right(asa):
+    ls, g = asa
+    doc = dsl_eval.load(g.proposal.yaml)
+    for raw, t in zip(ls, truth("cisco_asa.log")):
+        r = dsl_eval.extract(doc, raw)
+        assert r is not None, raw
+        o = dsl_eval.flat(r.ocsf)
+        assert o["time"] == ms(t["expected_time"]) and o["connection_info.protocol_name"] == t["expected_proto"] if t["expected_proto"] else True
+        # no address is lost or invented, whichever way round they were assigned
+        assert {o["src_endpoint.ip"], o["dst_endpoint.ip"]} == {t["expected_src_ip"], t["expected_dst_ip"]}, raw
+
+
+# Which address is the source is NOT derivable for every message, and this test says exactly where. The fixture
+# manifest orients 302013/302014 with the well-known port on the SOURCE (the real ASA puts it on the destination),
+# and 302015/302016 the other way round, so no rule agrees with all of it. The proposal follows the evidence
+# (cue words, arrow, port behaviour), flags weak decisions for the reviewer, and agrees with the manifest on every
+# other family. A regression in any family fails here; so does silently "fixing" the quirk.
+def test_text_direction_agrees_with_the_manifest_except_the_documented_fixture_quirk(asa):
+    import re
+    from collections import Counter
+    ls, g = asa
+    doc = dsl_eval.load(g.proposal.yaml)
+    agree = Counter()
+    for raw, t in zip(ls, truth("cisco_asa.log")):
+        o = dsl_eval.flat(dsl_eval.extract(doc, raw).ocsf)
+        mid = re.search(r"%ASA-\d-(\d+)", raw)[1]
+        same = o["src_endpoint.ip"] == t["expected_src_ip"]
+        agree[(mid, same)] += 1
+        # ports travel with their address, reversed or not; a null in the manifest means it does not know
+        want = {"src_endpoint.port": t["expected_src_port"], "dst_endpoint.port": t["expected_dst_port"]}
+        if not same:
+            want = {"src_endpoint.port": t["expected_dst_port"], "dst_endpoint.port": t["expected_src_port"]}
+        for path, expected in want.items():
+            if expected is not None:
+                assert o.get(path) == expected, f"{path} in {raw}"
+    families = {mid for mid, _ in agree}
+    assert families == {"106023", "106100", "302013", "302014", "302015", "302016", "305011"}
+    for mid in ("106023", "106100", "302015", "302016", "305011"):
+        assert agree[(mid, False)] == 0, f"{mid} disagrees with the manifest"
+    for mid in ("302013", "302014"):
+        assert agree[(mid, True)] == 0, f"{mid} was the documented quirk; if it now agrees, update this test and DECISIONS.log"
+
+
+def test_weak_direction_decisions_are_flagged_for_the_reviewer(asa):
+    _, g = asa
+    assert any("port behaviour" in w and "confirm the direction" in w for w in g.warnings)
+    weak = [t for t in g.proposal.typed_fields if t.ocsf_path.endswith("_endpoint.ip") and t.confidence < 0.85]
+    assert weak and all(t.alternatives for t in weak)
+
+
+def test_text_proposal_is_anchored_re2_safe_and_passes_acceptance(asa):
+    ls, g = asa
+    assert re2_violations(g.proposal.yaml) == []
+    dry = local_dry_run(g.proposal.yaml, list(enumerate(ls, 1)))
+    assert acceptance(dry) == [] and dry.match_rate == 1.0
+    for e in yaml.safe_load(g.proposal.yaml)["extractors"]:
+        assert e["pattern"].startswith("^") and e["pattern"].endswith("$")
+
+
+def test_text_proposal_never_maps_two_slots_to_one_path_and_drops_nat_copies(asa):
+    _, g = asa
+    for e in yaml.safe_load(g.proposal.yaml)["extractors"]:
+        targets = [m["to"] for m in e["map"]]
+        assert len(targets) == len(set(targets)), f"{e['id']} sets a path twice: {targets}"
+    nat = [t for t in g.proposal.typed_fields if "NAT copy" in t.evidence]
+    assert nat == []   # copies are kept unmapped, so they are not in typed_fields with a path
+
+
+def test_text_proposal_connection_id_is_not_a_port(asa):
+    _, g = asa
+    doc = yaml.safe_load(g.proposal.yaml)
+    for e in doc["extractors"]:
+        assert not any("connection" in e["pattern"].split("(?P<v25>")[0][-12:] and m.get("from") == "v25" for m in e["map"])
+    built = doc["extractors"][0]
+    ports = {m["to"] for m in built["map"] if m["to"].endswith("port")}
+    assert ports == {"src_endpoint.port", "dst_endpoint.port"}
+
+
+def test_text_render_template_reproduces_the_raw_line(asa):
+    ls, g = asa
+    doc = yaml.safe_load(g.proposal.yaml)
+    import re
+    e = next(x for x in doc["extractors"] if "render" in x)
+    raw = next(l for l in ls if re.match(e["pattern"], l))
+    m = re.match(e["pattern"], raw)
+    out = re.sub(r"\{(\w+)\}", lambda k: m.group(k.group(1)), e["render"].replace("{{", "\x00").replace("}}", "\x01")).replace("\x00", "{").replace("\x01", "}")
+    assert out == raw
+
+
+def test_text_signature_is_a_real_literal_seen_in_almost_every_line(asa):
+    ls, g = asa
+    sig = yaml.safe_load(g.proposal.yaml)["match"]["signature"]
+    assert len(sig) >= 5 and sum(sig in l for l in ls) >= 0.95 * len(ls)
+
+
+def test_text_small_templates_are_reported_not_dropped_silently():
+    ls = lines("cisco_asa.log")[:300] + ["<166>Sep 28 2026 09:59:59 asa01 : %ASA-6-999999: something else entirely 1 2 3"] * 3
+    g = propose_text("cisco_asa", ls, [], NOW)
+    assert any("below the 50" in w for w in g.warnings)
+
+
+def test_text_deterministic(asa):
+    ls, g = asa
+    assert propose_text("cisco_asa", ls, list(range(1, len(ls) + 1)), NOW).proposal.yaml == g.proposal.yaml
+
+
+def test_message_codes_that_disagree_on_direction_become_separate_extractors():
+    # code 111111: the server (well-known port) is written first; code 222222: last. One template, two meanings.
+    import random
+    rng = random.Random(7)
+    ls = []
+    for i in range(120):
+        c, s = f"10.1.{i % 200}.{i % 250 + 1}", f"203.0.113.{i % 250 + 1}"
+        ls.append(f"Sep 28 2026 09:00:{i % 60:02d} gw : %FW-6-111111: flow for outside:{s}/443 to inside:{c}/{rng.randrange(30000, 60000)}")
+        ls.append(f"Sep 28 2026 09:01:{i % 60:02d} gw : %FW-6-222222: flow for inside:{c}/{rng.randrange(30000, 60000)} to outside:{s}/443")
+    g = propose_text("gw", ls, [], NOW)
+    doc = dsl_eval.load(g.proposal.yaml)
+    assert len(doc["extractors"]) == 2
+    a = dsl_eval.flat(dsl_eval.extract(doc, ls[0]).ocsf)
+    b = dsl_eval.flat(dsl_eval.extract(doc, ls[1]).ocsf)
+    assert a["dst_endpoint.port"] == 443 and a["src_endpoint.ip"].startswith("10.1.")      # server first: the client is the source
+    assert b["dst_endpoint.port"] == 443 and b["dst_endpoint.ip"].startswith("203.")       # server last: the server is the destination
