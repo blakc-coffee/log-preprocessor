@@ -901,3 +901,25 @@ NEXT ACTION
          workstreams: the real pkg/types, Parsing's cmd/dataplane consuming
          Pipeline.Out, and a Linux box for the recorded benchmarks and RSS.
 ================================================================================
+
+[2026-09-29 16:00] Both feature branches pushed to origin; master already contained them via PRs #1 and #2 merged on GitHub.
+why: Pushed feature/fixtures and feature/ingest-vault (25 commits) on request; did not touch master and did not open PRs, since the PRD routes merges through Contracts review. When later asked to merge to master, origin/master had already moved: PRs #1 and #2 had been merged on GitHub from those branches (merge commits 400ee94, c5c489b). The tree was byte-identical to feature/ingest-vault d6a51de, so there was nothing to push and local master was fast-forwarded. No force-push was used.
+affects: git history, origin
+
+[2026-09-29 16:20] Real pkg/types pulled from origin/master (commit 0b3e5a0). Its ingestion section is IDENTICAL to the local copy.
+why: The Contracts workstream's commit landed pkg/types/events.go, docs/spec.md, DESIGN.md and config/parsers/{cisco_asa,fortinet,suricata}.yaml. Diffed the ingestion section (RecordID through the Vault interface and its errors) against pkg/dataplane/ingest/testutil/types/types.go semantically - comments, json tags and whitespace stripped - and the result was IDENTICAL. So there is no mismatch to log and nothing to adapt, which is what PRD_CONTRACTS 2.1 ("copy verbatim") predicted. The only textual difference is json:"..." tags on the real types; nothing here marshals those types directly (ProofJSON and ingestd's eventJSON are separate structs), so it has no effect.
+Migration is now unblocked and NOT yet done: repoint imports to pkg/types in record, merkle, memvault, vaulttest, vault, ingest, vaultctl and ingestd, delete pkg/dataplane/ingest/testutil/types, run make check. Contract wins on any future disagreement.
+affects: pkg/types/, pkg/dataplane/ingest/testutil/types (to be deleted)
+
+[2026-09-29 16:20] FLAGGED FOR THE ARBITER: two things in the Contracts commit look wrong and are not mine to fix.
+why: (1) The commit's .gitignore now ignores .github/, PRD_*.md, tasks/ and presentation/. PRD files and task briefs being ignored is intended. But ignoring presentation/ means the slides, demo script and architecture document - submission deliverables per PRD_MASTER 7 - will never be committed, and ignoring .github/ means CODEOWNERS and the PR template will not be either. Almost certainly an oversight. (2) Parser configs landed in config/parsers/, but PRD_00 section 2 gives parsers/*.yaml to Parsing and config/ is not listed at all. Someone has to decide which path is right before Parsing builds against it. Neither is in this workstream's paths (PRD_INGESTION section 0), so raised, not edited.
+affects: .gitignore, config/parsers/, presentation/, .github/
+
+[2026-09-29 16:30] Linux validation run, planned and timed. NOT YET RUN. This is what closes the two unmet Gate 1 items.
+why: Kept here so it survives the conversation. WHY Linux: not the shell - macOS File.Sync is F_FULLFSYNC (flushes the drive's own cache), Linux fsync usually returns once data reaches the drive, so fsync-bound numbers differ by an order of magnitude and the PRD targets are Linux targets; SO_REUSEPORT UDP and the /proc/net/snmp drop counter are Linux-only.
+Needs a Linux KERNEL, not necessarily a bare-metal box: cloud VM (timings noisy on shared disks), dedicated VM, or Docker-on-Mac (fine for crash suite and SO_REUSEPORT, NOT for throughput).
+Setup: build-essential jq netcat-openbsd curl git (cgo for -race); Go 1.22+; repo on ext4/xfs, NOT tmpfs or a bind mount; sysctl net.core.rmem_max=26214400 rmem_default=8388608; ulimit -n 65535.
+Run, in order: (1) make check; make crash; the crash suite under -race; make fuzz. (2) make build; ingestd with the dev config; scripts/send_samples.sh must print "all checks passed"; ingest_udp_kernel_drops should be a number, not NaN. (3) record `uname -a; lscpu; free -h; df -T .; lsblk -d -o NAME,ROTA,MODEL,SIZE; go version` then make bench. Quote ONLY durable_ack=1 results as headline. Targets: PutBatch/always/producers=16 >= 50k records/s; PutLatency/always p99 <= 10ms; PutBatch/interval >= 200k records/s; Seal/records=100000 <= 100ms. (4) RSS at 100k records/s, target < 300 MiB: needs a load generator, which the repo does NOT have (cmd/bench is Packaging's); measure with `/usr/bin/time -v` or VmHWM from /proc/<pid>/status.
+Time: ~30-45 min total, ~15 of compute. Measured on the Mac: make check 61s, crash 25s per variant, crash under -race 44s, send_samples ~10s. ESTIMATED, not timed: setup 5-10 min, make bench 5-10 min (~30 benchmarks at ~1s each plus 200k-record and 100k-record fixtures), RSS ~10 min with a sender or +15 to write one.
+Return: bench-env.txt, bench-results.txt, tails of make check and make crash. A make crash FAILURE on Linux would be a real finding - rename and directory-fsync semantics differ from APFS - so save its full output.
+affects: Gate 1 (recorded benchmarks, RSS), benchmarks/results/ (Packaging's directory)
