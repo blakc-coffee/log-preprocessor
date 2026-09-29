@@ -15,13 +15,9 @@ import (
 func runVerify(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	dir := fs.String("dir", "", "vault directory")
-	deep := fs.Bool("deep", false, "re-read every record")
+	dir := fs.String("dir", "/data/vault", "vault directory")
+	deep := fs.Bool("deep", true, "re-read every record")
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
-	}
-	if *dir == "" {
-		fmt.Fprintln(stderr, "ulpf verify: --dir is required")
 		return exitUsage
 	}
 	v, err := vault.Open(vault.Options{Dir: *dir, ReadOnly: true})

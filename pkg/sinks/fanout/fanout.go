@@ -52,6 +52,9 @@ type Fanout struct {
 	closed  bool
 }
 
+// Name implements types.Sink for the unified pipeline.
+func (f *Fanout) Name() string { return "fanout" }
+
 // New starts independent sink workers.
 func New(targets []types.Sink, cfg Config) (*Fanout, error) {
 	if len(targets) == 0 {

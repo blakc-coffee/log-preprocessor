@@ -1,0 +1,28 @@
+{
+  "claim": "in-process parser and normalizer throughput; compression ratios are measured from bounded representative samples",
+  "results": [
+    {
+      "started_at": "2026-09-29T15:42:55.5471481Z",
+      "duration_seconds": 60.0003946,
+      "workers": 1,
+      "measurement": "in-process parser detection, extraction, normalization, and SHA-256 ingest receipt",
+      "sync_mode": "memory",
+      "store_mode": "bounded compression sample",
+      "events": 5202988,
+      "normalized": 842177,
+      "quarantined": 4360811,
+      "bytes": 1054317523,
+      "eps": 86715.89636512157,
+      "p50_micros": 0,
+      "p95_micros": 0,
+      "p99_micros": 340.6,
+      "peak_rss_bytes": 143179776,
+      "peak_rss_source": "GetProcessMemoryInfo PeakWorkingSetSize",
+      "vault_zstd_ratio": 6.632613924462069,
+      "parquet_ratio": 40.59086130509875,
+      "go_version": "go1.25.1",
+      "goos": "windows",
+      "goarch": "amd64"
+    }
+  ]
+}

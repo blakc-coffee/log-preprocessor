@@ -1,5 +1,5 @@
-// Command bench drives byte-preserving fixture records into a loopback ingest
-// socket and records measured ingress throughput and write latency.
+// Command bench measures the offline parser/normalizer path using sacred
+// fixture bytes and writes reproducible JSON and Markdown reports.
 package main
 
 import (
@@ -23,18 +23,29 @@ import (
 )
 
 type result struct {
-	StartedAt                               time.Time `json:"started_at"`
-	DurationSeconds                         float64   `json:"duration_seconds"`
-	Workers                                 int       `json:"workers"`
-	Transport, Address, SyncMode, StoreMode string
-	Events                                  int64   `json:"events"`
-	Bytes                                   int64   `json:"bytes"`
-	EPS                                     float64 `json:"eps"`
-	P50Micros                               int64   `json:"p50_micros"`
-	P99Micros                               int64   `json:"p99_micros"`
-	PeakRSSBytes                            int64   `json:"peak_rss_bytes,omitempty"`
-	PeakRSSSource                           string  `json:"peak_rss_source"`
-	GoVersion, GOOS, GOARCH                 string
+	StartedAt       time.Time `json:"started_at"`
+	DurationSeconds float64   `json:"duration_seconds"`
+	Workers         int       `json:"workers"`
+	Measurement     string    `json:"measurement"`
+	Transport       string    `json:"transport,omitempty"`
+	Address         string    `json:"address,omitempty"`
+	SyncMode        string    `json:"sync_mode,omitempty"`
+	StoreMode       string    `json:"store_mode,omitempty"`
+	Events          int64     `json:"events"`
+	Normalized      int64     `json:"normalized"`
+	Quarantined     int64     `json:"quarantined"`
+	Bytes           int64     `json:"bytes"`
+	EPS             float64   `json:"eps"`
+	P50Micros       float64   `json:"p50_micros"`
+	P95Micros       float64   `json:"p95_micros"`
+	P99Micros       float64   `json:"p99_micros"`
+	PeakRSSBytes    int64     `json:"peak_rss_bytes,omitempty"`
+	PeakRSSSource   string    `json:"peak_rss_source"`
+	VaultZstdRatio  float64   `json:"vault_zstd_ratio"`
+	ParquetRatio    float64   `json:"parquet_ratio"`
+	GoVersion       string    `json:"go_version"`
+	GOOS            string    `json:"goos"`
+	GOARCH          string    `json:"goarch"`
 }
 
 func main() {
@@ -44,34 +55,24 @@ func main() {
 	}
 }
 func run(args []string, stdout, stderr io.Writer) error {
-	if len(args) == 0 || args[0] != "run" {
-		return errors.New("usage: bench run [--fixtures DIR --transport tcp|udp --address HOST:PORT --workers 1,2,4,8 --duration 60s --out FILE]")
+	if len(args) > 0 && args[0] == "run" {
+		args = args[1:]
 	}
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fixtures := fs.String("fixtures", "testdata/sample", "fixture directory")
-	transport := fs.String("transport", "tcp", "tcp or udp")
-	address := fs.String("address", "127.0.0.1:5514", "loopback ingest address")
-	workersRaw := fs.String("workers", "1,2,4,8", "comma-separated worker counts")
+	var fixtures string
+	fs.StringVar(&fixtures, "corpus", "testdata/sample", "fixture corpus directory")
+	fs.StringVar(&fixtures, "fixtures", "testdata/sample", "alias for --corpus")
+	workersRaw := fs.String("workers", "1", "comma-separated worker counts")
 	duration := fs.Duration("duration", 60*time.Second, "measurement duration")
-	syncMode := fs.String("sync", "external", "target sync mode label")
-	storeMode := fs.String("store", "external", "target store mode label")
-	out := fs.String("out", "", "optional JSON result path")
-	if err := fs.Parse(args[1:]); err != nil {
+	out := fs.String("out", "benchmarks/results/benchmark_report.json", "JSON result path")
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	host, _, err := net.SplitHostPort(*address)
-	if err != nil {
-		return err
+	if *duration <= 0 {
+		return errors.New("duration must be positive")
 	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return errors.New("address must be a literal loopback IP")
-	}
-	if *transport != "tcp" && *transport != "udp" {
-		return errors.New("transport must be tcp or udp")
-	}
-	records, err := loadRecords(*fixtures)
+	records, err := loadRecords(fixtures)
 	if err != nil {
 		return err
 	}
@@ -81,18 +82,17 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	results := make([]result, 0, len(workers))
 	for _, n := range workers {
-		r, err := measure(records, *transport, *address, n, *duration, *syncMode, *storeMode)
+		r, err := measurePipeline(records, n, *duration)
 		if err != nil {
 			return err
 		}
 		results = append(results, r)
-		fmt.Fprintf(stdout, "workers=%d events=%d eps=%.0f p50=%dus p99=%dus peak_rss=%d (%s)\n", r.Workers, r.Events, r.EPS, r.P50Micros, r.P99Micros, r.PeakRSSBytes, r.PeakRSSSource)
+		fmt.Fprintf(stdout, "workers=%d events=%d normalized=%d quarantined=%d eps=%.0f p50=%.3fus p95=%.3fus p99=%.3fus peak_rss=%d (%s) parquet=%.2fx vault_zstd=%.2fx\n", r.Workers, r.Events, r.Normalized, r.Quarantined, r.EPS, r.P50Micros, r.P95Micros, r.P99Micros, r.PeakRSSBytes, r.PeakRSSSource, r.ParquetRatio, r.VaultZstdRatio)
 	}
-	if *out != "" {
-		if err = writeResults(*out, results); err != nil {
-			return err
-		}
+	if err = writeResults(*out, results); err != nil {
+		return err
 	}
+	fmt.Fprintln(stdout, "report:", *out)
 	return nil
 }
 
@@ -191,7 +191,7 @@ func measure(records [][]byte, network, address string, workers int, duration ti
 	}
 	elapsed := time.Since(started)
 	peak, source := peakRSS()
-	return result{StartedAt: started, DurationSeconds: elapsed.Seconds(), Workers: workers, Transport: network, Address: address, SyncMode: syncMode, StoreMode: storeMode, Events: events.Load(), Bytes: totalBytes.Load(), EPS: float64(events.Load()) / elapsed.Seconds(), P50Micros: quantile(samples, .50), P99Micros: quantile(samples, .99), PeakRSSBytes: peak, PeakRSSSource: source, GoVersion: runtime.Version(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}, nil
+	return result{StartedAt: started, DurationSeconds: elapsed.Seconds(), Workers: workers, Measurement: "loopback socket write", Transport: network, Address: address, SyncMode: syncMode, StoreMode: storeMode, Events: events.Load(), Bytes: totalBytes.Load(), EPS: float64(events.Load()) / elapsed.Seconds(), P50Micros: float64(quantile(samples, .50)), P95Micros: float64(quantile(samples, .95)), P99Micros: float64(quantile(samples, .99)), PeakRSSBytes: peak, PeakRSSSource: source, GoVersion: runtime.Version(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}, nil
 }
 
 func parseWorkers(raw string) ([]int, error) {
@@ -213,33 +213,35 @@ func quantile(v []int64, q float64) int64 {
 	i := int(float64(len(v)-1) * q)
 	return v[i]
 }
-func peakRSS() (int64, string) {
-	if runtime.GOOS == "linux" {
-		b, err := os.ReadFile("/proc/self/status")
-		if err == nil {
-			for _, line := range strings.Split(string(b), "\n") {
-				if strings.HasPrefix(line, "VmHWM:") {
-					fields := strings.Fields(line)
-					if len(fields) >= 2 {
-						kb, _ := strconv.ParseInt(fields[1], 10, 64)
-						return kb * 1024, "/proc/self/status VmHWM"
-					}
-				}
-			}
-		}
-	}
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	return int64(m.Sys), "runtime.MemStats.Sys (RSS unavailable)"
-}
 func writeResults(path string, results []result) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil && filepath.Dir(path) != "." {
 		return err
 	}
-	b, err := json.MarshalIndent(map[string]any{"claim": "ingress socket measurement; not end-to-end pipeline throughput", "results": results}, "", "  ")
+	b, err := json.MarshalIndent(map[string]any{"claim": "in-process parser and normalizer throughput; compression ratios are measured from bounded representative samples", "results": results}, "", "  ")
 	if err != nil {
 		return err
 	}
 	b = append(b, '\n')
-	return os.WriteFile(path, b, 0o640)
+	if err := os.WriteFile(path, b, 0o640); err != nil {
+		return err
+	}
+	return writeMarkdown(strings.TrimSuffix(path, filepath.Ext(path))+".md", results)
+}
+
+func writeMarkdown(path string, results []result) error {
+	var b strings.Builder
+	b.WriteString("# ULPF empirical benchmark\n\n")
+	b.WriteString("In-process parser detection, extraction, normalization, and SHA-256 receipt throughput. Compression ratios use bounded representative samples.\n\n")
+	if len(results) > 0 {
+		fmt.Fprintf(&b, "- Started: %s\n- Platform: %s/%s, %s\n- Memory source: %s\n- Sync mode: %s (not a durable-fsync claim)\n\n", results[0].StartedAt.Format(time.RFC3339), results[0].GOOS, results[0].GOARCH, results[0].GoVersion, results[0].PeakRSSSource, results[0].SyncMode)
+		if results[0].P50Micros == 0 || results[0].P95Micros == 0 {
+			b.WriteString("Latency values of 0 indicate samples below the host clock's observable resolution.\n\n")
+		}
+	}
+	b.WriteString("| Workers | EPS | p50 µs | p95 µs | p99 µs | Peak RSS bytes | Vault zstd | Parquet |\n")
+	b.WriteString("|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+	for _, r := range results {
+		fmt.Fprintf(&b, "| %d | %.0f | %.3f | %.3f | %.3f | %d | %.2fx | %.2fx |\n", r.Workers, r.EPS, r.P50Micros, r.P95Micros, r.P99Micros, r.PeakRSSBytes, r.VaultZstdRatio, r.ParquetRatio)
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o640)
 }

@@ -4,7 +4,7 @@ set -eu
 image="${ULPF_IMAGE:-ulpf:dev}"
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 compose() {
-  docker compose -f "$root/docker-compose.yml" "$@"
+  docker compose -f "$root/docker-compose.airgap-test.yml" "$@"
 }
 
 need() {
@@ -14,7 +14,6 @@ need() {
   }
 }
 need docker
-need curl
 
 cleanup() {
   compose down --remove-orphans >/dev/null 2>&1 || true
@@ -28,8 +27,7 @@ echo "== network-none egress probes"
 docker run --rm --network none \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
   --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
-  -v "$root/testdata:/opt/ulpf/testdata:ro" \
-  "$image" selftest --egress
+  "$image" selftest --pipeline --egress --ui
 
 config=$(compose config)
 if ! printf '%s\n' "$config" | grep -Eq 'internal: true'; then
@@ -37,7 +35,6 @@ if ! printf '%s\n' "$config" | grep -Eq 'internal: true'; then
   exit 1
 fi
 # An internal Docker network must still permit the two local services to work.
-# This section intentionally fails until Gate 2 wires ulpf start/all.
 echo "== isolated deployment health"
 compose up -d --wait
 for port in 8000 9000; do
@@ -47,8 +44,7 @@ for port in 8000 9000; do
     exit 1
   fi
 done
-curl --fail --silent --show-error --max-time 5 http://127.0.0.1:9000/healthz >/dev/null
-curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/ >/dev/null
+compose exec -T ulpf /usr/local/bin/ulpf healthcheck
 
 echo AIRGAP_VERIFIED
 
