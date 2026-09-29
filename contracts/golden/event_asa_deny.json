@@ -1,0 +1,68 @@
+{
+  "event_id": "2.cisco_asa@1.0.0",
+  "record_id": 2,
+  "segment": 1,
+  "raw_sha256": "dd0fb1d815bbfdca17216f59d18308b75e277df21442ff847bd6996bb88fafc8",
+  "source_id": "cisco_asa",
+  "vendor": "cisco",
+  "product": "asa",
+  "parser_id": "cisco_asa",
+  "parser_version": "1.0.0",
+  "template_id": "cisco_asa/asa_106023",
+  "schema_version": "ulpf-uef/1",
+  "received_at": "2026-09-28T03:30:07.48Z",
+  "event_time": "2026-09-28T03:30:07Z",
+  "time_from_receipt": false,
+  "parse_confidence": 1,
+  "integrity_flags": [],
+  "ocsf": {
+    "action_id": 2,
+    "activity_id": 5,
+    "category_uid": 4,
+    "class_uid": 4001,
+    "connection_info": {
+      "protocol_name": "udp",
+      "protocol_num": 17
+    },
+    "disposition_id": 2,
+    "dst_endpoint": {
+      "ip": "10.1.4.54",
+      "port": 3306
+    },
+    "metadata": {
+      "product": {
+        "name": "asa",
+        "vendor_name": "cisco"
+      },
+      "version": "1.1.0"
+    },
+    "severity_id": 3,
+    "src_endpoint": {
+      "ip": "198.51.100.5",
+      "port": 59563
+    },
+    "time": 1790566207000,
+    "type_uid": 400105
+  },
+  "unmapped": {
+    "acl": "outside_access_in",
+    "dst_if": "inside",
+    "hit1": "0x0",
+    "hit2": "0x0",
+    "host": "asa01",
+    "pri": "\u003c164\u003e",
+    "src_if": "outside"
+  },
+  "entities": [],
+  "coverage": {
+    "applicable": true,
+    "render_back_ok": true,
+    "mapped_bytes": 54,
+    "unmapped_bytes": 46,
+    "constant_bytes": 61,
+    "uncovered_bytes": 0,
+    "mapped_fields": 11,
+    "unmapped_fields": 7
+  },
+  "current": true
+}

@@ -1,0 +1,47 @@
+id: cisco_asa
+version: 1.0.0
+vendor: cisco
+product: asa
+timezone: "+05:30"
+match:
+  signature: '%ASA-\d-\d{6}:'
+ocsf_defaults: {class_uid: 4001, category_uid: 4}
+extractors:
+  - id: asa_302013
+    kind: regex
+    pattern: '^(?P<pri><\d+>)?(?P<ts>[A-Z][a-z]{2} +\d+ \d{4} [\d:]+) (?P<host>\S+) : %ASA-(?P<sev>\d)-302013: Built (?P<dir>inbound|outbound) (?P<proto>\w+) connection (?P<conn>\d+) for (?P<src_if>\w+):(?P<src_ip>[\d.]+)/(?P<src_port>\d+) \((?P<src_nat_ip>[\d.]+)/(?P<src_nat_port>\d+)\) to (?P<dst_if>\w+):(?P<dst_ip>[\d.]+)/(?P<dst_port>\d+) \((?P<dst_nat_ip>[\d.]+)/(?P<dst_nat_port>\d+)\)$'
+    render: '{pri}{ts} {host} : %ASA-{sev}-302013: Built {dir} {proto} connection {conn} for {src_if}:{src_ip}/{src_port} ({src_nat_ip}/{src_nat_port}) to {dst_if}:{dst_ip}/{dst_port} ({dst_nat_ip}/{dst_nat_port})'
+    map:
+      - {from: ts, to: time, type: time, layout: "Jan _2 2006 15:04:05"}
+      - {from: sev, to: severity_id, type: enum, enum: {"0": 6, "1": 5, "2": 5, "3": 4, "4": 3, "5": 2, "6": 1, "7": 1}, default: 99}
+      - {from: src_ip, to: src_endpoint.ip, type: ip}
+      - {from: src_port, to: src_endpoint.port, type: port}
+      - {from: dst_ip, to: dst_endpoint.ip, type: ip}
+      - {from: dst_port, to: dst_endpoint.port, type: port}
+      - {from: proto, to: connection_info.protocol_name, type: string, lower: true}
+      - {from: proto, to: connection_info.protocol_num, type: enum, enum: {TCP: 6, UDP: 17, ICMP: 1}, default: 0}
+      - {const: 1, to: activity_id}
+      - {const: 1, to: action_id}
+      - {const: 1, to: disposition_id}
+    tests:
+      - raw: '<166>Sep 28 2026 09:00:07 asa01 : %ASA-6-302013: Built inbound TCP connection 1005 for outside:192.0.2.179/22 (192.0.2.179/22) to inside:10.1.11.225/56376 (10.1.11.225/56376)'
+        expect: {src_endpoint.ip: 192.0.2.179, src_endpoint.port: 22, dst_endpoint.ip: 10.1.11.225, dst_endpoint.port: 56376, connection_info.protocol_num: 6, severity_id: 1, action_id: 1}
+  - id: asa_106023
+    kind: regex
+    pattern: '^(?P<pri><\d+>)?(?P<ts>[A-Z][a-z]{2} +\d+ \d{4} [\d:]+) (?P<host>\S+) : %ASA-(?P<sev>\d)-106023: Deny (?P<proto>\w+) src (?P<src_if>\w+):(?P<src_ip>[\d.]+)/(?P<src_port>\d+) dst (?P<dst_if>\w+):(?P<dst_ip>[\d.]+)/(?P<dst_port>\d+) by access-group "(?P<acl>[^"]+)" \[(?P<hit1>0x[0-9a-f]+), (?P<hit2>0x[0-9a-f]+)\]$'
+    render: '{pri}{ts} {host} : %ASA-{sev}-106023: Deny {proto} src {src_if}:{src_ip}/{src_port} dst {dst_if}:{dst_ip}/{dst_port} by access-group "{acl}" [{hit1}, {hit2}]'
+    map:
+      - {from: ts, to: time, type: time, layout: "Jan _2 2006 15:04:05"}
+      - {from: sev, to: severity_id, type: enum, enum: {"0": 6, "1": 5, "2": 5, "3": 4, "4": 3, "5": 2, "6": 1, "7": 1}, default: 99}
+      - {from: src_ip, to: src_endpoint.ip, type: ip}
+      - {from: src_port, to: src_endpoint.port, type: port}
+      - {from: dst_ip, to: dst_endpoint.ip, type: ip}
+      - {from: dst_port, to: dst_endpoint.port, type: port}
+      - {from: proto, to: connection_info.protocol_name, type: string, lower: true}
+      - {from: proto, to: connection_info.protocol_num, type: enum, enum: {TCP: 6, UDP: 17, ICMP: 1}, default: 0}
+      - {const: 5, to: activity_id}
+      - {const: 2, to: action_id}
+      - {const: 2, to: disposition_id}
+    tests:
+      - raw: '<164>Sep 28 2026 09:00:07 asa01 : %ASA-4-106023: Deny udp src outside:198.51.100.5/59563 dst inside:10.1.4.54/3306 by access-group "outside_access_in" [0x0, 0x0]'
+        expect: {src_endpoint.ip: 198.51.100.5, dst_endpoint.port: 3306, connection_info.protocol_num: 17, severity_id: 3, action_id: 2}

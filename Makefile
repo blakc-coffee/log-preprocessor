@@ -7,6 +7,17 @@
 help:
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
+# --- contracts (Antigravity Pro) ---
+contract-golden: ## Regenerate contracts/golden/*.json (real fixtures, real merkle output, DSL-derived coverage)
+	go run ./contracts/gen
+
+contract-test: ## Goldens vs schema, OpenAPI integrity, DSL examples vs fixtures; fails if goldens drifted
+	go test -count=1 ./contracts/... ./pkg/types/...
+	rm -rf /tmp/ulpf-golden && mkdir -p /tmp/ulpf-golden
+	go run ./contracts/gen --out /tmp/ulpf-golden
+	diff -r contracts/golden /tmp/ulpf-golden
+	@if [ -x intel/.venv/bin/pytest ]; then cd intel && .venv/bin/pytest -q tests/test_contract.py; else echo "SKIPPED: python conformance (create intel/.venv: see intel/README.md)"; fi
+
 # --- ingest/vault (Codex #1) ---
 SEED ?= 20260928
 PKGS := ./tools/... ./pkg/dataplane/ingest/... ./pkg/dataplane/vault/... ./cmd/ingestd/... ./cmd/vaultctl/...
@@ -66,4 +77,4 @@ bench: ## Run the benchmarks. LINUX ONLY for reportable numbers - see docs/vault
 	@echo "acknowledgement meant on-disk; 0 means it did not."
 	go test -run '^$$' -bench . -benchmem ./pkg/dataplane/vault/ ./pkg/dataplane/ingest/...
 
-.PHONY: help check fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench
+.PHONY: help contract-golden contract-test check fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench

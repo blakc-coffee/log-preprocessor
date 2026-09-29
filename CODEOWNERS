@@ -1,0 +1,56 @@
+# Ownership follows prd/PRD_00_index_and_roster.md section 2.
+# Handles below are the repository owner until each workstream's GitHub
+# account is known; replace per line. Contract paths need the arbiter too.
+
+/pkg/types/                          @blakc-coffee
+/contracts/                          @blakc-coffee
+/docs/spec.md                        @blakc-coffee
+/DESIGN.md                           @blakc-coffee
+/docs/integration.md                 @blakc-coffee
+/pkg/dataplane/identity/             @blakc-coffee
+/intel/                              @blakc-coffee
+/presentation/                       @blakc-coffee
+/README.md                           @blakc-coffee
+/CODEOWNERS                          @blakc-coffee
+/PULL_REQUEST_TEMPLATE.md            @blakc-coffee
+
+# Ingestion & vault (Codex #1)
+/tools/gen/                          @blakc-coffee
+/testdata/                           @blakc-coffee
+/pkg/dataplane/ingest/               @blakc-coffee
+/pkg/dataplane/vault/                @blakc-coffee
+/cmd/ingestd/                        @blakc-coffee
+/cmd/vaultctl/                       @blakc-coffee
+/configs/ingest.dev.yaml             @blakc-coffee
+/docs/vault-format.md                @blakc-coffee
+
+# Parsing & normalization (Claude Code #1)
+/pkg/dataplane/parsers/              @blakc-coffee
+/pkg/dataplane/normalizer/           @blakc-coffee
+/pkg/dataplane/quarantine/           @blakc-coffee
+/pkg/dataplane/replay/               @blakc-coffee
+/pkg/dataplane/registry/             @blakc-coffee
+/pkg/dataplane/enrich/               @blakc-coffee
+/pkg/dataplane/store/                @blakc-coffee
+/pkg/dataplane/admin/                @blakc-coffee
+/pkg/dataplane/app/                  @blakc-coffee
+/pkg/dataplane/telemetry/            @blakc-coffee
+/parsers/                            @blakc-coffee
+/cmd/dataplane/                      @blakc-coffee
+
+# Control plane & frontend (Claude Code #2)
+/frontend/                           @blakc-coffee
+/pkg/control/                        @blakc-coffee
+/cmd/control/                        @blakc-coffee
+
+# Sinks, packaging & QA (Codex #2)
+/pkg/sinks/                          @blakc-coffee
+/tests/                              @blakc-coffee
+/cmd/bench/                          @blakc-coffee
+/cmd/ulpf/                           @blakc-coffee
+/benchmarks/                         @blakc-coffee
+/Dockerfile                          @blakc-coffee
+/docker-compose*.yml                 @blakc-coffee
+/scripts/verify_airgap.sh            @blakc-coffee
+/scripts/demo*.sh                    @blakc-coffee
+/docs/design-tokens.md               @blakc-coffee

@@ -1,0 +1,72 @@
+{
+  "id": "prop-01",
+  "kind": "new",
+  "parser_id": "palo_alto_traffic",
+  "base_version": "",
+  "source_id": "palo_alto",
+  "yaml": "id: palo_alto_traffic\nversion: 1.0.0\nvendor: palo_alto\nproduct: pan-os\nextractors:\n  - id: pan_traffic\n    kind: csv\n    sep: \",\"\n    min_columns: 47\n    columns: [_, ts, _, _, action_word, _, _, src_ip, dst_ip]\n    map:\n      - {from: src_ip, to: src_endpoint.ip, type: ip}\n",
+  "cluster_size": 50,
+  "templates": [
+    ",\u003c*\u003e,\u003c*\u003e,TRAFFIC,\u003c*\u003e,\u003c*\u003e,\u003c*\u003e,\u003c*\u003e,\u003c*\u003e,\u003c*\u003e"
+  ],
+  "sample_record_ids": [
+    8
+  ],
+  "typed_fields": [
+    {
+      "field": "col_7",
+      "ocsf_path": "src_endpoint.ip",
+      "type": "ipv4",
+      "confidence": 0.91,
+      "evidence": "100% of values parse as IPv4; internal ranges; first IP column; paired with ephemeral ports"
+    },
+    {
+      "field": "col_8",
+      "ocsf_path": "dst_endpoint.ip",
+      "type": "ipv4",
+      "confidence": 0.88,
+      "evidence": "100% IPv4; public ranges; paired with well-known ports",
+      "alternatives": [
+        "src_endpoint.ip"
+      ]
+    }
+  ],
+  "dry_run": {
+    "samples": 50,
+    "parsed": 49,
+    "failed": 1,
+    "match_rate": 0.98,
+    "mean_coverage": 0.97,
+    "render_back_ok_rate": null,
+    "field_stats": {
+      "col_29": {
+        "present": 50,
+        "distinct": 2,
+        "sample": [
+          "tcp",
+          "udp"
+        ]
+      },
+      "col_7": {
+        "present": 50,
+        "distinct": 8,
+        "sample": [
+          "10.1.4.60",
+          "10.1.4.8",
+          "10.1.4.52"
+        ]
+      }
+    },
+    "failures": [
+      {
+        "record_id": 8,
+        "error": "csv: 41 columns, expected at least 47"
+      }
+    ],
+    "warnings": [
+      "field col_12 abstained (confidence 0.41), left in unmapped"
+    ]
+  },
+  "status": "pending",
+  "created_at": "2026-09-28T03:31:00Z"
+}

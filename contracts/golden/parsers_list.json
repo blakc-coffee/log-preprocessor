@@ -1,0 +1,24 @@
+{
+  "parsers": [
+    {
+      "active_version": "1.0.0",
+      "id": "cisco_asa",
+      "product": "asa",
+      "signature": "^(?:\u003c\\d+\u003e)?(?:[A-Z][a-z]{2} +\\d+ \\d{4} [\\d:]+ )?\\S* ?: ?%ASA-\\d-\\d{6}:",
+      "vendor": "cisco",
+      "versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "active_version": "1.0.0",
+      "id": "fortinet",
+      "product": "fortigate",
+      "signature": "type=\"?traffic",
+      "vendor": "fortinet",
+      "versions": [
+        "1.0.0"
+      ]
+    }
+  ]
+}

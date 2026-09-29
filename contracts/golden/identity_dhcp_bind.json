@@ -1,0 +1,67 @@
+{
+  "event_id": "5.isc_dhcpd@1.0.0",
+  "record_id": 5,
+  "segment": 1,
+  "raw_sha256": "2fcba348a48d64a7c6f4eed1d803529e41f3218ff3600c4addead8a7c628f815",
+  "source_id": "dhcp",
+  "vendor": "isc",
+  "product": "dhcpd",
+  "parser_id": "isc_dhcpd",
+  "parser_version": "1.0.0",
+  "template_id": "isc_dhcpd/dhcp_lease",
+  "schema_version": "ulpf-uef/1",
+  "received_at": "2026-09-28T03:31:14.05Z",
+  "event_time": "2026-09-28T03:31:14Z",
+  "time_from_receipt": false,
+  "parse_confidence": 1,
+  "integrity_flags": [],
+  "ocsf": {
+    "activity_id": 5,
+    "category_uid": 4,
+    "class_uid": 4004,
+    "metadata": {
+      "product": {
+        "name": "dhcpd",
+        "vendor_name": "isc"
+      },
+      "version": "1.1.0"
+    },
+    "severity_id": 1,
+    "src_endpoint": {
+      "hostname": "laptop-carol",
+      "ip": "10.1.4.9",
+      "mac": "aa:bb:cc:8a:06:2d"
+    },
+    "time": 1790566274000,
+    "type_uid": 400405
+  },
+  "unmapped": {
+    "host": "dhcp01",
+    "iface": "eth1",
+    "of": "on",
+    "pid": "1123",
+    "prep": "to"
+  },
+  "entities": [],
+  "identity": {
+    "kind": "dhcp",
+    "action": "bind",
+    "ip": "10.1.4.9",
+    "mac": "aa:bb:cc:8a:06:2d",
+    "host": "laptop-carol",
+    "at": "2026-09-28T03:31:14Z",
+    "record_id": 5,
+    "source_id": "dhcp"
+  },
+  "coverage": {
+    "applicable": true,
+    "render_back_ok": true,
+    "mapped_bytes": 59,
+    "unmapped_bytes": 18,
+    "constant_bytes": 23,
+    "uncovered_bytes": 0,
+    "mapped_fields": 6,
+    "unmapped_fields": 5
+  },
+  "current": true
+}

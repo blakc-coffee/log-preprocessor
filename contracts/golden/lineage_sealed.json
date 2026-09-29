@@ -1,0 +1,44 @@
+{
+  "chain": {
+    "head": "41c97a281a75e68a9f934b1a50d2bc38dc753465016be9f67a3518c652c47036",
+    "sealed_through": 8
+  },
+  "coverage": {
+    "applicable": true,
+    "render_back_ok": true,
+    "mapped_bytes": 53,
+    "unmapped_bytes": 63,
+    "constant_bytes": 58,
+    "uncovered_bytes": 0,
+    "mapped_fields": 11,
+    "unmapped_fields": 10
+  },
+  "event_id": "1.cisco_asa@1.0.0",
+  "proof": {
+    "segment": 1,
+    "leaf_index": 0,
+    "tree_size": 8,
+    "leaf_hash": "7ee9afcc72550ba89880beaf8b3cb1602f9f82258d0f3688377e544a2badfe49",
+    "path": [
+      "eace02ba8ea48004896d4b5441d7e1947145094efe9671037a25168a60b00774",
+      "8243c4e56c04a55f1cf4527146b1936c399e67561209dcc036fab938cc3c0725",
+      "353f5765d6e3c70a4c78c72d038ff63c5900ab07161986bb69477f47bb43f4b9"
+    ],
+    "root": "be40872276fa34378ceb87cc5bb46299caccc582bd63acdd5c7f5b5872f4cb56",
+    "prev_chain": "0000000000000000000000000000000000000000000000000000000000000000",
+    "chain": "41c97a281a75e68a9f934b1a50d2bc38dc753465016be9f67a3518c652c47036",
+    "algorithm": {
+      "leaf": "SHA-256(0x00 || body)",
+      "node": "SHA-256(0x01 || left || right)",
+      "chain": "SHA-256(0x02 || prev || root || segment_be64 || count_be64)",
+      "proof_verification": "RFC 9162 section 2.1.3.2"
+    }
+  },
+  "raw_sha256": "7a98c9a1ab65bc1b30c1dfba7319bcad1afb0b4f2cc04fa4d609b69d1227962c",
+  "record_id": 1,
+  "render_back": {
+    "applicable": true,
+    "ok": true
+  },
+  "sealed": true
+}

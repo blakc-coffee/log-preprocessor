@@ -1,0 +1,71 @@
+{
+  "event_id": "4.suricata_eve@1.0.0",
+  "record_id": 4,
+  "segment": 1,
+  "raw_sha256": "175ad0df09999c24da69d52d026e6f6e17ea3c4e86dea1f2c3337ed58658f4db",
+  "source_id": "suricata",
+  "vendor": "oisf",
+  "product": "suricata",
+  "parser_id": "suricata_eve",
+  "parser_version": "1.0.0",
+  "template_id": "suricata_eve/eve_alert",
+  "schema_version": "ulpf-uef/1",
+  "received_at": "2026-09-28T03:30:00.7Z",
+  "event_time": "2026-09-28T03:30:00.693Z",
+  "time_from_receipt": false,
+  "parse_confidence": 0.95,
+  "integrity_flags": [],
+  "ocsf": {
+    "action_id": 1,
+    "activity_id": 6,
+    "category_uid": 4,
+    "class_uid": 4001,
+    "connection_info": {
+      "protocol_name": "tcp",
+      "protocol_num": 6
+    },
+    "disposition_id": 15,
+    "dst_endpoint": {
+      "ip": "10.1.4.50",
+      "port": 5432
+    },
+    "message": "ET SCAN Potential SSH Scan",
+    "metadata": {
+      "product": {
+        "name": "suricata",
+        "vendor_name": "oisf"
+      },
+      "version": "1.1.0"
+    },
+    "severity_id": 3,
+    "src_endpoint": {
+      "ip": "198.51.100.236",
+      "port": 55929
+    },
+    "time": 1790566200693,
+    "type_uid": 400106
+  },
+  "unmapped": {
+    "alert": {
+      "category": "Attempted Information Leak",
+      "gid": 1,
+      "rev": 20,
+      "signature_id": 2001219
+    },
+    "event_type": "alert",
+    "flow_id": 4325588156657430,
+    "in_iface": "eth0"
+  },
+  "entities": [],
+  "coverage": {
+    "applicable": false,
+    "render_back_ok": null,
+    "mapped_bytes": 100,
+    "unmapped_bytes": 61,
+    "constant_bytes": 211,
+    "uncovered_bytes": 0,
+    "mapped_fields": 12,
+    "unmapped_fields": 7
+  },
+  "current": true
+}

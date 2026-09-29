@@ -1,334 +1,205 @@
 # ULPF System Specification
 ## Universal Log Pre-processing Framework · SIH26156 · NTRO
-### Version 1.0.0 · Owned by Antigravity Pro · Do Not Modify Without Owner Approval
+### Version 1.1.0 · Owned by the Contracts workstream · changes only through a contract PR
+
+Supersedes the 1.0.0 draft. The draft described an earlier design (per-source zstd NDJSON vault, `/api/*` on `:9000`,
+syslog on `:514`, a ring-buffer store, `event_id = sha256[:8]`, single-regex parsers, "losslessness is not render-back").
+None of that is what was built or what the PRDs specify; it is replaced here so the specification, the contract
+(`pkg/types`, `contracts/`) and the code say the same thing. Where they ever disagree again, the contract files win,
+then this document, and the disagreement is a bug to fix in whichever is wrong.
+
+Companion documents: `prd/PRD_MASTER_ulpf.md` (what and why), `prd/PRD_00_index_and_roster.md` (ownership, gates,
+decisions D1-D10), `docs/vault-format.md` (the vault on disk), `contracts/parser_dsl.md`, `contracts/admin.openapi.yaml`,
+`contracts/uef.schema.json`, `docs/integration.md` (linking checklist).
 
 ---
 
 ## 1. Scope
 
-This document specifies the complete technical design of the Universal Log Pre-processing Framework (ULPF). It is the authoritative reference for all agents building this system.
+Perimeter-device logs (firewall, IDS/IPS, proxy, VPN, WAF) in any format, plus DHCP, RADIUS and VPN logs as identity
+sources. ULPF keeps the raw event byte-exact, produces an OCSF-aligned normalized event with full lineage back to the
+raw bytes, proposes parsers for formats it has not seen, and resolves IP-at-time-T to user and host.
 
----
+Out of scope in v1: multi-node vault, clock-skew inference, authentication on the admin and control APIs (loopback
+only, section 9), encryption at rest, retention, any LLM on the required path.
 
-## 2. Port Contract (Locked)
+## 2. Ports (locked)
 
-| Service | Bind Address | Protocol | Owner |
-| :--- | :--- | :--- | :--- |
-| Data Plane API | `127.0.0.1:9000` | HTTP/1.1 | Claude Code #1 |
-| Control UI | `127.0.0.1:8000` | HTTP/1.1 | Claude Code #2 |
-| Syslog UDP | `0.0.0.0:514` | UDP | Claude Code #1 |
-| Syslog TCP | `0.0.0.0:514` | TCP | Claude Code #1 |
+| Port | Service | Owner | Published on host |
+|---|---|---|---|
+| 5514/udp+tcp | Syslog | Ingestion | yes, loopback by default |
+| 6514/tcp | TLS syslog | Ingestion | yes, loopback by default |
+| 8080/tcp | HTTP stream ingest | Ingestion | yes, loopback by default |
+| 9100/tcp | Prometheus `/metrics`, `/healthz` | Parsing (`cmd/dataplane`) | no |
+| 9000/tcp | Admin API (`contracts/admin.openapi.yaml`) | Parsing | no, loopback only |
+| 8000/tcp | Control plane: UI and control API | Frontend | yes, `127.0.0.1` only |
 
-No agent may bind to any other port. The UI proxies all `/api/*` requests to `:9000`.
+No component binds any other port. Ports below 1024 are never used, so nothing needs a capability.
 
----
-
-## 3. Data Flow
-
-```
-Raw log source (file / UDP / TCP / HTTP POST)
-    │
-    ▼
-[Ingest Layer]
-  - Frame log line boundaries (newline-delimited)
-  - Record byte_offset_start, byte_offset_end
-  - Compute SHA-256 of raw bytes
-  - Base64-encode raw bytes
-  - Assign event_id (sha256[:8] hex prefix)
-  - Emit RawEvent{}
-    │
-    ▼ ← VAULT WRITE MUST COMPLETE BEFORE ANY FURTHER PROCESSING
-[Vault Layer]
-  - Persist RawEvent batch to disk as zstd-compressed NDJSON
-  - Write SHA-256 → offset index
-  - Only return success after fsync()
-    │
-    ▼
-[Parser Engine]
-  - Run detection_pattern against raw[:256]
-  - If match: run full named-capture regex
-  - If no match: route to Quarantine
-  - On success: emit ParsedFields map[string]string + parserID
-    │
-    ├── PARSE FAILURE ──────────► [Quarantine Queue]
-    │                               - Write QuarantinedEvent to disk
-    │                               - failure_stage: no_matching_parser / regex_mismatch / type_error
-    │                               - Raw bytes preserved in QuarantinedEvent.RawBytesBase64
-    │
-    ▼
-[Normalizer]
-  - Map ParsedFields → NormalizedEvent (OCSF v1.1.0 Network Activity)
-  - Unmapped fields → NormalizedEvent.Unmapped{}
-  - Normalize timestamps → UTC ISO-8601
-  - Normalize severity → OCSF severity vocabulary
-    │
-    ▼
-[In-Memory Event Store]
-  - Ring buffer of last 50,000 NormalizedEvents
-  - Indexed by: event_id, raw_sha256, source_id, action, severity
-  - Served by GET /api/events
-```
-
----
-
-## 4. Vault Specification
-
-### 4.1 On-Disk Layout
+## 3. Data flow
 
 ```
-{vault_dir}/
-  {source_id}/
-    batch_00001.zst    ← zstd compressed, binary, contains NDJSON of RawEvent
-    batch_00001.idx    ← text file: one entry per line, format: "{sha256} {byte_offset_in_batch}\n"
-    batch_00002.zst
-    batch_00002.idx
-    ...
+source ─► [Ingest: frame, sniff] ─► [Vault: WAL, group commit, Merkle seal] ─► [Parse: DSL extractors]
+              record boundaries        durable BEFORE anything downstream          │
+              and nothing else                                                     ├─ fail ─► [Quarantine] ─┐
+                                                                                   ▼                        │
+                                                                    [Normalize: OCSF, unmapped, coverage]   │
+                                                                                   │                        │
+                                                                    [Identity enrich: Resolver.ResolveAt]   │
+                                                                                   ▼                        │
+                                                                  [Event store] + [Sinks: Parquet, OCSF,     │
+                                                                                   ECS, HEC, CEF]           │
+                                                                                                            ▼
+   [Intelligence sidecar, Python] ◄── admin API: samples, quarantine ── drift, typing, proposal, dry-run
+                 │ proposes only
+                 ▼
+   [Control plane: registry, review queue] ── human approval ──► data plane activates ──► replay from the vault
 ```
 
-### 4.2 Batch Boundaries
+Invariants, each enforced by a test in the owning workstream:
 
-A new batch file is started when:
-- Current batch contains ≥ 256 RawEvents, OR
-- Uncompressed batch size ≥ 10 MB
+1. Raw bytes are never modified; raw lives only in the vault and everything else holds a `RecordID`.
+2. Nothing goes downstream before the vault reports durable (vault-before-forward).
+3. Every queue is bounded and every wire-read length is capped. Overload back-pressures; it never drops silently.
+4. A failed fsync is never retried; the vault enters its terminal `ErrFailed` state and `/healthz` returns 503.
+5. The intelligence plane only proposes. The registry, after human approval, is the only thing that changes what the
+   data plane runs.
 
-### 4.3 Compression
+## 4. The contract
 
-Library: `github.com/klauspost/compress/zstd`
-Level: `zstd.SpeedDefault` (level 3)
-Rationale: 3-5× compression ratio on log text. ~1.5 GB/s decode for fast replay.
+| Artifact | Purpose |
+|---|---|
+| `pkg/types/` | Go types and interfaces (`Vault`, `Sink`, `Resolver`), the integrity-flag constants. String wire forms for `OriginKind` and `Terminator` (`json.go`). |
+| `contracts/uef.schema.json` | JSON Schema 2020-12 for every payload that crosses a boundary. |
+| `contracts/admin.openapi.yaml` | OpenAPI 3.1 for every admin endpoint; payloads are `$ref`s into the schema. |
+| `contracts/parser_dsl.md`, `contracts/dsl/examples/` | The normative parser DSL and five complete examples checked against the fixtures. |
+| `contracts/golden/` | One realistic, mutually consistent example per payload, generated from real fixtures and real Merkle output (`make contract-golden`). |
+| `contracts/ocsf/` | Vendored OCSF 1.1.0 subset. |
 
-### 4.4 Write Guarantee
+`make contract-test` validates every golden against the schema, decodes each into its Go type with unknown fields
+refused, verifies the sealed golden's inclusion proof with the production `merkle` package, checks the OpenAPI file for
+dangling references and missing endpoints, runs every DSL example against the fixture corpus and the manifest's
+ground truth, and fails if the checked-in goldens differ from a fresh generation. The schema is also proven able to
+reject: a table of deliberate violations must each be refused.
 
-`WriteBatch()` must call `file.Sync()` (fsync) before returning success.
-If fsync fails, return the error. Never silently drop events.
-The index file `.idx` must be written atomically: write to `.idx.tmp` then `os.Rename()`.
+Conventions across all JSON: snake_case keys; RFC 3339 UTC timestamps with nanosecond precision allowed; lowercase hex
+for hashes; standard base64 for raw bytes; IPs as strings; OCSF `time` in epoch milliseconds.
 
-### 4.5 Retrieval
+**Event identity (D1).** `event_id = "<RecordID>.<parser_id>@<parser_version>"`, so the same line received twice stays
+two events and a re-normalization by a newer parser is a new event that supersedes (`current: false` on the old one).
+**Template (D9).** `template_id = "<parser_id>/<extractor_id>"`.
 
-`RetrieveRaw(sha256 string) ([]byte, error)`:
-1. Scan all `*.idx` files in `{vault_dir}/{source_id}/` to find the batch containing this sha256.
-   (For production, maintain an in-memory index; for the demo, linear scan is acceptable.)
-2. Open the corresponding `.zst` file.
-3. Decompress and scan for the RawEvent with matching `raw_sha256`.
-4. Base64-decode `RawBytesBase64`.
-5. Return the exact original bytes.
+## 5. Vault (summary)
 
----
+Global, single-node, hash-chained, append-only. Records get a global monotonic `RecordID` (D3). Segments seal under an
+RFC 6962 Merkle root and are linked by a chain hash (`SHA-256(0x02 || prev || root || segment_be64 || count_be64)`).
+Seal order is footer, fsync, ledger, fsync. "Sealed" means a valid footer is on disk and nothing else. Full format,
+recovery rules and tamper matrix are in `docs/vault-format.md`.
 
-## 5. Parser YAML Schema (Complete Reference)
+Normalization happens before a record's segment is sealed, so a normalized event carries `record_id` and `segment`
+only; the inclusion proof is resolved lazily through `GET /admin/lineage/{event_id}` (D2), which returns `sealed: false`
+and `proof: null` until the segment seals.
 
-```yaml
-id: string            # Unique identifier, snake_case. e.g. "cisco_asa"
-version: string       # Semantic version. e.g. "1.0.0"
-description: string   # Human-readable description
+Verification is available to anyone: an RFC 9162 inclusion proof needs only the leaf, the path and the root. An
+inclusion proof does **not** by itself bind the tree size; the segment root held by the verifier does.
 
-# Fast pre-filter. Run against raw[:256] ONLY.
-# Must be a valid Go stdlib regexp.
-detection_pattern: string
+## 6. Parsing, quarantine, replay
 
-# Full named-capture regex. Run only if detection_pattern matches.
-# MUST use named captures: (?P<name>...) not (...)
-# MUST be valid Go stdlib regexp (no lookaheads, no backreferences, no PCRE)
-regex: string
+Parsers are DSL documents (`contracts/parser_dsl.md`): ordered extractors of kind `regex` (RE2), `kv`, `json`, `csv`,
+`cef`, `leef`; typed `map` entries onto OCSF paths; everything unmapped kept under its own name; an optional
+render-back template; byte-accounting coverage. First extractor to succeed wins. A record no parser accepts goes to
+quarantine with its stage and reason; its raw bytes are safe in the vault.
 
-# Maps named capture group values to OCSF NormalizedEvent fields.
-# Dot notation: "src_endpoint.ip" → NormalizedEvent.SrcEndpoint.IP
-mappings:
-  severity: string              # capture group name
-  action: string
-  src_endpoint.ip: string
-  src_endpoint.port: string     # auto-converted to int by normalizer
-  dst_endpoint.ip: string
-  dst_endpoint.port: string     # auto-converted to int by normalizer
-  protocol: string
-  event_time: string            # parsed as RFC3339 or common syslog timestamp formats
+Replay re-reads records from the vault and re-normalizes them under the currently active parser set. It is idempotent by
+`event_id`. Only the data plane owns the active set (D10): `data/parsers.d/<id>/<version>.yaml` plus `active.json`.
 
-# Named capture groups that have no OCSF slot.
-# These go into NormalizedEvent.Unmapped{} — they are NEVER dropped.
-unmapped_captures:
-  - string
+## 7. Intelligence sidecar
 
-# Optional translation maps applied by the parser engine before normalization.
-# Keys are the raw capture group value; values are the translated string.
-severity_map:   { string: string }   # raw_sev_value → OCSF severity
-action_map:     { string: string }   # raw_action_value → OCSF action
-protocol_map:   { string: string }   # raw_proto_value → OCSF protocol (e.g. "6" → "TCP")
-```
+Python, off the hot path, opens no listener. It reads samples and quarantine through the admin API only, scores
+structural drift, types unknown fields from value shapes, generates a proposal (new parser or patch), validates it with
+`POST /admin/parsers/dryrun`, and posts it. It never touches the vault, the parser store or the pipeline. A proposal that
+misses its acceptance thresholds is still posted, flagged, never silently dropped. No LLM in the baseline.
 
----
+## 8. Identity
 
-## 6. REST API Specification
+Facts (`IdentityFact`) produced by identity-source parsers via the DSL `identity:` block are the only input (D8).
+The resolver keeps time-bounded claims per IP: a `bind` opens one, a `release` or a newer `bind` of the same kind
+closes it, unclosed claims expire by TTL. `ResolveAt(ip, t)` returns entities valid at `t` and **nothing** when no
+claim covers `t`: it never guesses and never carries a user across a release. A fact arriving late that changes answers
+already given yields an `Invalidation` window so stored events can be re-enriched. Persistence is derived data,
+rebuildable by replaying identity-source records.
 
-Base URL: `http://127.0.0.1:9000`
-All responses: `Content-Type: application/json`
-All responses: `Access-Control-Allow-Origin: *`
+## 9. Threat model
 
-### 6.1 Events
+Assets: the raw record (evidence), the chain of custody (proofs), the parser set (what the system believes), the
+availability of ingest.
 
-**GET /api/events**
-Query parameters:
-- `src_ip` (string, optional)
-- `dst_ip` (string, optional)
-- `vendor` (string, optional) — matches `source_id` prefix
-- `severity` (string, optional) — exact match
-- `limit` (int, default 100, max 1000)
-- `offset` (int, default 0)
+| Threat | Mitigation | Residual |
+|---|---|---|
+| **Log injection**: attacker-controlled text forges fields (`msg="x srcip=1.2.3.4"`) or crafts regex-DoS input | RE2 only (linear time); the kv tokenizer is single pass and never re-scans a value for keys; field, key, value and depth limits with integrity flags instead of crashes; raw payload is never printed unescaped | A parser author can still map the wrong field; render-back and dry-run catch most of it |
+| **Log flooding / DoS** | Bounded queues everywhere; back-pressure, not drops; length caps on every wire read; UDP kernel-drop counter exposed | UDP delivery is best-effort by nature; a saturated disk stops ingest, loudly |
+| **Tampering after the fact** (edit, delete, reorder, truncate) | Merkle seal per segment and a chain across segments; a 10-row tamper matrix, every row detected and located to a segment | Tamper-*evident*, not tamper-proof: someone with write access to the whole directory can rewrite it consistently. Only an externally held chain head (`vaultctl head`) defeats that |
+| **Insider approves a bad parser** | Proposals need a named human approver; approval history is kept; rollback is one call; replay is reproducible from the vault | The reviewer is trusted |
+| **Compromised intelligence sidecar** | Propose-only; admin API is the sole interface; dry-run runs in the data plane with no side effects | A malicious proposal still needs a human |
+| **Admin API abuse** | Loopback bind only, not published to the host | **No authentication in v1.** Anything running on the host can call it, including approve. Documented limitation, not a mitigation |
+| **Exfiltration / supply chain** | No network at runtime, vendored dependencies, `--network none` self-test, egress probes | The synthetic corpus proves nothing about a real network |
+| **Power loss** | fsync discipline, group commit, failed fsync is terminal | Crash tests kill the process; they do not cut power. Not claimed |
 
-Response:
-```json
-{
-  "events": [ ...NormalizedEvent ],
-  "total": 5600,
-  "limit": 100,
-  "offset": 0
-}
-```
+## 10. Losslessness, defined
 
-**GET /api/events/{id}/raw**
-Response:
-```json
-{
-  "event_id": "evt_cc3f7a1b",
-  "raw_sha256": "cc3f7a1b...",
-  "raw_bytes_base64": "JUFTQaaa...",
-  "byte_offset_start": 0,
-  "byte_offset_end": 142,
-  "verified": true
-}
-```
-`verified: true` means `sha256(base64_decode(raw_bytes_base64)) == raw_sha256`.
+The claim is **byte-exact raw preservation**: for any ingested record, at any later time, `Vault.Get(RecordID)` returns
+exactly the bytes that arrived (invalid UTF-8, NULs, CR/LF, empty payloads and 1.5 MiB records included), the terminator
+is recorded rather than stripped, and `SHA-256(raw)` equals `raw_sha256` on the event. Recomputable in the browser.
 
-### 6.2 Quarantine
+Two further mechanisms show nothing was dropped *in normalization*, which is a transformation and is **not** claimed to be
+lossless: `unmapped` keeps every capture no mapping reads, and `coverage` accounts bytes as mapped, unmapped, constant
+or uncovered. **Render-back** (regex and kv parsers) re-serializes the typed values through the extractor's template and
+compares with the raw record; a mismatch sets `render_back_mismatch`. It is a strong check that the mapping did not
+mis-assign fields, and it applies only to template parsers.
 
-**GET /api/quarantine**
-Query parameters: `source_id` (optional), `limit`, `offset`
-Response: `{"events": [...QuarantinedEvent], "total": N}`
+## 11. OCSF alignment
 
-### 6.3 Parser Registry
+Version 1.1.0, vendored in `contracts/ocsf/`. v1 maps every perimeter event to Network Activity (4001), Suricata
+alerts included, with alert detail in `unmapped`; a Detection Finding mapping is a possible later stretch. Identity-source
+events map to DHCP Activity (4004). Core 4001 fields populated: `class_uid`, `category_uid`, `activity_id`, `type_uid`,
+`time`, `severity_id`, `action_id`, `disposition_id`, `src_endpoint`, `dst_endpoint`, `connection_info.{protocol_num,
+protocol_name}`, `traffic.*`, `metadata.*`, `unmapped`. Enum values are pinned from the vendored files, not memory
+(for example DHCP `activity_id`: 5 Ack, 7 Release).
 
-**POST /api/parsers**
-Body: `{"config": "<yaml string>"}`
-Validates YAML structure and compiles all regexes.
-Response: `{"id": "...", "version": "...", "status": "PENDING"}` HTTP 201
-Error: `{"error": "regex compile failed: ..."}` HTTP 400
+## 12. Requirement traceability (PS a-k)
 
-**POST /api/parsers/{id}/approve**
-Transitions parser to ACTIVE. Triggers ReplayQuarantine.
-Response: `{"id": "...", "processed": N, "succeeded": N}` HTTP 200
+| PS req | Requirement | Where it is built and how it is shown |
+|---|---|---|
+| (a) No information loss | Byte-exact raw preservation; coverage and `unmapped` for normalization | Vault: round-trip of 7598 records across 13 fixtures, before and after compaction, 200 kill -9 cycles with 0 acknowledged records lost. Parsing: coverage |
+| (b) Extract source attributes | DSL extractors: regex, kv, json, csv, cef, leef | `parser_dsl.md`; examples checked against fixtures |
+| (c) Common taxonomy | OCSF 1.1.0 subset, `unmapped` | `contracts/ocsf/`, goldens |
+| (d) Traceability | `record_id` + `segment` on every event; lineage endpoint returns a real inclusion proof and chain head | `GET /admin/lineage/{id}`, `lineage_sealed.json` verified by production merkle code |
+| (e) Plug-and-play onboarding | DSL + drift detection + typed, dry-run-validated proposals + approval + replay | Intelligence sidecar; `dryrun`, `approve`, `replay` |
+| (f) Unified visibility | One schema across vendors; lineage explorer | Frontend |
+| (g) SIEM / data lake | Parquet, OCSF JSON, ECS, HEC, CEF | Packaging (sinks) |
+| (h) AI/ML-ready | Typed OCSF fields, entities, entity graph, dictionary-encoded Parquet | Identity; sinks |
+| (i) Reduced parser effort | DSL, proposal generation, acceptance thresholds | Sidecar; Parsing |
+| (j) Air-gapped | Vendored deps, offline bundle, `--network none`, egress probes | Packaging |
+| (k) Container | Multi-stage, non-root, slim images, compose | Packaging |
 
-**GET /api/parsers**
-Response: `{"parsers": [{"id": "...", "version": "...", "status": "ACTIVE|PENDING", "registered_at": "..."}]}`
+## 13. Claims
 
-### 6.4 Telemetry
+**Supported and measured:** byte-exact round-trip of the fixture corpus, before and after compaction; 0 acknowledged
+records lost across 200 process-kill cycles; 10 of 10 tamper rows detected; machine-independent compression ratios.
 
-**GET /api/telemetry**
-Response:
-```json
-{
-  "events_ingested": 6100,
-  "events_normalized": 5600,
-  "quarantine_count": 14,
-  "vault_size_bytes": 2400000000,
-  "lossless_pct": 100.0,
-  "uptime_seconds": 3600
-}
-```
+**Not claimed:** lossless *normalization*; power-loss durability; tamper-*proof* storage; UDP delivery guarantees; any
+throughput, latency or memory figure (none has been measured on a target machine; Gate 1's recorded-benchmark and RSS
+items remain unmet, see `DECISIONS.log`); billions of events per day (only ever a labelled projection). The corpus is
+synthetic and is labelled as such wherever it appears.
 
-`lossless_pct = (events_normalized + quarantine_count) / events_ingested * 100`
-(Every event is either normalized or quarantined — nothing is silently dropped.)
+## 14. Gates
 
-### 6.5 Ingest
+| Gate | Condition |
+|---|---|
+| 0 | `pkg/types` compiles; schema, OpenAPI, DSL, goldens, OCSF subset present; `make contract-test` green; decisions D1-D10 answered or defaulted; design approved |
+| 1 | Every workstream passes its own tests standalone; `app.New` and `server.New` exist; real vault and ingest exist |
+| 3 | All tests pass inside the container offline (`verify_airgap.sh` exit 0) |
+| Submission | README, five slides, two-page architecture document, demo script and video, every number traceable to a results file |
 
-**POST /api/ingest/file**
-Body: `{"path": "testdata/cisco_asa.log", "source_id": "cisco_asa_fw01"}`
-Triggers background IngestFile goroutine.
-Response: `{"status": "ingesting", "source_id": "cisco_asa_fw01"}`
-
-**POST /api/ingest/batch**
-Body: `{"source_id": "bench_test", "lines": ["raw line 1", "raw line 2"]}`
-Synchronous. Processes all lines before responding.
-Response: `{"ingested": N}`
-
----
-
-## 7. Losslessness Definition
-
-ULPF defines losslessness as: **byte-exact raw retention.**
-
-For any event that was ingested, at any future point in time, the following must hold:
-1. `vault.RetrieveRaw(event.RawSHA256)` returns the exact original bytes.
-2. `sha256(returned_bytes) == event.RawSHA256`
-3. The returned bytes are bit-for-bit identical to the original log line bytes, including:
-   - Trailing newlines (`\n` or `\r\n`)
-   - Invalid UTF-8 sequences
-   - Null bytes (`\x00`)
-   - Any other non-printable characters
-
-Losslessness is NOT defined as "render-back check" (re-encoding the NormalizedEvent JSON and comparing to the original). JSON re-encoding changes whitespace, field ordering, and float precision — this is not a reliable proof of losslessness.
-
----
-
-## 8. Air-Gap Deployment
-
-### 8.1 Docker Internal Bridge
-
-```yaml
-networks:
-  ulpf_internal:
-    driver: bridge
-    internal: true   # No default route to host network interface
-```
-
-`internal: true` means Docker creates the bridge without a gateway route.
-Containers on `ulpf_internal` can communicate with each other but cannot reach external IPs.
-
-### 8.2 Verification
-
-The air-gap is verified by `scripts/verify_airgap.sh`:
-- Confirms `curl https://8.8.8.8` fails from inside the container (no route to host)
-- Confirms `http://127.0.0.1:8000` responds HTTP 200 from the host machine
-- Confirms `http://127.0.0.1:9000/api/telemetry` responds HTTP 200
-
-### 8.3 Headless Batch Mode
-
-For environments with no UI:
-```bash
-./bin/dataplane --input testdata/cisco_asa.log --output out.jsonl --headless
-```
-Processes the file, writes normalized OCSF JSON to `out.jsonl`, exits with code 0 on success.
-
----
-
-## 9. OCSF Alignment
-
-OCSF Version: 1.1.0
-Event Class: Network Activity (class_uid: 4001)
-
-Mandatory OCSF fields and their sources:
-
-| OCSF Field | ULPF Source |
-| :--- | :--- |
-| `class_uid` | Always `4001` (Network Activity) |
-| `category_uid` | Always `4` (Network Activity) |
-| `severity_id` | Mapped from NormalizedEvent.Severity |
-| `time` | NormalizedEvent.EventTime (epoch milliseconds) |
-| `src_endpoint.ip` | NormalizedEvent.SrcEndpoint.IP |
-| `dst_endpoint.ip` | NormalizedEvent.DstEndpoint.IP |
-| `connection_info.protocol_name` | NormalizedEvent.Protocol |
-| `activity_name` | NormalizedEvent.Action |
-| `unmapped` | NormalizedEvent.Unmapped |
-
-Source-specific fields that have no OCSF slot go in the `unmapped` object.
-This is the correct OCSF pattern for non-standard vendor fields.
-
----
-
-## 10. Phase Gates Summary
-
-| Gate | Condition | Unblocks |
-| :--- | :--- | :--- |
-| Gate 0 | `go.mod` + `events.go` + `spec.md` + `DESIGN.md` on `main` | All agents can start |
-| Gate 1 | `testdata/manifest.json` verified correct | Claude Code #1 and #2 start |
-| Gate 2 | Data plane builds + React UI renders with mock data | Codex #2 starts |
-| Gate 3 | All benchmarks pass + AIRGAP_VERIFIED | Antigravity writes submission assets |
-| Gate 4 | PPT + arch doc + demo video + GitHub public | SIH portal submission |
+Contract changes after Gate 0 go through a PR that updates Go types, schema, OpenAPI, goldens and the relevant PRD text
+together, passes `make contract-test`, and is approved by the user.

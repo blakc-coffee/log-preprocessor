@@ -1,0 +1,15 @@
+{
+  "id": "drift-01",
+  "source_id": "fortinet",
+  "parser_id": "fortinet",
+  "score": 0.71,
+  "signals": [
+    "keys renamed: srcip-\u003esrc, dstip-\u003edst, srcport-\u003esport, dstport-\u003edport",
+    "keys removed: date, time",
+    "key added: eventtime",
+    "quarantine rate 0.94"
+  ],
+  "quarantine_rate": 0.94,
+  "first_seen": "2026-09-28T03:30:03Z",
+  "status": "open"
+}

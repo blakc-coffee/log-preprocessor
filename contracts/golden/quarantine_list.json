@@ -1,0 +1,41 @@
+{
+  "next_cursor": null,
+  "records": [
+    {
+      "record_id": 8,
+      "source_id": "palo_alto",
+      "failure_stage": "detect",
+      "error": "no parser matched",
+      "received_at": "2026-09-28T03:30:02.61Z",
+      "status": "open"
+    },
+    {
+      "record_id": 9,
+      "source_id": "fortinet",
+      "failure_stage": "extract",
+      "error": "extractor fgt_traffic: pattern did not match (missing key srcip)",
+      "received_at": "2026-09-28T03:30:02.95Z",
+      "status": "open"
+    }
+  ],
+  "summary": [
+    {
+      "by_stage": {
+        "extract": 1
+      },
+      "ignored": 0,
+      "open": 1,
+      "resolved": 0,
+      "source_id": "fortinet"
+    },
+    {
+      "by_stage": {
+        "detect": 1
+      },
+      "ignored": 0,
+      "open": 1,
+      "resolved": 0,
+      "source_id": "palo_alto"
+    }
+  ]
+}

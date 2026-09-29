@@ -1,0 +1,87 @@
+{
+  "event_id": "3.fortinet@1.0.0",
+  "record_id": 3,
+  "segment": 1,
+  "raw_sha256": "44021c537b5d8a76956efbb9ba4a575cc5592cbec1508c53a4905f0e572e2cb3",
+  "source_id": "fortinet",
+  "vendor": "fortinet",
+  "product": "fortigate",
+  "parser_id": "fortinet",
+  "parser_version": "1.0.0",
+  "template_id": "fortinet/fgt_traffic",
+  "schema_version": "ulpf-uef/1",
+  "received_at": "2026-09-28T03:30:02.9Z",
+  "event_time": "2026-09-28T03:30:02Z",
+  "time_from_receipt": false,
+  "parse_confidence": 1,
+  "integrity_flags": [],
+  "ocsf": {
+    "action_id": 1,
+    "activity_id": 6,
+    "category_uid": 4,
+    "class_uid": 4001,
+    "connection_info": {
+      "protocol_name": "tcp",
+      "protocol_num": 6
+    },
+    "disposition_id": 1,
+    "dst_endpoint": {
+      "ip": "203.0.113.125",
+      "port": 143
+    },
+    "duration": 554000,
+    "metadata": {
+      "product": {
+        "name": "fortigate",
+        "vendor_name": "fortinet"
+      },
+      "version": "1.1.0"
+    },
+    "severity_id": 2,
+    "src_endpoint": {
+      "ip": "10.1.4.25",
+      "port": 53513
+    },
+    "time": 1790566202000,
+    "traffic": {
+      "bytes_in": 677693,
+      "bytes_out": 734601,
+      "packets_in": 397,
+      "packets_out": 331
+    },
+    "type_uid": 400106
+  },
+  "unmapped": {
+    "appcat": "unscanned",
+    "devid": "FG100E0000000001",
+    "devname": "FG-01",
+    "dstintf": "port2",
+    "dstintfrole": "wan",
+    "logid": "0000000013",
+    "policyid": "2",
+    "policytype": "policy",
+    "service": "IMAP",
+    "sessionid": "601829",
+    "srcintf": "port1",
+    "srcintfrole": "lan",
+    "subtype": "forward",
+    "trandisp": "snat",
+    "transip": "198.51.100.7",
+    "transport": "36817",
+    "type": "traffic",
+    "tz": "+0530",
+    "vd": "root"
+  },
+  "entities": [],
+  "coverage": {
+    "applicable": true,
+    "render_back_ok": true,
+    "mapped_bytes": 81,
+    "unmapped_bytes": 117,
+    "constant_bytes": 317,
+    "uncovered_bytes": 0,
+    "mapped_fields": 16,
+    "unmapped_fields": 19
+  },
+  "current": true
+}

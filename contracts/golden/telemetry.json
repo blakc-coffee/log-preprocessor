@@ -1,0 +1,40 @@
+{
+  "eps_1m": 812.4,
+  "eps_peak": 2210,
+  "events_total": 8,
+  "lossless": {
+    "last_verify_at": "2026-09-28T04:00:00Z",
+    "last_verify_ok": true
+  },
+  "quarantine_open": 2,
+  "quarantined_total": 2,
+  "sinks": [
+    {
+      "errors": 0,
+      "lag": 0,
+      "name": "parquet"
+    }
+  ],
+  "sources": [
+    {
+      "eps": 310.2,
+      "id": "cisco_asa",
+      "records": 3
+    },
+    {
+      "eps": 180,
+      "id": "fortinet",
+      "records": 2
+    }
+  ],
+  "vault": {
+    "bytes_compressed": 1384,
+    "bytes_raw": 3114,
+    "chain_head": "41c97a281a75e68a9f934b1a50d2bc38dc753465016be9f67a3518c652c47036",
+    "failed": false,
+    "ratio": 2.25,
+    "records": 10,
+    "sealed_through": 8,
+    "segments": 1
+  }
+}

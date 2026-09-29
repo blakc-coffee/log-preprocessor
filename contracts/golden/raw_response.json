@@ -1,0 +1,15 @@
+{
+  "fragment": 0,
+  "origin": {
+    "kind": "udp",
+    "addr": "192.0.2.10:514",
+    "offset": 0
+  },
+  "raw_base64": "PDE2Nj5TZXAgMjggMjAyNiAwOTowMDowNyBhc2EwMSA6ICVBU0EtNi0zMDIwMTM6IEJ1aWx0IGluYm91bmQgVENQIGNvbm5lY3Rpb24gMTAwNSBmb3Igb3V0c2lkZToxOTIuMC4yLjE3OS8yMiAoMTkyLjAuMi4xNzkvMjIpIHRvIGluc2lkZToxMC4xLjExLjIyNS81NjM3NiAoMTAuMS4xMS4yMjUvNTYzNzYp",
+  "raw_sha256": "7a98c9a1ab65bc1b30c1dfba7319bcad1afb0b4f2cc04fa4d609b69d1227962c",
+  "received_at": "2026-09-28T03:30:07.12Z",
+  "record_id": 1,
+  "segment": 1,
+  "sha_match": true,
+  "terminator": "LF"
+}
