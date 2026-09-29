@@ -491,3 +491,48 @@ affects: pkg/dataplane/ingest/source/tcp.go
 [2026-09-29 08:25] M3.3 verified: make check ALL GREEN, race clean at -count=4, 188 subtests in the ingest tree.
 why: Chunk rule. TCP (line, auto, octet framing; slow clients; 12 concurrent connections keeping per-connection order; max_conns; idle timeout; framing errors closing the connection), UDP (datagram boundaries, binary payloads, trailing newline as content), HTTP (lines/whole/octet framing, chunked bodies, 202-means-durable, source id validation, 413, 503 on an unhealthy vault, a fixture round-trip through curl-shaped requests).
 affects: pkg/dataplane/ingest/source/
+
+[2026-09-29 08:50] Config rejects keys for features that are not implemented yet.
+why: PRD section 8 lists vault.compact, compact_block_bytes, zstd_level, hash_index and peer_map. None of them exist yet. A config struct that accepted and ignored them would leave an operator certain compaction was running - the worst possible failure, because it looks like success. Each key arrives with its implementation, and until then `compact: true` is a startup error naming the unknown key.
+affects: pkg/dataplane/ingest/config.go
+
+[2026-09-29 08:50] Fields belonging to another source type are a config error, not ignored.
+why: `paths` on a UDP listener, `listen` on a file source, `framing` on HTTP (where it is chosen per request by ?framing=), `cert` on plain TCP. Silently ignoring any of them is how someone ends up certain a file is being read when nothing is reading it. Every mismatch is named.
+affects: pkg/dataplane/ingest/config.go
+
+[2026-09-29 08:50] sync: none requires ULPF_ALLOW_SYNC_NONE=1.
+why: In that mode an acknowledgement stops meaning the record is on disk, which silently voids the central durability claim. It is legitimate for benchmarks, so it is not removed - but it must never be reached by editing one word in a config. The error says "acknowledged records are NOT durable" rather than just refusing.
+affects: pkg/dataplane/ingest/config.go
+
+[2026-09-29 08:50] Config validation reports every error at once, via errors.Join.
+why: An operator fixing a config one restart at a time is an operator wasting an afternoon. TestAllErrorsAreReportedAtOnce asserts a config with three separate mistakes names all three.
+affects: pkg/dataplane/ingest/config.go
+
+[2026-09-29 08:55] `ingestd --emit` base64-encodes the payload.
+why: A raw log line is attacker-controlled. Printing it unescaped into a terminal or a JSON Lines file that a log aggregator will parse is log injection - the same problem vaultctl's preview escaping solves. The JSON carries raw_base64 and raw_bytes, so a consumer gets the exact bytes without anything interpreting them on the way.
+affects: cmd/ingestd/main.go
+
+[2026-09-29 08:55] A shutdown that times out exits 1, not 0.
+why: It may have left records accepted but not yet durable. A supervisor that treated a timed-out shutdown as a clean stop would hide exactly the condition the durability claim is about.
+affects: cmd/ingestd/main.go
+
+[2026-09-29 08:55] `type: tls` is refused with an explicit error rather than served as plaintext.
+why: TLS listeners land in M4. A config naming type tls that quietly served unencrypted traffic would be a security failure disguised as a working deployment. Asserted by TestTLSIsRefusedRatherThanIgnored.
+affects: cmd/ingestd/main.go
+
+[2026-09-29 08:55] `--once` cancels the context rather than having its own exit path.
+why: Network listeners never finish on their own, so --once has to stop them. Cancelling means shutdown runs through exactly the same code a SIGTERM takes, so the drain-and-seal path is exercised by every CI run rather than only in production. --once with no `mode: once` source is an error, because it would otherwise hang forever.
+affects: cmd/ingestd/main.go
+
+[2026-09-29 09:00] BUG: a glob matching no files was treated as a missing file and failed the source.
+why: expand() kept an unmatched pattern as a literal path so that a typo would be reported by name. That is right for a literal path - a typo must not look like a source that is healthily reading zero records - but wrong for a pattern: an empty log directory is normal, and in tail mode files appear later. Now a path containing *, ? or [ that matches nothing logs a warning and is skipped, while a literal path that does not exist still fails by name. Found by TestSecondDaemonOnOneVaultIsRefused, which used an intentionally-empty glob.
+affects: pkg/dataplane/ingest/source/file.go
+
+[2026-09-29 09:00] Test harness caches the pipeline's exit instead of exposing a bare channel.
+why: A test that read h.done directly consumed the value h.stop() was also waiting for, so cleanup blocked for ten seconds and reported "the pipeline did not shut down" - a confusing failure caused by the harness, not by the code under test. waitRun() is idempotent and both paths use it.
+affects: pkg/dataplane/ingest/source/net_test.go
+
+[2026-09-29 09:05] M3.4 and M3.5 verified end to end against a live daemon.
+why: Chunk rule, plus the smoke test from PRD 11.5 run for real. Started ingestd with the dev config and fed it all five paths: healthz 200, a UDP datagram, two TCP lines, one octet-counted TCP message (30 bytes, decoded back exactly), and the 50-line sample ASA file over HTTP (202 {"accepted":50}). SIGTERM exited 0. The resulting vault: 2 sealed segments, 2144 records, `verify --deep` exit 0, a proof verified standalone through verify-proof, and `get --raw | shasum` matching the manifest's expected_sha256 for that record.
+First third-party dependency added: gopkg.in/yaml.v3 (config), pinned at v3.0.1.
+affects: cmd/ingestd/, configs/ingest.dev.yaml, pkg/dataplane/ingest/config.go

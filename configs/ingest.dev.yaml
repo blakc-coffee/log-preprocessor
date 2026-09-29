@@ -1,0 +1,70 @@
+# ingestd development configuration.
+#
+#   ./bin/ingestd --config configs/ingest.dev.yaml --emit stdout
+#
+# Ports match PRD_00 section 3. Everything binds to loopback here; a container
+# overrides the addresses to 0.0.0.0.
+#
+# Unknown keys are a startup error on purpose: a typo in `segment_max_records`
+# that silently left the default in place would surface weeks later as a
+# performance mystery rather than immediately as a failure to start.
+
+data_dir: ./data
+log_level: info
+metrics_addr: 127.0.0.1:9100     # /healthz today; Prometheus /metrics at M4
+emit: none                       # none | stdout | jsonl:<path>
+out_buffer: 4096
+shutdown_timeout: 15s
+
+vault:
+  dir: ./data/vault
+  # always is the only mode where an acknowledgement means "on disk".
+  # interval acknowledges first and fsyncs on a timer, so up to one interval
+  # of acknowledged records can be lost. none never fsyncs and needs
+  # ULPF_ALLOW_SYNC_NONE=1; it exists for benchmarks and nothing else.
+  sync: always
+  sync_interval: 100ms
+  group_commit_max_delay: 2ms
+  group_commit_max_bytes: 4MiB
+  # Small segments here so `vaultctl proof` has something to prove against
+  # within seconds. Production values are 64MiB / 250000 / 30s.
+  segment_max_bytes: 8MiB
+  segment_max_records: 2000
+  seal_interval: 5s
+
+limits:
+  max_frame_bytes: 1MiB          # above this, records are fragmented, never truncated
+  max_octet_len: 16MiB
+  max_conns: 1024
+  idle_timeout: 5m
+  http_max_body: 1GiB
+
+sources:
+  - {id: syslog-udp, type: udp, listen: "127.0.0.1:5514", readers: 4, recv_buffer: 8MiB}
+  - {id: syslog-tcp, type: tcp, listen: "127.0.0.1:5514", framing: auto}
+  - {id: http, type: http, listen: "127.0.0.1:8080", dynamic_sources: true}
+
+  # One-shot fixture readers, for `ingestd --once`.
+  - id: asa-file
+    type: file
+    paths: ["testdata/cisco_asa.log"]
+    mode: once
+    framing: lf
+
+  - id: crlf-file
+    type: file
+    paths: ["testdata/crlf.log"]
+    mode: once
+    framing: crlf
+
+  # The pattern here must match gen.MultilineStart, or the corpus and the
+  # config disagree and the round-trip test fails.
+  - id: multiline-file
+    type: file
+    paths: ["testdata/multiline.log"]
+    mode: once
+    framing: lf
+    multiline:
+      start: '^\d{4}-\d{2}-\d{2}T'
+      max_lines: 50
+      timeout: 2s

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
@@ -97,6 +98,10 @@ func NewFile(cfg FileConfig) (*File, error) {
 // ID implements ingest.Source.
 func (f *File) ID() string { return f.cfg.ID }
 
+// Mode reports whether this source reads once or follows. `ingestd --once`
+// uses it to know which sources it should wait for.
+func (f *File) Mode() FileMode { return f.cfg.Mode }
+
 // Run reads every configured file once.
 //
 // Tail mode is not implemented yet; NewFile accepts it so configuration can be
@@ -138,9 +143,18 @@ func (f *File) expand() ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("bad path pattern %q: %w", p, err)
 		}
-		if matches == nil {
-			// Not a glob, or matched nothing. Keep it so a missing file is
-			// reported by name rather than silently skipped.
+		if len(matches) == 0 {
+			if strings.ContainsAny(p, "*?[") {
+				// A pattern matching nothing is normal: a log directory may
+				// simply be empty right now, and with tail mode files appear
+				// later.
+				f.cfg.Log.Warn("path pattern matched no files",
+					"source", f.cfg.ID, "pattern", p)
+				continue
+			}
+			// A literal path is a promise that a file is there. Keep it, so
+			// the failure names the file rather than silently reading
+			// nothing - a typo in a path is otherwise invisible.
 			matches = []string{p}
 		}
 		for _, m := range matches {

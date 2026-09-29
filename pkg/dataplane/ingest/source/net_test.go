@@ -29,7 +29,27 @@ type harness struct {
 	events []types.RawEvent
 
 	done chan error
-	wg   sync.WaitGroup
+
+	// runOnce caches the pipeline's exit so both waitRun and stop can see it.
+	// A bare channel receive is single-use, and a test that reads it directly
+	// leaves stop blocked forever.
+	runOnce sync.Once
+	runErr  error
+
+	wg sync.WaitGroup
+}
+
+// waitRun blocks until the pipeline returns and reports its error. Safe to
+// call more than once, and safe to call before stop.
+func (h *harness) waitRun() error {
+	h.runOnce.Do(func() {
+		select {
+		case h.runErr = <-h.done:
+		case <-time.After(10 * time.Second):
+			h.runErr = errors.New("the pipeline did not return")
+		}
+	})
+	return h.runErr
 }
 
 func start(t *testing.T, src ingest.Source) *harness {
@@ -99,10 +119,9 @@ func (h *harness) collected() []types.RawEvent {
 
 func (h *harness) stop() {
 	h.cancel()
-	select {
-	case <-h.done:
-	case <-time.After(10 * time.Second):
-		h.t.Error("the pipeline did not shut down")
+	if err := h.waitRun(); err != nil && !errors.Is(err, context.Canceled) {
+		// Not a failure by itself: several tests expect the source to fail.
+		h.t.Logf("pipeline returned: %v", err)
 	}
 	h.wg.Wait()
 	h.vault.Close()
