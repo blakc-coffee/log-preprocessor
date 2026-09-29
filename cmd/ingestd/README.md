@@ -42,8 +42,9 @@ See `configs/ingest.dev.yaml`. Three rules, all about failing loudly:
 - **Unknown keys are an error.** A typo in `segment_max_records` that silently
   left the default in place would surface weeks later as a performance mystery
   rather than immediately as a failure to start. Keys for features that do not
-  exist yet are rejected too — accepting and ignoring `compact: true` leaves an
-  operator certain compaction is on.
+  exist yet are rejected too — accepting and ignoring one leaves an operator
+  certain it is on. (`compact`, `compact_block_bytes`, `zstd_level` and
+  `hash_index` were rejected exactly this way until compaction was built.)
 - **Fields from the wrong source type are rejected.** Accepting `paths` on a
   UDP listener and ignoring it is how someone ends up certain a file is being
   read when it is not.
@@ -76,3 +77,14 @@ curl -sS --data-binary @testdata/sample/cisco_asa.log http://127.0.0.1:8080/inge
 ```sh
 go test ./cmd/ingestd/
 ```
+
+## Compaction
+
+On by default (`vault.compact: true`): sealed segments are rewritten from `.wal`
+to zstd in the background, and the `.wal` is deleted only after the `.zst` has
+been read back from disk and shown to reproduce the segment's Merkle root. Watch
+`vault_compaction_failures_total`: a failure costs disk space, never data.
+
+`vault.hash_index` (default on) costs 40 bytes per record on disk for compacted
+segments — on repetitive logs that can exceed the compressed data itself. Turn it
+off if nothing looks records up by payload hash. See `docs/vault-format.md` §9.2.

@@ -32,6 +32,17 @@ vault:
   segment_max_records: 2000
   seal_interval: 5s
 
+  # Sealed segments are rewritten from .wal to zstd in the background, and the
+  # .wal is deleted only after the .zst has been read back from disk and shown
+  # to reproduce the segment's Merkle root.
+  compact: true
+  compact_block_bytes: 256KiB    # 4KiB-16MiB; larger compresses better, reads decompress more
+  zstd_level: 3                  # 1-22
+  # GetByHash. Costs memory per record for WAL segments and 40 bytes per record
+  # on disk for compacted ones - on repetitive logs that can exceed the
+  # compressed data itself. Turn off if nothing looks records up by payload hash.
+  hash_index: true
+
 limits:
   max_frame_bytes: 1MiB          # above this, records are fragmented, never truncated
   max_octet_len: 16MiB

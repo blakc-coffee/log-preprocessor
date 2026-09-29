@@ -53,8 +53,8 @@ test: ## Run the ingest/vault test suite
 race: ## Run the ingest/vault test suite under the race detector (needs cgo)
 	CGO_ENABLED=1 go test -race $(PKGS)
 
-crash: ## Run the 200-cycle kill -9 crash suite (ULPF_CRASH_CYCLES=20 for a quick pass)
-	go test -run 'TestCrash$$' -v -count=1 -timeout 30m ./pkg/dataplane/vault/
+crash: ## Run the 200-cycle kill -9 suite, with and without compaction (ULPF_CRASH_CYCLES=20 for a quick pass)
+	go test -run 'TestCrash$$|TestCrashWithCompaction' -v -count=1 -timeout 30m ./pkg/dataplane/vault/
 
 fuzz: ## Run the ingest/vault fuzz targets for 30s each
 	go test -run '^$$' -fuzz FuzzOctet -fuzztime 30s ./pkg/dataplane/ingest/frame

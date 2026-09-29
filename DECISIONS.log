@@ -794,3 +794,58 @@ NEXT ACTION
          never be wrong: a compaction that dropped a record would be silent.
          Dependency: github.com/klauspost/compress/zstd.
 ================================================================================
+
+[2026-09-29 14:10] Compaction: a compacted segment is a "logical WAL"; records keep their WAL offsets.
+why: This is the decision the rest follows from. The in-memory index, Get, Proof, recovery's scan and deep verification all address records by WAL byte offset. By making the decompressed blocks concatenate to exactly the original record region, none of them needed a compacted-aware code path - one readSeg indirection turns an offset into bytes, whichever way the segment is stored. The consequence is testable and was tested: the shared vaulttest conformance suite passes UNMODIFIED against a vault compacting underneath it, so memvault and the real vault are still held to one definition of correct.
+affects: pkg/dataplane/vault/{compacted.go,compact.go,read.go,recover.go}
+
+[2026-09-29 14:10] DEVIATION: no .meta file. The block table lives inside the .zst as per-block length prefixes.
+why: PRD 6.7 lists .meta (header, footer, block table). A separate copy of information the file already contains is a second thing to keep consistent with it, and the PRD's own decision D5 says derived indexes must be rebuildable from segments. With the table inside the file it cannot disagree with the data and is rebuilt by walking the prefixes. Each block is `comp_len u32 | uncomp_len u32 | crc u32 | zstd frame`.
+affects: pkg/dataplane/vault/compacted.go, docs/vault-format.md
+
+[2026-09-29 14:10] Verify-before-delete reads the .zst back FROM DISK, not from the buffers just written.
+why: Verifying what is in memory proves the compressor works, not that the file on disk is right. verifyCompacted opens the temporary file fresh, walks its blocks, checksums and decompresses each, parses every record, recomputes the Merkle root and requires it to equal the footer's - exactly what recovery will do to it later. The .wal is deleted only after that passes.
+affects: pkg/dataplane/vault/compact.go
+
+[2026-09-29 14:10] Compaction guard checked by mutation, in both directions.
+why: A guard that cannot fail proves nothing. Mutation A - compaction drops one record per segment with verification DISABLED - is still caught by TestCompactedReadsEqualWALReads ("index says record 3 is at segment 1 offset 470, but that record is 4"), so the reads test is an independent guard. Mutation B - the same drop with verification ENABLED - is refused: "block 0 holds record 4 where 3 belongs", the .wal is kept, no .zst is left behind, and the segment is not flagged compacted.
+affects: pkg/dataplane/vault/compact_test.go, compact_internal_test.go
+
+[2026-09-29 14:10] When both a .wal and a .zst exist, the .zst is verified FIRST and a bad one never causes the .wal to be deleted.
+why: The interrupted-compaction window (between the final rename and deleting the .wal) leaves both. PRD 6.6 says "keep .zst, delete .wal". Followed literally that destroys the only good copy if the .zst is the damaged one. So the .zst must prove itself before the .wal goes; if it does not, both are left alone and the open fails as corruption. A read-only open never deletes anything. TestNeverDeleteTheOnlyGoodCopy.
+affects: pkg/dataplane/vault/recover.go
+
+[2026-09-29 14:10] A failed compaction is not a failed vault.
+why: The data is intact in the .wal, so putting the vault into the terminal ErrFailed state - refusing all writes and demanding a restart - over a space optimisation would be a wildly disproportionate response. It is logged, counted in vault_compaction_failures_total, and the segment is skipped (not retried in a tight loop) until the next Open. Asserted: after a failed compaction the vault is not failed and still accepts writes.
+affects: pkg/dataplane/vault/compact.go
+
+[2026-09-29 14:15] FINDING: zstd-3 in 256 KiB blocks does NOT beat gzip-6 on compression ratio on this corpus.
+why: Measured on the synthetic corpus, per file: cisco_asa 6.7x vs 6.6x, fortinet 8.6x vs 8.8x (gzip wins), suricata 7.1x vs 7.2x (gzip wins), palo_alto 5.6x vs 5.5x. Excluding oversize.log the corpus totals are 7.36x vs 7.37x. Whatever the argument for zstd is, ratio is not it, and the submission must not claim otherwise. Speed was not measured and nothing here claims it.
+The headline TOTAL of 12.9x is misleading: oversize.log is 2.6 MB of one repeated pattern (1724x) and dominates. Typical files are 5.0-8.6x. The corpus is synthetic and repetitive by construction; ratios on real device logs will differ in either direction. Ratios ARE machine-independent, so unlike throughput these are reportable from this machine.
+affects: docs/vault-format.md 9.2, the submission's compression claim
+
+[2026-09-29 14:15] FINDING: the .hix costs more than the data it indexes.
+why: 40 bytes per record of incompressible SHA-256. On records that compress ~6.5x that is more than the compressed record itself: 303,960 bytes of .hix against 487,435 bytes of compressed segments on the corpus (62% on top), and 56% of the directory in a focused test. So the segment ratio and the on-disk ratio are very different numbers and both must be reported. hash_index: false removes it entirely (GetByHash then returns ErrHashIndexDisabled). A 12-byte truncated-hash variant would cut it ~3x at the cost of verifying candidates on lookup; deliberately not built, recorded as a future optimisation.
+affects: docs/vault-format.md 3.5 and 9.2, cmd/ingestd/README.md, configs/ingest.dev.yaml
+
+[2026-09-29 14:20] KNOWN LIMIT, stated not fixed: the in-memory index is still O(records).
+why: PRD 6.4 intends the hash index to be in memory only for the active segment. Compaction moves hash LOOKUPS to disk (.hix) but every record still has a locator entry (segment, offset, raw hash; ~50 bytes) held for the life of the process, compacted or not. Fine at the scales tested; a vault of hundreds of millions of records would need the locator made per-segment and sparse. That is the documented scale path and is not built. The PRD's RSS target ("under 300 MiB at 100k records/s, excluding hash index") has NOT been measured and cannot be from this machine.
+affects: docs/vault-format.md 10.3
+
+[2026-09-29 14:25] Failure injection added (PRD 12.1), via an unexported openFile hook and a fileIO interface.
+why: The PRD's test plan lists "a file wrapper that fails the Nth Write/Sync" and it had not been written. The hook is UNEXPORTED so no caller outside the package can substitute storage under the durability guarantees; only in-package tests can set it. A crash test cannot check the fsync policy - the process dying is not the disk erroring - so these fail a chosen call: the Nth write, the Nth fsync, the footer write, the footer fsync, the ledger append and the ledger fsync. Each asserts the vault goes terminal, every later call (including reads) returns ErrFailed, vault_failed is 1, a failed fsync is NEVER retried, every concurrent caller in the coalesced group is told, a failed vault does not seal on Close, and reopening recovers everything acknowledged.
+Mutation-checked: making the vault retry a failed fsync fails TestFsyncFailureIsTerminalAndNeverRetried and TestFailureIsReportedToEveryWaitingCaller, because the retry "succeeds" and callers are told their data is durable - exactly the lie the policy exists to prevent.
+affects: pkg/dataplane/vault/{inject_test.go,vault.go}
+
+[2026-09-29 14:25] Crash suite now also runs with background compaction (TestCrashWithCompaction).
+why: Compaction is where a silent bug would do the most damage, so it gets the same treatment as the write path. With tiny segments the process is killed mid-write of the .zst, mid-verification, between the renames, and between the last rename and deleting the .wal. 200 cycles, 4206 acknowledged records, 0 lost - and 3924 with -race. `make check` runs 40 cycles of each; `make crash` runs 200 of each.
+affects: pkg/dataplane/vault/crash_test.go, Makefile
+
+[2026-09-29 14:30] Config: compact, compact_block_bytes, zstd_level, hash_index now exist; the four keys that were REJECTED as unimplemented are accepted.
+why: They were rejected at 08:50 precisely so that no operator could believe compaction was on when it was not. Now that it is real they parse, with pointers for the two booleans so an explicit false is distinguishable from absent (the default is on). compact_block_bytes is bounded 4KiB-16MiB and zstd_level 1-22; the config package cannot import the vault, so it mirrors the limit and TestConfigLimitsMatchVault keeps the copies from drifting.
+affects: pkg/dataplane/ingest/config.go, cmd/ingestd/main.go, configs/ingest.dev.yaml
+
+[2026-09-29 14:35] M5 COMPLETE. Live daemon verified with compaction on.
+why: Chunk rule. ingestd with the dev config compacted three segments (5.3-7.7x), verify --deep exit 0, the source line / the compacted vault's `get --raw` / the manifest's expected_sha256 all agree, a proof from a compacted segment verified with no vault present, and a flipped byte in a compressed block exits 1 naming the segment. Compaction metrics exported: seconds, ratio, bytes in and out, failures.
+Indicative only, macOS, NOT reportable: cold random read from a compacted segment 85.6us vs 244ns warm (~350x, the price of compaction on the read path); compaction 77 MB/s of WAL including read-back verification and fsyncs.
+affects: pkg/dataplane/vault/, cmd/ingestd/

@@ -2,6 +2,7 @@ package ingest_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -449,5 +451,177 @@ func TestHintsReachDownstream(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// waitForCompaction blocks until every sealed segment in dir exists only as a
+// .zst, with nothing half-written. Polling, not sleeping.
+func waitForCompaction(t *testing.T, dir string) {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var zst, wal, tmp int
+		for _, e := range entries {
+			switch {
+			case strings.HasSuffix(e.Name(), ".zst"):
+				zst++
+			case strings.HasSuffix(e.Name(), ".wal"):
+				wal++
+			case strings.HasSuffix(e.Name(), ".tmp"):
+				tmp++
+			}
+		}
+		if zst >= 1 && wal == 0 && tmp == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("compaction did not finish: %d .zst, %d .wal, %d .tmp", zst, wal, tmp)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func sizeOf(t *testing.T, dir, suffix string) int64 {
+	t.Helper()
+	var n int64
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), suffix) {
+			fi, err := e.Info()
+			if err != nil {
+				t.Fatal(err)
+			}
+			n += fi.Size()
+		}
+	}
+	return n
+}
+
+func gzipSize(t *testing.T, dir string) int64 {
+	t.Helper()
+	var n int64
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".wal") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		zw := gzip.NewWriter(&buf) // default level 6, what `gzip` does
+		zw.Write(raw)
+		zw.Close()
+		n += int64(buf.Len())
+	}
+	return n
+}
+
+// TestCorpusSurvivesCompaction is the round-trip gate applied AFTER compaction:
+// every fixture is ingested, its vault compacted, and every record compared
+// byte for byte against the source file. A compaction that dropped or altered
+// a record would otherwise be silent.
+//
+// It also measures the compression ratio against gzip, which the PRD asks to
+// be reported. Unlike throughput, a ratio does not depend on the machine, so
+// this number is reportable from anywhere. Method: zstd level 3, 256 KiB
+// blocks, against gzip -6 over the same WAL bytes.
+func TestCorpusSurvivesCompaction(t *testing.T) {
+	m := loadManifest(t)
+
+	byFile := map[string][]manifestRecord{}
+	for _, r := range m.Records {
+		byFile[r.File] = append(byFile[r.File], r)
+	}
+	names := make([]string, 0, len(byFile))
+	for name := range byFile {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	type row struct {
+		name              string
+		records           int
+		wal, zst, hix, gz int64
+	}
+	var rows []row
+	var total row
+	total.name = "TOTAL"
+
+	for _, name := range names {
+		dir := t.TempDir()
+		open := func(compact bool) *vault.Vault {
+			v, err := vault.Open(vault.Options{
+				Dir: dir, Sync: vault.SyncNone, // a ratio measurement, not a durability one
+				SegmentMaxRecords: 1_000_000, MaxFrameBytes: 2 << 20, Compact: compact,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return v
+		}
+
+		// Ingest with compaction off, so the WAL exists to be measured.
+		v := open(false)
+		events := runPipeline(t, v, name, m)
+		if err := v.Close(); err != nil {
+			t.Fatal(err)
+		}
+		wal := sizeOf(t, dir, ".wal")
+		gz := gzipSize(t, dir)
+
+		// Reopen with compaction on: recovery finds the sealed WAL and compacts it.
+		c := open(true)
+		waitForCompaction(t, dir)
+
+		// Every record, byte for byte, from the COMPACTED vault.
+		for _, ev := range events {
+			got, rc, err := c.Get(context.Background(), ev.ID)
+			if err != nil {
+				t.Fatalf("%s: record %d after compaction: %v", name, ev.ID, err)
+			}
+			if !bytes.Equal(got.Raw, ev.Raw) {
+				t.Fatalf("%s: record %d changed by compaction", name, ev.ID)
+			}
+			if rc.RawSHA256 != ev.RawSHA256 {
+				t.Fatalf("%s: record %d's hash changed by compaction", name, ev.ID)
+			}
+		}
+		rep, err := c.VerifyChain(context.Background(), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !rep.OK {
+			t.Fatalf("%s: chain broken by compaction: %s", name, rep.Reason)
+		}
+		c.Close()
+
+		r := row{name: name, records: len(events), wal: wal,
+			zst: sizeOf(t, dir, ".zst"), hix: sizeOf(t, dir, ".hix"), gz: gz}
+		rows = append(rows, r)
+		total.records += r.records
+		total.wal += r.wal
+		total.zst += r.zst
+		total.hix += r.hix
+		total.gz += r.gz
+	}
+
+	rows = append(rows, total)
+	t.Logf("compression on the synthetic corpus (zstd level 3, 256 KiB blocks; gzip -6 over the same WAL bytes)")
+	t.Logf("%-24s %8s %10s %10s %7s %10s %7s %10s", "file", "records", "wal", "zst", "ratio", "gzip", "ratio", "hix")
+	for _, r := range rows {
+		t.Logf("%-24s %8d %10d %10d %6.1fx %10d %6.1fx %10d",
+			r.name, r.records, r.wal, r.zst, float64(r.wal)/float64(r.zst),
+			r.gz, float64(r.wal)/float64(r.gz), r.hix)
+	}
+	t.Logf("(the corpus is SYNTHETIC and highly repetitive by construction; ratios on real device logs will differ)")
+
+	if total.zst >= total.wal {
+		t.Errorf("compaction did not shrink the corpus: %d -> %d bytes", total.wal, total.zst)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
+	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
 )
 
 const minimalConfig = `
@@ -40,9 +41,11 @@ func TestUnknownKeysAreAnError(t *testing.T) {
 		"top level": "nonsense: 1\n" + minimalConfig,
 		"nested":    minimalConfig + "vault:\n  segment_max_recrods: 10\n",
 		"source":    "sources:\n  - {id: a, type: udp, listen: \"127.0.0.1:0\", nonsense: 1}\n",
-		// A real key for a feature that does not exist yet. Accepting and
-		// ignoring it would leave an operator certain compaction was on.
-		"unimplemented compaction": minimalConfig + "vault:\n  compact: true\n",
+		// A plausible key for a feature that does not exist. Accepting and
+		// ignoring it would leave an operator certain it was on - which is
+		// exactly why compact, compact_block_bytes, zstd_level and hash_index
+		// were rejected here until compaction existed.
+		"a key for an unbuilt feature": minimalConfig + "vault:\n  snapshot_interval: 1h\n",
 	}
 	for name, in := range cases {
 		if _, err := ingest.Parse([]byte(in)); err == nil {
@@ -228,5 +231,68 @@ peer_map:
 		if _, err := ingest.Parse([]byte("peer_map:\n  " + entry + "\n" + minimalConfig)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// TestCompactionConfig: the four keys that were rejected as unimplemented until
+// compaction existed.
+func TestCompactionConfig(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		cfg, err := ingest.Parse([]byte(minimalConfig))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !cfg.Vault.CompactEnabled() {
+			t.Error("compaction is off by default; disk usage would grow without bound")
+		}
+		if !cfg.Vault.HashIndexEnabled() {
+			t.Error("the hash index is off by default")
+		}
+		if cfg.Vault.CompactBlockBytes != 256<<10 || cfg.Vault.ZstdLevel != 3 {
+			t.Errorf("defaults are %s / level %d", cfg.Vault.CompactBlockBytes, cfg.Vault.ZstdLevel)
+		}
+	})
+
+	t.Run("explicit values", func(t *testing.T) {
+		cfg, err := ingest.Parse([]byte(`
+vault:
+  compact: false
+  compact_block_bytes: 1MiB
+  zstd_level: 9
+  hash_index: false
+` + minimalConfig))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Vault.CompactEnabled() || cfg.Vault.HashIndexEnabled() {
+			t.Error("an explicit false was ignored: a pointer must distinguish false from absent")
+		}
+		if cfg.Vault.CompactBlockBytes != 1<<20 || cfg.Vault.ZstdLevel != 9 {
+			t.Errorf("parsed %s / level %d", cfg.Vault.CompactBlockBytes, cfg.Vault.ZstdLevel)
+		}
+	})
+
+	for name, bad := range map[string]string{
+		"block too small": "compact_block_bytes: 512",
+		"block too large": "compact_block_bytes: 64MiB",
+		"level too high":  "zstd_level: 99",
+	} {
+		if _, err := ingest.Parse([]byte("vault:\n  " + bad + "\n" + minimalConfig)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// TestConfigLimitsMatchVault: the config package cannot import the vault, so it
+// mirrors two limits. This keeps them honest.
+func TestConfigLimitsMatchVault(t *testing.T) {
+	if _, err := ingest.Parse([]byte("vault:\n  compact_block_bytes: 16MiB\n" + minimalConfig)); err != nil {
+		t.Errorf("the vault's own maximum block size is rejected by the config: %v", err)
+	}
+	if _, err := ingest.Parse([]byte("vault:\n  compact_block_bytes: 17MiB\n" + minimalConfig)); err == nil {
+		t.Error("a block size above the vault's maximum was accepted by the config")
+	}
+	if vault.MaxCompactBlockBytes != 16<<20 {
+		t.Errorf("vault.MaxCompactBlockBytes is %d; the config package hard-codes 16MiB", vault.MaxCompactBlockBytes)
 	}
 }

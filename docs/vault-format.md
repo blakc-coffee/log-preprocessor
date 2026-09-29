@@ -31,10 +31,15 @@ Two claims, and everything in this document serves one of them:
 <vault.dir>/
   LOCK                         flock; one writer process at a time
   chain.log                    append-only JSONL ledger, one line per sealed segment
-  seg-000000000001.wal         a segment: header, records, and a footer once sealed
-  seg-000000000002.wal
+  seg-000000000001.zst         a sealed segment, compacted (header, zstd blocks, footer)
+  seg-000000000001.hix         its hash index: sorted (raw_sha256, seq) pairs
+  seg-000000000002.wal         a segment not yet compacted: header, records, footer once sealed
   ...
 ```
+
+A segment is stored as a `.wal` until it is sealed and then compacted; after that
+it is a `.zst`. **It is never both for long** — see §6.3 for the brief window and
+what recovery does about it.
 
 File names are fixed-width (`seg-%012d`) so a plain lexical sort of the
 directory is also a numeric sort. Recovery and `vaultctl ls` both rely on that
@@ -124,6 +129,53 @@ indistinguishable on disk.
 
 The header and footer magics differ, so a truncated segment can never be
 mistaken for a sealed one.
+
+### 3.4 Compacted segment (`.zst`)
+
+```
+header   (72 bytes, raw, identical to the WAL's)
+block × k:  comp_len u32 | uncomp_len u32 | crc u32 | zstd frame
+footer   (100 bytes, raw, identical to the WAL's)
+```
+
+**A compacted segment is a "logical WAL".** The concatenation of the
+decompressed blocks is byte-for-byte the record region of the original `.wal`,
+and records keep their original byte offsets. Everything that addresses a record
+— the in-memory index, `Get`, `Proof`, recovery, deep verification — does so by
+WAL offset and is unaware of compaction; only the layer that turns an offset into
+bytes changed. This is why the shared conformance suite passes unmodified against
+a vault that is compacting underneath it.
+
+- **The block table lives inside the file**, as the length prefixes, so it can
+  never disagree with the data and is rebuilt by walking them. A separate `.meta`
+  would be a second copy of information the file already holds.
+- Blocks are `compact_block_bytes` (default 256 KiB), **never splitting a
+  record**, each an independent zstd frame, so a random read decompresses one
+  block and not the segment.
+- `crc` is CRC-32C of the *compressed* bytes, checked **before** they reach the
+  decompressor, so a flipped bit is reported as a checksum failure rather than as
+  whatever the decoder makes of garbage.
+- Nothing in a prefix is trusted: lengths are bounded before use, the decoder has
+  a hard 64 MiB memory cap, and the decompressed length must equal the prefix's
+  claim. A crafted frame that claims to expand to gigabytes fails; it does not
+  allocate them.
+
+### 3.5 Hash index (`.hix`)
+
+`(raw_sha256[32] || seq[8])` pairs, sorted by hash then seq, binary-searched over
+`ReadAt`. It lets `GetByHash` work on compacted segments without holding every
+hash in memory. **It is derived data, not evidence**: at open it is compared byte
+for byte with what the just-verified records produce, and a missing or wrong one
+is rebuilt (by a writer) or answered from memory (read-only). Editing it cannot
+raise a false tamper alarm and cannot make `GetByHash` lie.
+
+A payload stored more than once resolves to the **newest** record everywhere.
+
+**Cost, measured:** 40 bytes per record of incompressible SHA-256. On records
+that compress well this can exceed the compressed data it indexes — 304 KB of
+`.hix` against 487 KB of compressed segments on the synthetic corpus. It can be
+turned off (`hash_index: false`), in which case `GetByHash` returns
+`ErrHashIndexDisabled` and no `.hix` is written.
 
 ---
 
@@ -221,6 +273,43 @@ process must restart.
 dropped the dirty pages, so a retry that "succeeded" would be a lie about data
 that is gone.
 
+### 6.3 Compaction
+
+A background goroutine rewrites sealed `.wal` files as `.zst`. It is built around
+one rule: **the `.wal` is deleted only after the `.zst` has been read back from
+disk, decompressed, and shown to reproduce the segment's Merkle root.** A
+compaction that dropped or altered a record would be silent — nothing would fail
+until someone asked for that record — so the check is neither optional nor
+sampled.
+
+```
+1. write seg-N.zst.tmp from the .wal
+2. fsync it
+3. READ IT BACK FROM DISK: walk blocks, checksum, decompress, parse every record,
+   recompute the Merkle root, require it equal to the footer's
+4. write seg-N.hix.tmp from the hashes just verified
+5. rename .hix, then rename .zst LAST      (.zst present == complete)
+6. fsync the directory
+7. switch readers over under the vault lock, then delete the .wal
+```
+
+A crash leaves either the `.wal` alone (steps 1-5) or both files (between 5 and
+7). Recovery removes stale `.tmp` files and orphaned `.hix` files, and when both a
+`.wal` and a `.zst` exist it **verifies the `.zst` first** and only then removes
+the `.wal`. If the `.zst` is bad the `.wal` is left alone: it may be the only good
+copy, and deleting it because "the `.zst` wins" would turn a recoverable situation
+into data loss. A read-only open never deletes anything.
+
+**A failed compaction is not a failed vault.** The data is intact in the `.wal`,
+so an error is logged and counted (`vault_compaction_failures_total`) and the
+segment is skipped until the next open. It never enters `ErrFailed`.
+
+The guard was checked by mutation rather than assumed. With the record-drop bug
+injected and verification **disabled**, the reads-equal test still catches it
+independently ("index says record 3 is at offset 470, but that record is 4"). With
+verification **enabled**, the compaction is refused: the `.wal` is kept, no `.zst`
+is left behind, and the segment is not flagged compacted.
+
 ---
 
 ## 7. Sync modes
@@ -251,6 +340,14 @@ On `Open`:
    sequence contiguity; **truncate at the first invalid record** and seal the
    remainder, flagged `recovered`.
 6. A non-last segment without a footer is fatal corruption.
+7. A segment file shorter than a header was created and then interrupted before
+   its header was fsynced. That is not corruption — no record was ever
+   acknowledged into it — and it is treated as never having existed. (This was
+   found by the crash suite at cycle 123, under `-race`: it made a vault
+   unopenable, which is strictly worse than losing unacknowledged records.)
+8. A `.zst` is verified as thoroughly as a `.wal`: every block checksummed and
+   decompressed, every record parsed, the Merkle root recomputed against the
+   footer. "It opened" must mean the same thing for both.
 
 ### 8.1 A writer refuses damaged storage; a reader does not
 
@@ -269,7 +366,9 @@ perfectly consistent precisely because it was the thing that was edited.
 | Guarantee | Evidence |
 |---|---|
 | Bytes out equal bytes in — invalid UTF-8, NULs, CR/LF, empty, 1.5 MiB records | 7598 records across all 13 fixtures round-trip byte-exact against the manifest |
-| A record acknowledged in `sync=always` survives process death | 200 kill -9 cycles, 4417 acknowledged records, 0 lost |
+| A record acknowledged in `sync=always` survives process death | 200 kill -9 cycles, 0 lost — 5889 acknowledged records (WAL only) and 4206 (with background compaction, so the kill also lands mid-compaction) |
+| Compaction loses and alters nothing | Every record, receipt, seal, proof and the chain head are identical before and after; the whole corpus round-trips byte-exact after compaction |
+| A failed write or fsync is terminal and an fsync is never retried | Failure injection at the Nth write / fsync / footer / ledger append; mutation-checked — a vault that retries the fsync fails it, because the retry "succeeds" and callers are told their data is durable |
 | A torn tail loses only unacknowledged records | The last write cut at **every** byte offset; exactly the whole records survive |
 | Any single-record edit, deletion, reorder, or segment deletion/swap/truncation is detected | 10-row tamper matrix, 0 undetected, each naming the segment |
 | Reopening after a crash never yields a corrupt segment | Included in the crash suite: `VerifyChain(deep)` must pass every cycle |
@@ -281,6 +380,45 @@ All ten are caught by `VerifyChain(deep)` on a read-only open:
 flipped byte in a record · deleted record · truncated segment · deleted middle
 segment · swapped segments · edited footer root · edited ledger root · ledger
 line removed from the middle · emptied `chain.log` · edited segment header
+
+**Compacted storage adds eight more**, all detected: a flipped byte in a
+compressed block · a truncated `.zst` · a deleted `.zst` · two `.zst` swapped ·
+an edited footer root · an edited header · a block length inflated to demand
+gigabytes · and the strongest forgery available — **a block rewritten with a
+record's payload changed and every checksum recomputed** (record CRC, block CRC,
+length prefix), so that everything the file format can check is valid. Only the
+Merkle root catches that one, and it does: *"compacted segment 2 does not match
+its footer root"*.
+
+### 9.2 Compression, measured
+
+Synthetic corpus, zstd level 3, 256 KiB blocks, against `gzip -6` over the same
+WAL bytes. Ratios do not depend on the machine, so unlike throughput these are
+reportable from anywhere.
+
+| file | records | WAL | zst | ratio | gzip | ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| cisco_asa.log | 2000 | 570,093 | 85,005 | 6.7× | 86,896 | 6.6× |
+| fortinet.log | 2000 | 1,265,175 | 146,773 | 8.6× | 144,526 | 8.8× |
+| suricata.json | 2000 | 994,941 | 140,974 | 7.1× | 138,530 | 7.2× |
+| palo_alto_unknown.log | 500 | 260,311 | 46,476 | 5.6× | 47,584 | 5.5× |
+| malformed.log | 100 | 23,860 | 4,750 | 5.0× | 4,774 | 5.0× |
+| oversize.log | 4 | 2,693,760 | 1,562 | 1724.6× | 9,142 | 294.7× |
+
+Read this table before quoting a headline number:
+
+- **The corpus total is 12.9×, and that figure is misleading.** It is dominated by
+  `oversize.log`, 2.6 MB of one repeated pattern. Excluding it the corpus is
+  ~7.4×; typical individual files are **5.0–8.6×**.
+- **zstd-3 in 256 KiB blocks does not beat gzip-6 on ratio here** — 6.7× against
+  6.6× on ASA, and gzip wins on Fortinet (8.8× vs 8.6×). Whatever the case for
+  zstd is, these measurements do not make it on compression ratio. Speed was not
+  measured and nothing here claims it.
+- **The `.hix` is not free.** It is 303,960 bytes against 487,435 bytes of
+  compressed segments — 62% on top. With the index the whole-corpus ratio is far
+  lower than the segment ratio above.
+- **The corpus is synthetic and repetitive by construction.** Real device logs
+  will differ, in either direction.
 
 ---
 
@@ -319,6 +457,16 @@ ledger line, for the same reason: nothing left behind refers to it.
 
 ### 10.3 Other limits
 
+- **The crash suite under compaction proves the same thing as without it**: the
+  recovery logic, not fsync. It also kills the process mid-compaction — mid-write
+  of the `.zst`, mid-verification, between the renames, and between the last
+  rename and deleting the `.wal`.
+- **The in-memory index is O(records).** Every record costs an index entry
+  (segment, offset, raw hash — roughly 50 bytes) for the life of the process,
+  compacted or not. Compaction moves the hash *lookup* to disk but not the
+  per-record locator. A vault holding hundreds of millions of records would need
+  that index made per-segment and sparse; that is the documented scale path and it
+  is not built. **The PRD's RSS target has not been measured.**
 - **UDP is best-effort.** A datagram the kernel dropped never reached the
   process. `ingest_udp_kernel_drops` exposes what Linux can see, and reports
   NaN — not 0 — where the platform cannot tell.
@@ -349,7 +497,8 @@ vaultctl verify-proof proof.json
 ```
 
 `scripts/send_samples.sh` runs all of this against a live daemon and exits
-non-zero if any check fails.
+non-zero if any check fails. Everything above works identically on compacted
+segments: `vaultctl` opens a `.zst` exactly as it opens a `.wal`.
 
 ---
 

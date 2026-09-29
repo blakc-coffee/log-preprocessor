@@ -144,7 +144,31 @@ type VaultConfig struct {
 	SegmentMaxBytes     Size     `yaml:"segment_max_bytes"`
 	SegmentMaxRecords   int      `yaml:"segment_max_records"`
 	SealInterval        Duration `yaml:"seal_interval"`
+
+	// Compact rewrites sealed segments from WAL to zstd in the background.
+	// A pointer so an absent key means the default (on) rather than false.
+	Compact           *bool `yaml:"compact"`
+	CompactBlockBytes Size  `yaml:"compact_block_bytes"`
+	ZstdLevel         int   `yaml:"zstd_level"`
+	// HashIndex enables GetByHash. It costs memory proportional to the record
+	// count for segments still stored as WALs, and 40 bytes per record on disk
+	// for compacted ones. Absent means on.
+	HashIndex *bool `yaml:"hash_index"`
 }
+
+// Limits mirrored from the vault package, which this package deliberately does
+// not import. TestConfigLimitsMatchVault keeps them from drifting.
+const (
+	maxCompactBlockBytes = 16 << 20
+	minCompactBlockBytes = 4 << 10
+	maxZstdLevel         = 22
+)
+
+// CompactEnabled reports whether background compaction is on.
+func (v VaultConfig) CompactEnabled() bool { return v.Compact == nil || *v.Compact }
+
+// HashIndexEnabled reports whether GetByHash is on.
+func (v VaultConfig) HashIndexEnabled() bool { return v.HashIndex == nil || *v.HashIndex }
 
 // LimitsConfig bounds what a sender can make this process do.
 type LimitsConfig struct {
@@ -247,6 +271,12 @@ func (c *FileConfig) setDefaults() {
 	if c.Vault.Sync == "" {
 		c.Vault.Sync = "always"
 	}
+	if c.Vault.CompactBlockBytes <= 0 {
+		c.Vault.CompactBlockBytes = 256 << 10
+	}
+	if c.Vault.ZstdLevel <= 0 {
+		c.Vault.ZstdLevel = 3
+	}
 	if c.Limits.MaxFrameBytes <= 0 {
 		c.Limits.MaxFrameBytes = 1 << 20
 	}
@@ -281,6 +311,15 @@ func (c *FileConfig) Validate() error {
 		if os.Getenv("ULPF_ALLOW_SYNC_NONE") == "1" {
 			errs = errs[:len(errs)-1]
 		}
+	}
+	if b := int64(c.Vault.CompactBlockBytes); b < minCompactBlockBytes || b > maxCompactBlockBytes {
+		errs = append(errs, fmt.Errorf(
+			"vault.compact_block_bytes %s: want between 4KiB and 16MiB. Smaller blocks give zstd "+
+				"too little to work with; larger ones make every random read decompress more",
+			c.Vault.CompactBlockBytes))
+	}
+	if c.Vault.ZstdLevel < 1 || c.Vault.ZstdLevel > maxZstdLevel {
+		errs = append(errs, fmt.Errorf("vault.zstd_level %d: want 1-%d", c.Vault.ZstdLevel, maxZstdLevel))
 	}
 	if err := validateEmit(c.Emit); err != nil {
 		errs = append(errs, err)

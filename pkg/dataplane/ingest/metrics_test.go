@@ -182,6 +182,9 @@ func TestEveryVaultMetricExists(t *testing.T) {
 		"vault_group_size_records", "vault_active_segment_bytes",
 		"vault_segments_sealed_total", "vault_seal_seconds",
 		"vault_verify_failures_total", "vault_failed",
+		"vault_compaction_seconds", "vault_compaction_ratio",
+		"vault_compaction_bytes_in_total", "vault_compaction_bytes_out_total",
+		"vault_compaction_failures_total",
 	}
 	for _, name := range want {
 		reg := prometheus.NewRegistry()
