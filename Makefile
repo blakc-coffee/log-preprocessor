@@ -31,6 +31,19 @@ fixtures-check: ## Prove the generator is deterministic (regenerate into a temp 
 merkle-vectors: ## Regenerate testdata/merkle_vectors.json (tell Frontend and Contracts when it changes)
 	go test ./pkg/dataplane/vault/merkle -run TestWriteVectors -update
 
+check: ## Everything the chunk rule requires, in one command. Run this first and last.
+	@echo "==> gofmt"
+	@test -z "$$(gofmt -l pkg cmd tools)" || { echo "unformatted:"; gofmt -l pkg cmd tools; exit 1; }
+	@echo "==> go vet"
+	@go vet ./...
+	@echo "==> go test -race"
+	@CGO_ENABLED=1 go test -race ./...
+	@echo "==> fixture determinism"
+	@$(MAKE) --no-print-directory fixtures-check
+	@echo "==> CGO_ENABLED=0 build"
+	@CGO_ENABLED=0 go build -o /dev/null ./... 2>/dev/null || CGO_ENABLED=0 go build ./...
+	@echo "ALL GREEN"
+
 build: ## Build ingestd and vaultctl with CGO disabled
 	CGO_ENABLED=0 go build -o bin/ ./cmd/ingestd ./cmd/vaultctl
 
@@ -50,4 +63,4 @@ fuzz: ## Run the ingest/vault fuzz targets for 30s each
 bench: ## Run the ingest/vault benchmarks (report hardware and sync mode with any number)
 	go test -run '^$$' -bench . -benchmem ./pkg/dataplane/vault/ ./pkg/dataplane/ingest/...
 
-.PHONY: help fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench
+.PHONY: help check fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench

@@ -282,3 +282,101 @@ why: Ingested all 2000 cisco_asa.log records into a real vault (4 sealed segment
 Verified: gofmt and go vet clean, go test -race green across all packages, make fixtures-check clean, CGO_ENABLED=0 build of vaultctl.
 Outstanding: M3 (framers, sources, Pipeline, ingestd), M4, M5. The 200-cycle kill -9 suite is still M5 and is what the "0 acknowledged records lost" metric is measured on; today's crash coverage is directory snapshots, which reproduce the same on-disk states but are not the same claim. No throughput number has been measured, and none can be reported from this machine (macOS full-drive flush, PRD 11.2).
 affects: cmd/vaultctl/, pkg/dataplane/vault/
+
+================================================================================
+CHECKPOINT [2026-09-29 06:20] — state of the world after M2
+--------------------------------------------------------------------------------
+This block is a bookmark, not a decision. Everything above it is the reasoning
+trail; this is what that reasoning has produced, so that a reader who has only
+this file can pick the work up. The log stays append-only: later checkpoints are
+appended below, never edited into this one.
+
+WORKSTREAM
+  Ingestion & Vault ("Codex #1"). PRDs in prd/ (gitignored). Branch
+  feature/ingest-vault. Owned paths: tools/gen, testdata, pkg/dataplane/ingest,
+  pkg/dataplane/vault, cmd/ingestd, cmd/vaultctl, configs/ingest.dev.yaml,
+  scripts/send_samples.sh, docs/vault-format.md. Nothing else.
+
+DONE
+  M0 scaffold + ASA/Fortinet/Suricata fixtures + manifest schema v1 (frozen)
+  M1 remaining 10 fixtures, identity scenario + answer key, local contract copy,
+     merkle package + merkle_vectors.json, memvault, vaulttest conformance suite
+  M2 on-disk vault: segment codec, WAL + group commit, seal + chain ledger,
+     crash recovery, read path, tamper detection, vaultctl
+
+NOT DONE
+  M3 ingest (frame decoders, file/TCP/UDP/HTTP sources, Pipeline, ingestd, the
+     e2e byte-exact round-trip gate)
+  M4 TLS, multiline, sniff, checkpoints, peer map, metrics
+  M5 compaction, .meta/.hix, the 200-cycle kill -9 suite, fuzzers, benchmarks,
+     docs/vault-format.md
+
+VERIFICATION
+  `make check` is the single gate: gofmt, go vet, go test -race ./..., fixture
+  determinism on both profiles, and a CGO_ENABLED=0 build. It prints ALL GREEN.
+  Currently: 80 test/fuzz functions, 2583 passing subtests, zero third-party
+  dependencies.
+
+WHAT IS PROVEN
+  - Byte-exact storage incl. invalid UTF-8, NULs, CR/LF, empty and 1.5 MiB records
+  - Tamper matrix: 10 rows, 0 undetected, each naming the offending segment
+  - Torn tails cut at EVERY byte offset; exactly the whole records survive
+  - memvault and the on-disk vault produce identical leaf hashes, roots, chain
+    heads and interchangeable proofs (TestAgreesWithMemvault)
+  - End to end: 2000 cisco_asa.log records, three independent SHA-256s agree
+    (source file, `vaultctl get --raw`, manifest expected_sha256)
+
+WHAT IS NOT PROVEN — and must not drift in the submission
+  - Power-loss durability. Crash tests kill the process; they say nothing about
+    the disk's own write cache.
+  - "0 acknowledged records lost" is measured on the 200-cycle kill -9 suite,
+    which is M5 and does not exist yet. Current crash coverage is directory
+    snapshots taken mid-run: the same on-disk states, NOT the same claim.
+  - No throughput number has been measured. None can be from this machine
+    (macOS full-drive flush, PRD 11.2). Benchmarks are Linux-only.
+  - Tamper-EVIDENT, not tamper-proof: a consistent rewrite of the whole
+    directory is only detectable against an externally held chain head.
+
+INVARIANTS (breaking one is a bug, not a refactor)
+  1. Raw bytes are never modified.
+  2. Nothing goes downstream before the vault reports durable.
+  3. Every queue bounded, every wire-read length capped.
+  4. A failed fsync is never retried; the vault goes terminal.
+  5. A writer refuses damaged storage; a reader must not (vaultctl verify).
+  6. Seal order: footer, fsync, ledger, fsync.
+  7. "Sealed" is a valid footer on disk and nothing else.
+  8. All timestamps go through record.TimeToNanos.
+  9. No time.Now(), map order or goroutines in the generator.
+ 10. Raw payload is never logged or printed unescaped.
+ 11. Only measured numbers, with hardware and sync mode.
+
+OPEN FOR THE ARBITER
+  - pkg/types does not exist; working against a verbatim local copy at
+    pkg/dataplane/ingest/testutil/types. No mismatch today. When the real one
+    lands the contract wins; rewrite the import path and delete the copy.
+  - D1-D7 unanswered, so every PRD default ships.
+  - testdata/identity_firewall.log is an additive file the PRD's table does not
+    list (see entry 03:40).
+
+NEXT ACTION
+  M3.1: frame decoders in pkg/dataplane/ingest/frame. Key property is chunking
+  invariance (identical output under iotest.OneByteReader and random chunk
+  sizes). A record of exactly max_frame_bytes is ONE record — one byte of
+  lookahead; testdata/oversize.log already pins expected_fragments at 1/1/2.
+================================================================================
+
+[2026-09-29 06:20] Added `make check` as the single verification gate.
+why: The chunk rule says nothing is done until it is verified, but verification was five
+commands I had to remember in order, and a forgotten one is an unverified chunk. One target that
+runs gofmt, vet, race, fixture determinism and a CGO_ENABLED=0 build removes that failure mode
+and gives any later session one thing to run.
+affects: Makefile
+
+[2026-09-29 06:20] AGENTS.md rewritten as a full session-restore document rather than a status note.
+why: It was a progress summary, which is the least useful thing to find at the start of a
+session - the expensive knowledge is the environment quirks, the invariants, and the findings
+that cost a debugging cycle to learn. It now opens with a ninety-second restore, and carries the
+invariants, the hand-off state, the next chunk's sub-steps and the hard-won findings. Because it
+is gitignored it can be lost, so the same material is duplicated into this log's CHECKPOINT
+blocks, which are committed.
+affects: AGENTS.md, DECISIONS.log
