@@ -255,17 +255,24 @@ func TestReplayFromVaultRebuildsTheSameState(t *testing.T) {
 		}
 	}
 
+	// a record from a source that is NOT an identity source but happens to look like a fact must be ignored:
+	// the source filter, not the extractor, is what keeps foreign data out of the resolver
+	decoy, _ := json.Marshal(types.IdentityFact{Kind: "radius", Action: "bind", IP: "10.1.4.9", User: "mallory", At: time.Date(2026, 9, 28, 4, 0, 0, 0, time.UTC)})
+	if _, err := mv.Put(ctx, types.RawRecord{SourceID: "webhook-untrusted", ReceivedAt: time.Now(), Term: types.TermLF, Raw: decoy}); err != nil {
+		t.Fatal(err)
+	}
+	idSources := map[string]bool{"dhcp": true, "radius": true, "vpn": true}
 	fresh := New(Config{})
-	st, err := Replay(ctx, mv, 1, map[string]bool{"dhcp": true, "radius": true, "vpn": true}, extract, fresh)
+	st, err := Replay(ctx, mv, 1, idSources, extract, fresh)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Facts != len(entries) || st.Skipped == 0 || st.Scanned != len(rs) {
+	if st.Facts != len(entries) || st.Skipped == 0 || st.Scanned != len(rs)+1 {
 		t.Fatalf("stats %+v, want %d facts and the non-identity records skipped", st, len(entries))
 	}
 	same("full replay", fresh)
 
-	if _, err := Replay(ctx, mv, 1, nil, extract, fresh); err != nil { // replaying again changes nothing
+	if _, err := Replay(ctx, mv, 1, idSources, extract, fresh); err != nil { // replaying again changes nothing
 		t.Fatal(err)
 	}
 	same("second replay", fresh)
@@ -273,7 +280,7 @@ func TestReplayFromVaultRebuildsTheSameState(t *testing.T) {
 	partial := New(Config{}) // a crash halfway through recovery, then the rest
 	half := types.RecordID(len(rs) / 2)
 	for _, from := range []types.RecordID{half, 1} {
-		if _, err := Replay(ctx, mv, from, nil, extract, partial); err != nil {
+		if _, err := Replay(ctx, mv, from, idSources, extract, partial); err != nil {
 			t.Fatal(err)
 		}
 	}
