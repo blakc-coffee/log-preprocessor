@@ -24,3 +24,4 @@ include = ["ulpf_intel*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = ["error"]

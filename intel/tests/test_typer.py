@@ -27,7 +27,7 @@ def manifest(file: str) -> list[dict]:
 
 @pytest.fixture(scope="module")
 def palo():
-    rows = list(csv.reader((TESTDATA / "palo_alto_unknown.log").open()))
+    rows = list(csv.reader((TESTDATA / "palo_alto_unknown.log").read_text().splitlines()))
     cols = [Column(f"col_{i}", [r[i] for r in rows], named=False, position=i) for i in range(len(rows[0]))]
     return rows, type_columns(cols)
 
