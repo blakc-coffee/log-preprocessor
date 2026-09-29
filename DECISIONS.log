@@ -966,3 +966,7 @@ affects: pkg/dataplane/identity; Parsing's enrich stage calls types.Resolver
 
 [2026-09-29 20:05] MASTER IS RED FOR `go vet ./...` / `make check`: tests/lossless_test.go and tests/merkle_test.go (Packaging, merged in PR #3) import pkg/dataplane/ingest/testutil/types, which the 16:45 pkg/types migration deleted. NOT fixed here: tests/ is Packaging's path. Fix is repointing those imports to pkg/types.
 affects: tests/, make check, Packaging
+
+[2026-09-29 20:30] master fixed (tests/ imports repointed to pkg/types; go vet and tests green). Identity graph built (Resolver.Neighbours). Persistence SKIPPED by default.
+why: User said "do it" to the proposed order: fix master, graph, then B5. The user did not answer the persistence question, so the cheaper option the PRD already allows applies: identity state is derived data, rebuilt by replaying identity-source records from the vault; Observe is idempotent so replay is safe. No modernc.org/sqlite dependency added. Reversible: add a facts table if replay time matters.
+affects: pkg/dataplane/identity, tests/

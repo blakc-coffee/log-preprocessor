@@ -448,3 +448,44 @@ func TestTimelineShowsReassignment(t *testing.T) {
 		t.Fatalf("window across the reassignment: %+v", got)
 	}
 }
+
+func TestGraphNeighbours(t *testing.T) {
+	r := New(Config{})
+	mustObserve(t, r,
+		fact("dhcp", "bind", "10.1.4.9", "", "laptop-carol", "aa:01", 0, 1),
+		fact("radius", "bind", "10.1.4.9", "carol", "", "", 1, 2),
+		fact("dhcp", "release", "10.1.4.9", "", "", "", 40, 3),
+		fact("radius", "release", "10.1.4.9", "", "", "", 41, 4),
+		fact("dhcp", "bind", "10.1.4.9", "", "laptop-heidi", "aa:02", 70, 5),
+		fact("radius", "bind", "10.1.4.9", "heidi", "", "", 71, 6),
+		fact("radius", "bind", "10.1.4.20", "carol", "", "", 100, 7),
+	)
+	g := r.Neighbours("ip", "10.1.4.9", time.Time{}, time.Time{})
+	if len(g.Edges) != 6 { // two tenants x (ip-host, host-mac, ip-user)
+		t.Fatalf("ip neighbourhood: %+v", g.Edges)
+	}
+	g = r.Neighbours("user", "carol", time.Time{}, time.Time{})
+	ips := map[string]bool{}
+	for _, e := range g.Edges {
+		if e.Type != "ip-user" || e.B != "carol" {
+			t.Fatalf("unexpected edge %+v", e)
+		}
+		ips[e.A] = true
+	}
+	if !ips["10.1.4.9"] || !ips["10.1.4.20"] {
+		t.Fatalf("carol used two addresses: %v", ips)
+	}
+	// interval filter: only heidi's tenancy
+	g = r.Neighbours("ip", "10.1.4.9", at(60), time.Time{})
+	for _, e := range g.Edges {
+		if e.B == "carol" || e.B == "laptop-carol" {
+			t.Fatalf("carol's tenancy is outside the window: %+v", e)
+		}
+	}
+	if g = r.Neighbours("host", "laptop-heidi", time.Time{}, time.Time{}); len(g.Edges) != 2 {
+		t.Fatalf("host: ip-host + host-mac, got %+v", g.Edges)
+	}
+	if g = r.Neighbours("ip", "nope", time.Time{}, time.Time{}); len(g.Nodes) != 0 {
+		t.Fatal("bad ip")
+	}
+}

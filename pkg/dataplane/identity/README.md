@@ -8,6 +8,7 @@ r := identity.New(identity.Config{})
 inv, err := r.Observe(fact)               // inv: windows whose answer changed (late fact)
 entities := r.ResolveAt("10.1.4.9", t)    // user, host, mac valid at t; none if no claim covers t
 timeline := r.Timeline("10.1.4.9", from, to)
+graph := r.Neighbours("user", "carol", from, to)   // ip-host, ip-user, host-mac edges over time
 ```
 
 ## Rules
@@ -54,4 +55,7 @@ about 2.2M lookups/s, 9 allocs/op. Apple M2, macOS, Go 1.27.1. Not a target-hard
 ## Limits
 
 State is in memory and O(facts): every fact is kept, and an address that was ever queried keeps a small record.
-Persistence and the entity graph are not built yet.
+Persistence is deliberately not built: the state is derived data, so after a restart replay the identity-source records
+from the vault (`POST /admin/replay` with `scope: source`); `Observe` is idempotent, so replaying is safe. SQLite
+(`modernc.org/sqlite`, as PRD 6.3 names) is the upgrade if replay time ever matters. `Neighbours` for a user or host
+scans every address (O(addresses)); add a reverse index if the endpoint is polled on a large table.
