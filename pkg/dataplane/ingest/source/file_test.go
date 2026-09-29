@@ -65,23 +65,3 @@ func TestGlobVersusLiteralPaths(t *testing.T) {
 		}
 	})
 }
-
-// TestTailModeIsRefusedRatherThanSilentlyDoingSomethingElse. Behaving like
-// `once` would look like it worked and quietly stop following the file.
-func TestTailModeIsRefused(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "x.log")
-	if err := os.WriteFile(path, []byte("a\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	src, err := source.NewFile(source.FileConfig{
-		ID: "t", Paths: []string{path}, Mode: source.ModeTail,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	h := start(t, src)
-	if err := h.waitRun(); err == nil {
-		t.Fatal("tail mode silently behaved like once")
-	}
-}

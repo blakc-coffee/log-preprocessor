@@ -665,3 +665,6 @@ func TestTCPShutdownWithConnectionsArriving(t *testing.T) {
 	close(stop)
 	dialers.Wait()
 }
+
+// bg is context.Background, named short because the tail tests use it a lot.
+func bg() context.Context { return context.Background() }

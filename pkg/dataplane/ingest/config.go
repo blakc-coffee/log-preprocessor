@@ -168,10 +168,13 @@ type SourceEntry struct {
 	AllowedSources []string `yaml:"allowed_sources"`
 
 	// File.
-	Paths     []string         `yaml:"paths"`
-	Mode      string           `yaml:"mode"`
-	From      string           `yaml:"from"`
-	Multiline *MultilineConfig `yaml:"multiline"`
+	Paths           []string         `yaml:"paths"`
+	Mode            string           `yaml:"mode"`
+	From            string           `yaml:"from"`
+	CheckpointDir   string           `yaml:"checkpoint_dir"`
+	CheckpointEvery int              `yaml:"checkpoint_every"`
+	Poll            Duration         `yaml:"poll"`
+	Multiline       *MultilineConfig `yaml:"multiline"`
 }
 
 // MultilineConfig groups lines into one record.
@@ -371,6 +374,15 @@ func (s SourceEntry) validate() error {
 		case "", "beginning", "end":
 		default:
 			errs = append(errs, fmt.Errorf("from %q: want beginning or end", s.From))
+		}
+		if s.Mode != "tail" {
+			// These only mean something for a tail. Accepting them on a
+			// one-shot read and ignoring them would suggest a restart
+			// resumes, when it re-reads the file every time.
+			if s.CheckpointDir != "" || s.CheckpointEvery != 0 || s.Poll != 0 {
+				errs = append(errs, errors.New(
+					"checkpoint_dir, checkpoint_every and poll apply only to mode: tail"))
+			}
 		}
 		errs = append(errs, validateFraming(s.Framing))
 		if s.Multiline != nil {

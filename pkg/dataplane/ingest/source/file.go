@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
@@ -56,10 +57,34 @@ type FileConfig struct {
 	Framing       frame.Mode
 	Multiline     *MultilineConfig
 	MaxFrameBytes int
+	// From decides where a tail starts when there is no checkpoint.
+	From FileFrom
+	// CheckpointDir persists tail positions so a restart resumes rather than
+	// re-reading. Empty disables checkpointing, which makes a restart re-read
+	// the whole file.
+	CheckpointDir string
+	// CheckpointEvery is how many records between checkpoints. Zero means
+	// DefaultCheckpointEvery. It bounds how much is re-read after a crash.
+	CheckpointEvery int
+	// PollInterval is how often a tailed file is checked for new data or for
+	// having been rotated. Zero means DefaultPollInterval.
+	PollInterval time.Duration
+
 	// Now stamps ReceivedAt. Tests replace it.
 	Now func() time.Time
 	Log *slog.Logger
 }
+
+// FileFrom decides where a tail begins when no checkpoint applies.
+type FileFrom string
+
+const (
+	// FromBeginning reads the whole file. The default, because skipping
+	// existing content is a choice an operator should have to make.
+	FromBeginning FileFrom = "beginning"
+	// FromEnd reads only what arrives after startup.
+	FromEnd FileFrom = "end"
+)
 
 // File reads records out of files on disk.
 type File struct {
@@ -83,6 +108,13 @@ func NewFile(cfg FileConfig) (*File, error) {
 	default:
 		return nil, fmt.Errorf("source: unknown file mode %q", cfg.Mode)
 	}
+	switch cfg.From {
+	case "":
+		cfg.From = FromBeginning
+	case FromBeginning, FromEnd:
+	default:
+		return nil, fmt.Errorf("source: unknown `from` %q: want beginning or end", cfg.From)
+	}
 	if cfg.Framing == "" {
 		cfg.Framing = frame.ModeLF
 	}
@@ -102,16 +134,12 @@ func (f *File) ID() string { return f.cfg.ID }
 // uses it to know which sources it should wait for.
 func (f *File) Mode() FileMode { return f.cfg.Mode }
 
-// Run reads every configured file once.
+// Run reads the configured files.
 //
-// Tail mode is not implemented yet; NewFile accepts it so configuration can be
-// written against it, and Run says so plainly rather than silently doing
-// something else.
+// In `once` mode each file is read start to end and Run returns. In `tail`
+// mode each file gets a goroutine that follows it until ctx is done, across
+// rotations and truncations.
 func (f *File) Run(ctx context.Context, sink ingest.Sink) error {
-	if f.cfg.Mode == ModeTail {
-		return errors.New("source: file tail mode is not implemented yet")
-	}
-
 	paths, err := f.expand()
 	if err != nil {
 		return err
@@ -119,6 +147,10 @@ func (f *File) Run(ctx context.Context, sink ingest.Sink) error {
 	if len(paths) == 0 {
 		f.cfg.Log.Warn("file source matched no files", "source", f.cfg.ID, "paths", f.cfg.Paths)
 		return nil
+	}
+
+	if f.cfg.Mode == ModeTail {
+		return f.runAllTails(ctx, sink, paths)
 	}
 
 	for _, path := range paths {
@@ -130,6 +162,25 @@ func (f *File) Run(ctx context.Context, sink ingest.Sink) error {
 		}
 	}
 	return nil
+}
+
+// runAllTails follows every path concurrently. One file per goroutine and one
+// stream per file, so a slow or stalled file cannot hold up the others and
+// each file's records keep their order.
+func (f *File) runAllTails(ctx context.Context, sink ingest.Sink, paths []string) error {
+	var wg sync.WaitGroup
+	errs := make([]error, len(paths))
+	for i, path := range paths {
+		wg.Add(1)
+		go func(i int, path string) {
+			defer wg.Done()
+			if err := f.runTail(ctx, sink, path); err != nil {
+				errs[i] = fmt.Errorf("%s: %w", path, err)
+			}
+		}(i, path)
+	}
+	wg.Wait()
+	return errors.Join(errs...)
 }
 
 // expand resolves globs and makes every path absolute, because Origin.Addr is

@@ -68,3 +68,18 @@ sources:
       start: '^\d{4}-\d{2}-\d{2}T'
       max_lines: 50
       timeout: 2s
+
+  # A followed file. Checkpoints make a restart resume rather than re-read;
+  # delivery is at-least-once, so a crash between a record becoming durable
+  # and the checkpoint being written replays it. Origin{path, offset} is the
+  # de-duplication key.
+  #
+  # Commented out because the dev config is used with --once, which would
+  # never exit with a tail running.
+  # - id: fortinet-tail
+  #   type: file
+  #   paths: ["/var/log/fortinet/*.log"]
+  #   mode: tail
+  #   from: beginning
+  #   checkpoint_dir: ./data/checkpoints
+  #   poll: 500ms            # polling, not inotify: bind mounts break inotify

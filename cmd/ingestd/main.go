@@ -305,10 +305,14 @@ func buildSources(cfg *ingest.FileConfig, healthy func() bool, log *slog.Logger)
 		case "file":
 			fc := source.FileConfig{
 				ID: s.ID, Paths: s.Paths,
-				Mode:          source.FileMode(orDefault(s.Mode, "once")),
-				Framing:       framingMode(s.Framing),
-				MaxFrameBytes: int(cfg.Limits.MaxFrameBytes),
-				Log:           log,
+				Mode:            source.FileMode(orDefault(s.Mode, "once")),
+				From:            source.FileFrom(s.From),
+				Framing:         framingMode(s.Framing),
+				MaxFrameBytes:   int(cfg.Limits.MaxFrameBytes),
+				CheckpointDir:   s.CheckpointDir,
+				CheckpointEvery: s.CheckpointEvery,
+				PollInterval:    s.Poll.Std(),
+				Log:             log,
 			}
 			if s.Multiline != nil {
 				re, err := regexp.Compile(s.Multiline.Start)

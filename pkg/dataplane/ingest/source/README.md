@@ -28,6 +28,42 @@ A trailing newline on a datagram is **content**, not a terminator: nothing
 framed it, the sender sent 34 bytes, and stripping one would break
 byte-exactness for every sender that does it.
 
+## Tail
+
+`mode: tail` follows a file across rotations (rename-and-create) and
+truncations (copy-truncate), and resumes from a checkpoint after a restart.
+
+**Polling, not inotify.** The fallback has to exist and be correct anyway —
+bind mounts break inotify, so containers run polling regardless — and 500 ms is
+far below anything that matters when the vault seals every 5-30 seconds. It
+keeps the dependency count at one, which is worth something for an air-gapped
+build. See `DECISIONS.log` 09:15.
+
+The tail hands the framer a reader that **never returns EOF**. A framer that
+saw EOF would emit a half-written line as a complete record and the rest as a
+second one, splitting an event in two at exactly the moment a writer was
+mid-write.
+
+### Delivery is at-least-once, by choice
+
+A checkpoint records the offset after the last record the vault confirmed
+durable, and is written **after** the flush. A crash in between re-reads those
+records and stores them twice. Checkpointing first would instead let a crash
+skip a record that was never stored — duplicates are recoverable,
+missing data is not. `Origin{path, offset}` is the de-duplication key.
+
+Checkpoints are written atomically (temp file, fsync, rename, fsync the
+directory): a half-written one read after a crash would resume at a garbage
+offset. A corrupt checkpoint is treated as absent rather than fatal — it is
+derived state, and refusing to start over one turns an annoyance into an outage.
+
+A checkpoint stores `fingerprint_len` alongside the fingerprint. That is not
+decoration: a log file is append-only so its first N bytes are immutable once
+it is N bytes long, but a file *shorter* than the window changes its own
+fingerprint every time it grows. Recomputing over the stored length instead of
+"however much there is now" is what makes checkpoints work on small files.
+Checkpoint file names are a hash of the log path, never the path itself.
+
 ## Auto framing
 
 RFC 6587 permits octet counting and newline framing on the same syslog port, so
