@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"runtime"
 	"sync"
@@ -40,6 +41,8 @@ type UDPConfig struct {
 	// PeerMap assigns source_id from the sender's address. Unlike TCP, this
 	// is resolved per datagram, because one socket receives from everyone.
 	PeerMap *PeerMap
+	// Metrics is the shared ingest collector set. Nil means no metrics.
+	Metrics *ingest.Metrics
 	Now     func() time.Time
 	Log     *slog.Logger
 }
@@ -140,6 +143,17 @@ func (u *UDP) Run(ctx context.Context, sink ingest.Sink) error {
 	}()
 	defer close(stopped)
 
+	// The kernel drop counter is the only visibility there is into datagrams
+	// that never reached this process. It is Linux-only and best-effort.
+	if u.cfg.Metrics != nil {
+		wgDrops := make(chan struct{})
+		go func() {
+			defer close(wgDrops)
+			u.pollKernelDrops(ctx)
+		}()
+		defer func() { <-wgDrops }()
+	}
+
 	var wg sync.WaitGroup
 	for i := 0; i < u.cfg.Readers; i++ {
 		wg.Add(1)
@@ -196,6 +210,33 @@ func (u *UDP) read(ctx context.Context, sink ingest.Sink) {
 				u.cfg.Log.Error("submit failed", "source", u.cfg.ID, "err", err)
 			}
 			return
+		}
+	}
+}
+
+// pollKernelDrops publishes the kernel's UDP receive-error counter.
+//
+// These are datagrams that arrived at the machine and were discarded before
+// this process could read them. Nothing here can recover them; the only honest
+// response is to make the number visible and say so.
+func (u *UDP) pollKernelDrops(ctx context.Context) {
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+	for {
+		if n, ok := kernelUDPDrops(); ok {
+			u.cfg.Metrics.UDPKernelDrops.Set(float64(n))
+		} else {
+			// NaN, not zero. A hard zero reads as "no datagrams were
+			// dropped" on a platform that cannot tell, which is precisely
+			// the quiet false assurance the UDP documentation exists to
+			// avoid. Prometheus renders NaN as absent, so a dashboard shows
+			// "no data" rather than a reassuring flat line.
+			u.cfg.Metrics.UDPKernelDrops.Set(math.NaN())
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
 		}
 	}
 }

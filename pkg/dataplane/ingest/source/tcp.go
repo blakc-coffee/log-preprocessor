@@ -49,6 +49,8 @@ type TCPConfig struct {
 	// device is a config line rather than a new listener. Nil means every
 	// record carries this listener's ID.
 	PeerMap *PeerMap
+	// Metrics is the shared ingest collector set. Nil means no metrics.
+	Metrics *ingest.Metrics
 
 	Now func() time.Time
 	Log *slog.Logger
@@ -176,6 +178,7 @@ func (t *TCP) Run(ctx context.Context, sink ingest.Sink) error {
 			// answer: accepting and then stalling looks to the sender like a
 			// working connection that silently loses data.
 			t.rejected.add(1)
+			t.frameError("max_conns")
 			t.cfg.Log.Warn("connection refused, at max_conns",
 				"source", t.cfg.ID, "peer", conn.RemoteAddr().String(), "max_conns", t.cfg.MaxConns)
 			conn.Close()
@@ -189,10 +192,12 @@ func (t *TCP) Run(ctx context.Context, sink ingest.Sink) error {
 			continue
 		}
 		t.accepted.add(1)
+		t.connGauge(1)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			defer func() { <-t.sem }()
+			defer t.connGauge(-1)
 			defer t.untrack(conn)
 			t.serve(ctx, sink, conn)
 		}()
@@ -309,14 +314,44 @@ func (t *TCP) reportReadEnd(ctx context.Context, log *slog.Logger, err error) {
 		// by the deferred Close; count it so it shows up in metrics rather
 		// than only in a log nobody reads.
 		t.frameErrors.add(1)
+		t.frameError(frameErrorReason(err))
 		log.Warn("closing connection on a framing error", "err", err)
 	case isTimeout(err):
+		t.frameError("idle_timeout")
 		log.Info("closing idle connection", "idle_timeout", t.cfg.IdleTimeout)
 	case errors.Is(err, net.ErrClosed):
 		return // our own shutdown
 	default:
 		log.Warn("connection read failed", "err", err)
 	}
+}
+
+// connGauge moves the open-connection gauge.
+func (t *TCP) connGauge(d float64) {
+	if t.cfg.Metrics == nil {
+		return
+	}
+	t.cfg.Metrics.Connections.WithLabelValues(t.cfg.Metrics.Source(t.cfg.ID)).Add(d)
+}
+
+// frameError counts a connection closed for a named reason. The reason is a
+// metric label, so it comes from a fixed set here and never from the error
+// text, which would otherwise be an unbounded label space fed by the network.
+func (t *TCP) frameError(reason string) {
+	if t.cfg.Metrics == nil {
+		return
+	}
+	t.cfg.Metrics.FrameErrors.WithLabelValues(t.cfg.Metrics.Source(t.cfg.ID), reason).Inc()
+}
+
+func frameErrorReason(err error) string {
+	switch {
+	case errors.Is(err, frame.ErrOctetLength):
+		return "octet_len"
+	case errors.Is(err, frame.ErrOctetMalformed):
+		return "octet_malformed"
+	}
+	return "framing"
 }
 
 func isTimeout(err error) bool {

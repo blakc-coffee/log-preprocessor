@@ -46,6 +46,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/merkle"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/record"
@@ -92,6 +94,8 @@ type Options struct {
 	Now func() time.Time
 	// Logger receives structured events. Raw payload is never logged.
 	Logger *slog.Logger
+	// Registerer receives the vault's collectors. Nil means no metrics.
+	Registerer prometheus.Registerer
 }
 
 func (o *Options) setDefaults() {
@@ -193,7 +197,8 @@ type Vault struct {
 	// VerifyChain can report which segment is wrong. See corruptf.
 	issues []issue
 
-	ledger *os.File
+	ledger  *os.File
+	metrics *Metrics
 
 	// leafCache holds recomputed leaf arrays for recently proved segments, so
 	// a burst of lineage requests against one segment reads the file once.
@@ -242,6 +247,7 @@ func Open(opts Options) (*Vault, error) {
 	}
 	v := &Vault{
 		opts:      opts,
+		metrics:   NewMetrics(opts.Registerer),
 		byHash:    map[[32]byte]types.RecordID{},
 		leafCache: map[uint64][][32]byte{},
 		reqs:      make(chan *commitReq),
@@ -499,6 +505,7 @@ func groupBytes(r *commitReq) int {
 // commit writes a group of requests as one write, syncs according to the mode,
 // publishes the records, and replies to every caller.
 func (v *Vault) commit(group []*commitReq) {
+	started := time.Now()
 	v.mu.Lock()
 
 	if v.failed != nil {
@@ -556,7 +563,10 @@ func (v *Vault) commit(group []*commitReq) {
 		return
 	}
 	if v.opts.Sync == SyncAlways {
-		if err := seg.file.Sync(); err != nil {
+		fsyncStart := time.Now()
+		if err := seg.file.Sync(); err == nil {
+			v.metrics.FsyncSeconds.Observe(time.Since(fsyncStart).Seconds())
+		} else {
 			// Never retry a failed fsync. After one, the kernel may already
 			// have dropped the dirty pages, so a retry that "succeeded" would
 			// be a lie about data that is gone.
@@ -570,6 +580,9 @@ func (v *Vault) commit(group []*commitReq) {
 
 	// Durable (in the configured sense). Publish.
 	seg.size += int64(len(buf))
+	v.metrics.Puts.Add(float64(len(bodies)))
+	v.metrics.GroupSize.Observe(float64(len(bodies)))
+	v.metrics.ActiveBytes.Set(float64(seg.size))
 	for i, body := range bodies {
 		id := base + types.RecordID(i)
 		rawSHA := sha256.Sum256(decodedRaw(body))
@@ -593,6 +606,10 @@ func (v *Vault) commit(group []*commitReq) {
 		replyAll(group, nil, sealErr)
 		return
 	}
+	// Observed once per batch rather than per record: the latency a caller
+	// experiences is the batch's, and per-record observations would make the
+	// histogram claim a thousand fast writes where there was one.
+	v.metrics.PutLatency.Observe(time.Since(started).Seconds())
 	for gi, req := range group {
 		req.resp <- commitResp{receipts: perReq[gi]}
 	}
@@ -624,6 +641,7 @@ func (v *Vault) failLocked(err error) {
 		return
 	}
 	v.failed = fmt.Errorf("%w: %v", types.ErrFailed, err)
+	v.metrics.Failed.Set(1)
 	v.opts.Logger.Error("vault entered failed state, restart required", "err", err)
 }
 
@@ -642,6 +660,7 @@ func (v *Vault) sealLocked(s *segState) error {
 	if s.sealed || s.count == 0 {
 		return nil
 	}
+	sealStart := time.Now()
 
 	s.root = merkle.Root(s.leaves)
 	s.prev = v.head
@@ -671,6 +690,9 @@ func (v *Vault) sealLocked(s *segState) error {
 	s.leaves = nil // recomputed from the file if a proof needs them
 	v.head = s.chain
 	v.seals = append(v.seals, seal)
+	v.metrics.SegmentsSealed.Inc()
+	v.metrics.SealSeconds.Observe(time.Since(sealStart).Seconds())
+	v.metrics.ActiveBytes.Set(0)
 	v.opts.Logger.Info("segment sealed",
 		"segment", s.id, "records", count, "root", hex.EncodeToString(s.root[:]))
 	return nil

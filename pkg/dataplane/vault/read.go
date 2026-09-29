@@ -245,13 +245,13 @@ func (v *Vault) Verify(ctx context.Context, id types.RecordID) (types.VerifyResu
 		return types.VerifyResult{Sealed: true, Reason: err.Error()}, nil
 	}
 	if got := merkle.LeafHash(body); got != p.LeafHash {
-		return types.VerifyResult{Sealed: true, Reason: "record does not match its leaf hash"}, nil
+		return v.verifyFailed("record does not match its leaf hash"), nil
 	}
 	if !merkle.VerifyInclusion(p.LeafHash, p.LeafIndex, p.TreeSize, p.Path, p.Root) {
-		return types.VerifyResult{Sealed: true, Reason: "inclusion proof does not verify against the segment root"}, nil
+		return v.verifyFailed("inclusion proof does not verify against the segment root"), nil
 	}
 	if !merkle.VerifyChainLink(p) {
-		return types.VerifyResult{Sealed: true, Reason: "segment chain link does not verify"}, nil
+		return v.verifyFailed("segment chain link does not verify"), nil
 	}
 
 	// The footer's root must also be the one the ledger recorded, or the file
@@ -260,10 +260,18 @@ func (v *Vault) Verify(ctx context.Context, id types.RecordID) (types.VerifyResu
 	defer v.mu.RUnlock()
 	for _, seal := range v.seals {
 		if seal.Segment == s.id && seal.Root != p.Root {
-			return types.VerifyResult{Sealed: true, Reason: "segment root does not match the ledger"}, nil
+			return v.verifyFailed("segment root does not match the ledger"), nil
 		}
 	}
 	return types.VerifyResult{OK: true, Sealed: true, Proof: &p}, nil
+}
+
+// verifyFailed records the failure and builds the result. Every verification
+// failure is counted, because a non-zero vault_verify_failures_total means
+// tampering or corruption and should page someone.
+func (v *Vault) verifyFailed(reason string) types.VerifyResult {
+	v.metrics.VerifyFailures.Inc()
+	return types.VerifyResult{Sealed: true, Reason: reason}
 }
 
 // bodyAt reads one record's encoded body, CRC checked.
@@ -327,6 +335,7 @@ func (v *Vault) VerifyChain(ctx context.Context, deep bool) (types.ChainReport, 
 
 	for i, s := range v.seals {
 		bad := func(reason string) types.ChainReport {
+			v.metrics.VerifyFailures.Inc()
 			return types.ChainReport{
 				Deep: deep, Segments: len(v.seals), Head: v.head,
 				FirstBad: s.Segment, Reason: reason,

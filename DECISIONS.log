@@ -666,3 +666,48 @@ affects: pkg/dataplane/ingest/source/tail.go
 [2026-09-29 10:40] M4.3 and M4.4 verified: make check ALL GREEN, race clean at -count=2.
 why: Chunk rule. Peer map: longest prefix wins with deliberately unsorted config, unmasked prefixes, IPv4-in-IPv6, bare addresses, nonsense addresses, nil and empty maps, validation, and live TCP and UDP. Multiline timeout: a held record released when the source goes quiet, and an active record NOT cut while its continuations keep arriving.
 affects: pkg/dataplane/ingest/source/peermap.go, pkg/dataplane/ingest/frame/multiline.go
+
+[2026-09-29 11:10] Metric source labels are capped at 50, folding into "other".
+why: `source` is a metric label, and with dynamic_sources: true an HTTP client CHOOSES it. An unbounded label is an unbounded number of time series, which is how a Prometheus server is taken down by the thing it is monitoring. Past the cap everything folds into "other"; the records still carry their real source_id, so only the label collapses and nothing that matters is lost. Frame-error reasons come from a fixed set for the same reason - never from error text, which is network-influenced.
+affects: pkg/dataplane/ingest/metrics.go
+
+[2026-09-29 11:10] A nil Registerer gives a working Metrics rather than nil.
+why: Otherwise every recording site needs a nil check, and the one that gets forgotten is a nil dereference on the hot path. NewMetrics registers against a throwaway registry instead, so the write path is unconditional.
+affects: pkg/dataplane/ingest/metrics.go, pkg/dataplane/vault/metrics.go
+
+[2026-09-29 11:10] Latency histogram buckets span 50us to 5s, not the Prometheus defaults.
+why: The three regimes this system actually sees are sync=none writes in the low microseconds, an fsync to an SSD in the low milliseconds, and a struggling disk in the hundreds. The default buckets put all three in one bucket and say nothing about any of them.
+affects: pkg/dataplane/vault/metrics.go
+
+[2026-09-29 11:10] vault_failed is a gauge, not a counter.
+why: A counter makes "it failed once an hour ago" and "it is failing right now" the same number. vault_failed is the only signal that the vault has stopped accepting writes entirely, and it is what an alert fires on.
+affects: pkg/dataplane/vault/metrics.go
+
+[2026-09-29 11:10] vault_put_latency_seconds is observed once per batch, not per record.
+why: The latency a caller actually experiences is the batch's. Observing per record would make the histogram claim a thousand fast writes where there was one, which is the opposite of what a p99 is for.
+affects: pkg/dataplane/vault/vault.go
+
+[2026-09-29 11:12] ingest_udp_kernel_drops reports NaN where the platform cannot read it, not 0.
+why: Caught by running the daemon on macOS: the gauge read a reassuring flat 0, which means "no datagrams were dropped" - on a platform that has no way to tell. That is exactly the quiet false assurance the UDP documentation is at pains to avoid. Prometheus renders NaN as absent, so a dashboard shows "no data" instead. Linux reads Udp: RcvbufErrors from /proc/net/snmp.
+affects: pkg/dataplane/ingest/source/{udp.go,drops_linux.go,drops_other.go}
+
+[2026-09-29 11:12] The metric type label is derived from the record's Origin, not from configuration.
+why: A configured label can disagree with reality - a source declared `tcp` that is actually receiving over TLS would be mislabelled forever. Deriving it from Origin.Kind means the label cannot be wrong about where the bytes came from.
+affects: pkg/dataplane/ingest/ingest.go
+
+[2026-09-29 11:12] BUG: the new `kind` field raced between Submit and write.
+why: Submit set stream.kind under s.mu, but write() reads it outside the lock, which is where the batch is actually sent. Caught immediately by -race. The kind now travels with the batch out of detach(), under the same lock that takes the records - the same shape as the earlier ordering fix.
+affects: pkg/dataplane/ingest/ingest.go
+
+[2026-09-29 11:15] /metrics is served on the loopback metrics_addr, never on an ingest port.
+why: Scraping and ingesting have different exposure. Devices reach the syslog and HTTP ports; nothing that reaches those should be able to read internal counters and queue depths.
+affects: cmd/ingestd/main.go
+
+[2026-09-29 11:15] scripts/send_samples.sh is POSIX sh using only nc, curl and jq.
+why: It has to run inside the container, where there is no bash and no coreutils beyond the basics, and PRD 9.1 already assumes nc, curl and jq. sha256sum and shasum are both handled because GNU and BSD userlands differ. It exits non-zero on any failed check, so CI can run it as a gate rather than a human reading output.
+affects: scripts/send_samples.sh
+
+[2026-09-29 11:20] M4 COMPLETE. make check ALL GREEN, 2890 passing subtests, three direct dependencies.
+why: Chunk rule. Sniff hint (advisory, computed after storage, 132 ns/op), TLS listeners with mutual TLS and `ingestd certs`, peer map, the multiline timeout, the full Prometheus metric set from PRD section 13 on a loopback /metrics, and scripts/send_samples.sh. The script was run against a live daemon and passed every check: all five ingest paths, verify --deep exit 0, three independent SHA-256s agreeing, a proof verifying with no vault present, and vault_failed at 0.
+Remaining: M5 - compaction (.zst/.meta/.hix), the 200-cycle kill -9 suite, benchmarks, docs/vault-format.md. The kill -9 suite is what "0 acknowledged records lost" is measured on and still does not exist.
+affects: pkg/dataplane/ingest/, pkg/dataplane/vault/, cmd/ingestd/, scripts/

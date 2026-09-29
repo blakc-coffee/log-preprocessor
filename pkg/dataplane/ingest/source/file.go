@@ -70,6 +70,9 @@ type FileConfig struct {
 	// having been rotated. Zero means DefaultPollInterval.
 	PollInterval time.Duration
 
+	// Metrics is the shared ingest collector set. Nil means no metrics.
+	Metrics *ingest.Metrics
+
 	// Now stamps ReceivedAt. Tests replace it.
 	Now func() time.Time
 	Log *slog.Logger
@@ -129,6 +132,22 @@ func NewFile(cfg FileConfig) (*File, error) {
 
 // ID implements ingest.Source.
 func (f *File) ID() string { return f.cfg.ID }
+
+// countTruncation records a tailed file shrinking below the read offset.
+func (f *File) countTruncation() {
+	if f.cfg.Metrics == nil {
+		return
+	}
+	f.cfg.Metrics.Truncations.WithLabelValues(f.cfg.Metrics.Source(f.cfg.ID)).Inc()
+}
+
+// countCheckpoint records a checkpoint write.
+func (f *File) countCheckpoint() {
+	if f.cfg.Metrics == nil {
+		return
+	}
+	f.cfg.Metrics.Checkpoints.WithLabelValues(f.cfg.Metrics.Source(f.cfg.ID)).Inc()
+}
 
 // Mode reports whether this source reads once or follows. `ingestd --once`
 // uses it to know which sources it should wait for.

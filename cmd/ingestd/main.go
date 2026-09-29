@@ -33,6 +33,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/frame"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/source"
@@ -115,6 +119,11 @@ func newLogger(level string, w io.Writer) *slog.Logger {
 }
 
 func serve(cfg *ingest.FileConfig, once bool, log *slog.Logger, stdout io.Writer) (int, error) {
+	reg := prometheus.NewRegistry()
+	// Go runtime and process collectors: heap growth and open file
+	// descriptors are the first two things to look at when ingest slows down.
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+
 	v, err := vault.Open(vault.Options{
 		Dir:                 cfg.Vault.Dir,
 		Sync:                vault.SyncMode(cfg.Vault.Sync),
@@ -126,6 +135,7 @@ func serve(cfg *ingest.FileConfig, once bool, log *slog.Logger, stdout io.Writer
 		SealInterval:        cfg.Vault.SealInterval.Std(),
 		MaxFrameBytes:       int(cfg.Limits.MaxFrameBytes),
 		Logger:              log,
+		Registerer:          reg,
 	})
 	if err != nil {
 		return exitUsage, fmt.Errorf("opening the vault: %w", err)
@@ -138,7 +148,7 @@ func serve(cfg *ingest.FileConfig, once bool, log *slog.Logger, stdout io.Writer
 	}()
 
 	out := make(chan types.RawEvent, cfg.OutBuffer)
-	p, err := ingest.New(ingest.Config{OutBuffer: cfg.OutBuffer}, v, out, log)
+	p, err := ingest.New(ingest.Config{OutBuffer: cfg.OutBuffer, Registerer: reg}, v, out, log)
 	if err != nil {
 		return exitUsage, err
 	}
@@ -148,7 +158,7 @@ func serve(cfg *ingest.FileConfig, once bool, log *slog.Logger, stdout io.Writer
 		return err == nil
 	}
 
-	srcs, closeSources, err := buildSources(cfg, healthy, log)
+	srcs, closeSources, err := buildSources(cfg, p.Metrics(), healthy, log)
 	if err != nil {
 		return exitUsage, err
 	}
@@ -198,7 +208,7 @@ func serve(cfg *ingest.FileConfig, once bool, log *slog.Logger, stdout io.Writer
 		p.AddSource(s)
 	}
 
-	stopMetrics := serveMetrics(cfg.MetricsAddr, healthy, log)
+	stopMetrics := serveMetrics(cfg.MetricsAddr, reg, healthy, log)
 	defer stopMetrics()
 
 	var wg sync.WaitGroup
@@ -248,7 +258,7 @@ func serve(cfg *ingest.FileConfig, once bool, log *slog.Logger, stdout io.Writer
 
 // buildSources turns the configuration into live sources. Listeners bind here,
 // so a port conflict is a startup error rather than a surprise later.
-func buildSources(cfg *ingest.FileConfig, healthy func() bool, log *slog.Logger) ([]ingest.Source, func(), error) {
+func buildSources(cfg *ingest.FileConfig, m *ingest.Metrics, healthy func() bool, log *slog.Logger) ([]ingest.Source, func(), error) {
 	peers := make([]source.PeerMapEntry, len(cfg.PeerMap))
 	for i, e := range cfg.PeerMap {
 		peers[i] = source.PeerMapEntry{CIDR: e.CIDR, SourceID: e.SourceID}
@@ -274,7 +284,7 @@ func buildSources(cfg *ingest.FileConfig, healthy func() bool, log *slog.Logger)
 		case "udp":
 			u, err := source.NewUDP(source.UDPConfig{
 				ID: s.ID, Listen: s.Listen, Readers: s.Readers,
-				RecvBuffer: int(s.RecvBuffer), PeerMap: peerMap, Log: log,
+				RecvBuffer: int(s.RecvBuffer), PeerMap: peerMap, Metrics: m, Log: log,
 			})
 			if err != nil {
 				closeAll()
@@ -291,6 +301,7 @@ func buildSources(cfg *ingest.FileConfig, healthy func() bool, log *slog.Logger)
 				MaxFrameBytes: int(cfg.Limits.MaxFrameBytes),
 				MaxOctetLen:   int(cfg.Limits.MaxOctetLen),
 				PeerMap:       peerMap,
+				Metrics:       m,
 				Log:           log,
 			}
 			if s.Type == "tls" {
@@ -317,6 +328,7 @@ func buildSources(cfg *ingest.FileConfig, healthy func() bool, log *slog.Logger)
 				MaxFrameBytes:  int(cfg.Limits.MaxFrameBytes),
 				MaxOctetLen:    int(cfg.Limits.MaxOctetLen),
 				Healthy:        healthy,
+				Metrics:        m,
 				Log:            log,
 			})
 			if err != nil {
@@ -335,6 +347,7 @@ func buildSources(cfg *ingest.FileConfig, healthy func() bool, log *slog.Logger)
 				CheckpointDir:   s.CheckpointDir,
 				CheckpointEvery: s.CheckpointEvery,
 				PollInterval:    s.Poll.Std(),
+				Metrics:         m,
 				Log:             log,
 			}
 			if s.Multiline != nil {
@@ -468,13 +481,19 @@ func toJSON(ev types.RawEvent) eventJSON {
 	}
 }
 
-// serveMetrics exposes /healthz. The Prometheus registry arrives at M4; this
-// is the part a container's healthcheck needs today.
-func serveMetrics(addr string, healthy func() bool, log *slog.Logger) func() {
+// serveMetrics exposes /metrics and /healthz on the loopback metrics address.
+// It is deliberately a separate listener from the ingest ports: scraping and
+// ingesting have different exposure, and /metrics must never be reachable
+// wherever devices are.
+func serveMetrics(addr string, reg *prometheus.Registry, healthy func() bool, log *slog.Logger) func() {
 	if addr == "" {
 		return func() {}
 	}
 	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{
+		// A scrape failure should be visible in the scrape, not swallowed.
+		ErrorHandling: promhttp.HTTPErrorOnError,
+	}))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		if !healthy() {
 			http.Error(w, "vault unavailable", http.StatusServiceUnavailable)

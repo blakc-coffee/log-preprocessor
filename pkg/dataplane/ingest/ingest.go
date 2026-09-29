@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/sniff"
 	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 )
@@ -51,6 +53,8 @@ type Config struct {
 	BatchDelay   time.Duration
 	// Now stamps ReceivedAt. Tests replace it; nothing else should.
 	Now func() time.Time
+	// Registerer receives the ingest collectors. Nil means no metrics.
+	Registerer prometheus.Registerer
 }
 
 func (c *Config) setDefaults() {
@@ -98,10 +102,11 @@ type Source interface {
 
 // Pipeline wires sources to the vault and to the downstream channel.
 type Pipeline struct {
-	cfg   Config
-	vault types.Vault
-	out   chan<- types.RawEvent
-	log   *slog.Logger
+	cfg     Config
+	vault   types.Vault
+	out     chan<- types.RawEvent
+	log     *slog.Logger
+	metrics *Metrics
 
 	mu      sync.Mutex
 	sources []Source
@@ -124,8 +129,12 @@ func New(cfg Config, v types.Vault, out chan<- types.RawEvent, log *slog.Logger)
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Pipeline{cfg: cfg, vault: v, out: out, log: log}, nil
+	return &Pipeline{cfg: cfg, vault: v, out: out, log: log, metrics: NewMetrics(cfg.Registerer)}, nil
 }
+
+// Metrics exposes the collectors, so sources can record against the same set
+// the pipeline uses rather than registering their own.
+func (p *Pipeline) Metrics() *Metrics { return p.metrics }
 
 // AddSource registers a source. It must be called before Run.
 func (p *Pipeline) AddSource(s Source) {
@@ -136,7 +145,7 @@ func (p *Pipeline) AddSource(s Source) {
 
 // NewStream implements Sink.
 func (p *Pipeline) NewStream(sourceID string) Stream {
-	s := &stream{p: p, sourceID: sourceID}
+	s := &stream{p: p, sourceID: sourceID, kind: "unknown"}
 	p.mu.Lock()
 	p.streams = append(p.streams, s)
 	p.mu.Unlock()
@@ -216,6 +225,10 @@ func (p *Pipeline) closeStreams() error {
 type stream struct {
 	p        *Pipeline
 	sourceID string
+	// kind is the source type (udp, tcp, tls, http, file), used as a metric
+	// label. It is derived from the record's origin rather than configured,
+	// so it cannot disagree with where the bytes actually came from.
+	kind string
 
 	writeMu sync.Mutex
 
@@ -255,6 +268,7 @@ func (s *stream) Submit(ctx context.Context, r types.RawRecord) error {
 	s.batch = append(s.batch, r)
 	if len(s.batch) == 1 {
 		s.arm()
+		s.kind = originKind(r.Origin.Kind)
 	}
 	full := len(s.batch) >= s.p.cfg.BatchRecords
 	s.mu.Unlock()
@@ -272,10 +286,27 @@ func (s *stream) flushNow(ctx context.Context) error {
 	defer s.writeMu.Unlock()
 
 	s.mu.Lock()
-	batch := s.detach()
+	batch, kind := s.detach()
 	s.mu.Unlock()
 
-	return s.write(ctx, batch)
+	return s.write(ctx, batch, kind)
+}
+
+// originKind names a source type for metric labels.
+func originKind(k types.OriginKind) string {
+	switch k {
+	case types.OriginFile:
+		return "file"
+	case types.OriginUDP:
+		return "udp"
+	case types.OriginTCP:
+		return "tcp"
+	case types.OriginTLS:
+		return "tls"
+	case types.OriginHTTP:
+		return "http"
+	}
+	return "unknown"
 }
 
 // arm schedules a flush for a batch that may not fill. The caller holds s.mu.
@@ -290,15 +321,20 @@ func (s *stream) arm() {
 	s.timer = time.AfterFunc(s.p.cfg.BatchDelay, s.flushFromTimer)
 }
 
-// detach takes the queued batch and disarms the timer. The caller holds s.mu.
-func (s *stream) detach() []types.RawRecord {
+// detach takes the queued batch and disarms the timer, and reports the source
+// kind alongside it. The caller holds s.mu.
+//
+// The kind travels with the batch rather than being read later, because write
+// runs outside the lock: reading s.kind there is a data race against the next
+// Submit setting it.
+func (s *stream) detach() ([]types.RawRecord, string) {
 	if s.timer != nil {
 		s.timer.Stop()
 		s.timer = nil
 	}
 	batch := s.batch
 	s.batch = nil
-	return batch
+	return batch, s.kind
 }
 
 func (s *stream) flushFromTimer() {
@@ -323,7 +359,7 @@ func (s *stream) flushFromTimer() {
 
 // write is the vault-before-forward step, and the only place records leave
 // this package.
-func (s *stream) write(ctx context.Context, batch []types.RawRecord) error {
+func (s *stream) write(ctx context.Context, batch []types.RawRecord, kind string) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -337,13 +373,21 @@ func (s *stream) write(ctx context.Context, batch []types.RawRecord) error {
 	}
 
 	// Durable. Only now does anything go downstream.
+	m := s.p.metrics
+	label := m.Source(s.sourceID)
 	for i, r := range batch {
+		m.Records.WithLabelValues(label, kind).Inc()
+		m.Bytes.WithLabelValues(label, kind).Add(float64(len(r.Raw)))
+		if r.Frag != types.FragNone {
+			m.Fragments.WithLabelValues(label).Inc()
+		}
 		// The hint is computed here, after storage, which is the point: it is
 		// advisory, so it must be impossible for it to influence what was
 		// stored. A parser may ignore it and must be correct when it is wrong.
 		ev := types.RawEvent{RawRecord: r, Receipt: receipts[i], Hint: sniff.Detect(r.Raw)}
 		select {
 		case s.p.out <- ev:
+			m.OutQueue.Set(float64(len(s.p.out)))
 		case <-ctx.Done():
 			// The record is durable and can be replayed from the vault by
 			// RecordID, so stopping here loses nothing. Say which record, so

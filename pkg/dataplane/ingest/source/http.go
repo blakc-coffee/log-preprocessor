@@ -48,6 +48,9 @@ type HTTPConfig struct {
 	MaxOctetLen       int
 	ReadHeaderTimeout time.Duration
 
+	// Metrics is the shared ingest collector set. Nil means no metrics.
+	Metrics *ingest.Metrics
+
 	// Healthy reports whether the vault can still accept writes. /healthz
 	// answers 503 when it returns false, which is what a load balancer and
 	// `docker healthcheck` need.
@@ -207,6 +210,12 @@ func (h *HTTPSource) handleIngest(ctx context.Context, sink ingest.Sink, w http.
 	// than after the whole thing has been accepted into memory.
 	body := http.MaxBytesReader(w, r.Body, h.cfg.MaxBody)
 	defer body.Close()
+
+	if h.cfg.Metrics != nil {
+		label := h.cfg.Metrics.Source(sourceID)
+		h.cfg.Metrics.Connections.WithLabelValues(label).Inc()
+		defer h.cfg.Metrics.Connections.WithLabelValues(label).Dec()
+	}
 
 	st := sink.NewStream(sourceID)
 	defer st.Close()

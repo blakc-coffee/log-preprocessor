@@ -105,6 +105,7 @@ func (f *File) followOnce(ctx context.Context, sink ingest.Sink, path string, lo
 	r := &tailReader{
 		f: fh, ctx: ctx, poll: f.pollInterval(),
 		path: path, dev: dev, ino: ino, offset: start,
+		onTruncate: f.countTruncation,
 	}
 	dec, ml, err := f.decoder(r)
 	if err != nil {
@@ -279,11 +280,15 @@ func (t *tailer) checkpointNow(ctx context.Context) error {
 	if t.file.cfg.CheckpointDir == "" {
 		return nil
 	}
-	return saveCheckpoint(t.file.cfg.CheckpointDir, checkpoint{
+	if err := saveCheckpoint(t.file.cfg.CheckpointDir, checkpoint{
 		Path: t.path, Dev: t.dev, Inode: t.ino,
 		Fingerprint: t.fingerprint, FingerprintLen: t.fingerprintLen,
 		Offset: offset,
-	})
+	}); err != nil {
+		return err
+	}
+	t.file.countCheckpoint()
+	return nil
 }
 
 func (f *File) checkpointEvery() int {
@@ -310,6 +315,9 @@ type tailReader struct {
 	path     string
 	dev, ino uint64
 	offset   int64
+	// onTruncate reports a file shrinking below the read offset, which is
+	// normal under copytruncate rotation and worth counting either way.
+	onTruncate func()
 
 	mu    sync.Mutex
 	ended bool
@@ -356,6 +364,7 @@ func (t *tailReader) checkIdentity() error {
 	// that copies and truncates does this, and continuing would read
 	// whatever lands at our stale offset as if it followed what came before.
 	if fi.Size() < t.offset {
+		t.onTruncate()
 		return errRotated
 	}
 
