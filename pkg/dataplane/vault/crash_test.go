@@ -180,6 +180,7 @@ func TestCrash(t *testing.T) {
 
 	rng := rand.New(rand.NewPCG(20260928, 0xC2A5))
 	var totalChecked, lastHighest uint64
+	var priorReceipts int64
 
 	for cycle := 1; cycle <= cycles; cycle++ {
 		cmd := exec.Command(self, "-test.run=TestCrashChild", "-test.timeout=5m")
@@ -196,10 +197,21 @@ func TestCrash(t *testing.T) {
 			t.Fatalf("cycle %d: starting the child: %v", cycle, err)
 		}
 
-		// Let it get properly underway, then kill it at an unpredictable
-		// moment so the cut lands in a different place each time: mid-write,
-		// mid-fsync, mid-seal, mid-ledger-append.
-		time.Sleep(time.Duration(15+rng.IntN(60)) * time.Millisecond)
+		// Wait until the child has actually acknowledged something, THEN kill
+		// it after a random extra delay.
+		//
+		// A fixed sleep looks simpler and is wrong: `make check` runs every
+		// package in parallel, and under that much disk contention — with
+		// macOS issuing a full drive flush per fsync — the child can fail to
+		// complete a single batch inside a fixed window. The suite then fails
+		// with "killed before it acknowledged anything", which is a flake
+		// about the machine rather than a finding about the vault.
+		//
+		// Waiting for progress first keeps the kill point random where it
+		// matters (inside the write path) without making the test a
+		// measurement of how busy the disk is.
+		waitForProgress(t, cycle, receiptsPath, priorReceipts)
+		time.Sleep(time.Duration(5+rng.IntN(45)) * time.Millisecond)
 
 		if err := cmd.Process.Kill(); err != nil {
 			t.Fatalf("cycle %d: killing the child: %v", cycle, err)
@@ -210,6 +222,10 @@ func TestCrash(t *testing.T) {
 		// it, which is a real failure rather than the crash we induced.
 		if stderr.Len() > 0 {
 			t.Fatalf("cycle %d: the child reported a failure before it was killed:\n%s", cycle, stderr)
+		}
+
+		if fi, err := os.Stat(receiptsPath); err == nil {
+			priorReceipts = fi.Size()
 		}
 
 		highest := verifyAfterCrash(t, cycle, vaultDir, receiptsPath)
@@ -227,6 +243,23 @@ func TestCrash(t *testing.T) {
 
 	t.Logf("%d kill -9 cycles, %d acknowledged records, 0 lost", cycles, lastHighest)
 	_ = totalChecked
+}
+
+// waitForProgress blocks until the child has appended at least one receipt
+// beyond what previous cycles left behind.
+func waitForProgress(t *testing.T, cycle int, path string, prior int64) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if fi, err := os.Stat(path); err == nil && fi.Size() > prior {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("cycle %d: the child acknowledged nothing in 30s; "+
+				"the vault is not accepting writes", cycle)
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 // verifyAfterCrash reopens the vault and checks every acknowledged record.

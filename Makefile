@@ -36,8 +36,8 @@ check: ## Everything the chunk rule requires, in one command. Run this first and
 	@test -z "$$(gofmt -l pkg cmd tools)" || { echo "unformatted:"; gofmt -l pkg cmd tools; exit 1; }
 	@echo "==> go vet"
 	@go vet ./...
-	@echo "==> go test -race"
-	@CGO_ENABLED=1 go test -race ./...
+	@echo "==> go test -race (incl. a 40-cycle crash pass; make crash runs the full 200)"
+	@ULPF_CRASH_CYCLES=40 CGO_ENABLED=1 go test -race ./...
 	@echo "==> fixture determinism"
 	@$(MAKE) --no-print-directory fixtures-check
 	@echo "==> CGO_ENABLED=0 build"

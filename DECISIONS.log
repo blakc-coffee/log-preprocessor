@@ -741,3 +741,17 @@ affects: pkg/dataplane/vault/bench_test.go
 [2026-09-29 12:10] docs/vault-format.md written; section 10 is the one that matters.
 why: It is the source for slide 3 and the two-page architecture document, and the reference for anyone writing a verifier or a tamper test. Section 10 ("What is NOT claimed") is deliberately the most detailed: power-loss durability is not proven and the reason is stated with the mutation result that established it; tamper-evident is not tamper-proof and the coherent-rewrite case is spelled out; UDP, at-least-once tail delivery and single-node are all named. A format document that only lists guarantees is how a submission ends up overclaiming.
 affects: docs/vault-format.md
+
+[2026-09-29 12:25] BUG FOUND BY THE CRASH SUITE UNDER -race: a vault could become unopenable.
+why: openSegment creates the segment file, writes the 72-byte header and fsyncs. A crash inside those few microseconds leaves a file shorter than a header - a segment no record was ever acknowledged into. Recovery called that fatal corruption and refused to open the vault at all, so a kill landing in a microsecond-wide window of segment rollover produced a vault that could never be started again. That is strictly worse than losing the unacknowledged records: it loses everything.
+It is now treated as never having existed - the file is removed and the id is free for the next write. Only the LAST segment qualifies; an empty segment in the middle still means a segment was removed, which no crash does.
+Found at cycle 123, and only under -race, because the race detector slows the child enough to move where the kill lands. A 200-cycle suite that runs only without -race would not have found it. TestUninitialisedSegmentIsDiscarded now covers 0, 1 and 71 bytes directly rather than waiting for luck.
+affects: pkg/dataplane/vault/recover.go, recover_test.go
+
+[2026-09-29 12:30] The crash suite waits for the child to acknowledge something before killing it.
+why: A fixed pre-kill sleep is simpler and wrong. `make check` runs every package in parallel, and under that disk contention - with macOS issuing a full drive flush per fsync - the child can fail to complete a single batch inside a fixed window, and the suite fails with "killed before it acknowledged anything". That is a flake about how busy the machine is, not a finding about the vault, and an intermittently failing crash suite is worse than none because it trains people to re-run it. It now polls for the first receipt and then kills after a random extra delay, so the kill point stays random where it matters - inside the write path - without the test measuring disk load.
+affects: pkg/dataplane/vault/crash_test.go
+
+[2026-09-29 12:30] `make check` runs a 40-cycle crash pass; `make crash` runs the full 200.
+why: The crash suite found a real bug during an ordinary `make check`, so it earns its place in the main gate. 40 cycles adds about 25 seconds, which is acceptable for the gate that runs constantly; 200 stays behind `make crash` for a full pass.
+affects: Makefile

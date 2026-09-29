@@ -83,8 +83,12 @@ func (v *Vault) recover() error {
 
 	for i, id := range ids {
 		last := i == len(ids)-1
-		if err := v.recoverSegment(id, last, seals); err != nil {
+		skipped, err := v.recoverSegment(id, last, seals)
+		if err != nil {
 			return err
+		}
+		if skipped && !last {
+			return v.corruptf(id, "segment %d was never initialised but is not the last", id)
 		}
 	}
 
@@ -219,7 +223,8 @@ func (v *Vault) listSegments() ([]uint64, error) {
 }
 
 // recoverSegment opens one segment, validates it, and rebuilds its index.
-func (v *Vault) recoverSegment(id uint64, isLast bool, seals []types.SegmentSeal) error {
+// It reports whether the segment was skipped as never-initialised.
+func (v *Vault) recoverSegment(id uint64, isLast bool, seals []types.SegmentSeal) (bool, error) {
 	path := filepath.Join(v.opts.Dir, segmentName(id, "wal"))
 	flags := os.O_RDWR
 	if v.opts.ReadOnly {
@@ -227,35 +232,59 @@ func (v *Vault) recoverSegment(id uint64, isLast bool, seals []types.SegmentSeal
 	}
 	f, err := os.OpenFile(path, flags, 0o600)
 	if err != nil {
-		return err
+		return false, err
 	}
 	fi, err := f.Stat()
 	if err != nil {
 		f.Close()
-		return err
+		return false, err
+	}
+
+	// A file too short to hold a header was created and then interrupted
+	// before the header was fsynced. That is not corruption: openSegment
+	// creates the file, writes the header and fsyncs, and a crash inside that
+	// window leaves a segment no record was ever acknowledged into.
+	//
+	// Treat it as never having existed. The id is then free again and the
+	// next write recreates it properly. Refusing to open here would mean a
+	// crash landing in a few microseconds of segment rollover left a vault
+	// that could not be started.
+	if fi.Size() < HeaderSize {
+		f.Close()
+		if !isLast {
+			return true, nil // the caller reports this as corruption
+		}
+		v.opts.Logger.Warn("discarding a segment that was created but never initialised",
+			"segment", id, "bytes", fi.Size())
+		if !v.opts.ReadOnly {
+			if err := os.Remove(path); err != nil {
+				return false, err
+			}
+		}
+		return true, nil
 	}
 
 	hdrBuf := make([]byte, HeaderSize)
 	if _, err := f.ReadAt(hdrBuf, 0); err != nil {
 		f.Close()
-		return v.corruptf(id, "segment %d has no readable header: %v", id, err)
+		return false, v.corruptf(id, "segment %d has no readable header: %v", id, err)
 	}
 	h, err := decodeHeader(hdrBuf)
 	if err != nil {
 		f.Close()
-		return v.corruptf(id, "segment %d header: %v", id, err)
+		return false, v.corruptf(id, "segment %d header: %v", id, err)
 	}
 	if h.Segment != id {
 		f.Close()
-		return v.corruptf(id, "file %s contains segment %d", segmentName(id, "wal"), h.Segment)
+		return false, v.corruptf(id, "file %s contains segment %d", segmentName(id, "wal"), h.Segment)
 	}
 	if want := types.RecordID(len(v.index)) + 1; h.FirstSeq != want {
 		f.Close()
-		return v.corruptf(id, "segment %d starts at sequence %d, expected %d", id, h.FirstSeq, want)
+		return false, v.corruptf(id, "segment %d starts at sequence %d, expected %d", id, h.FirstSeq, want)
 	}
 	if h.PrevChain != v.head {
 		f.Close()
-		return v.corruptf(id, "segment %d does not follow the previous chain hash", id)
+		return false, v.corruptf(id, "segment %d does not follow the previous chain hash", id)
 	}
 
 	s := &segState{id: id, firstSeq: h.FirstSeq, prev: h.PrevChain, file: f, size: HeaderSize}
@@ -281,25 +310,25 @@ func (v *Vault) recoverSegment(id uint64, isLast bool, seals []types.SegmentSeal
 	if sealed {
 		if tornAt >= 0 {
 			if err := v.corruptf(id, "sealed segment %d has a damaged record at offset %d", id, tornAt); err != nil {
-				return err
+				return false, err
 			}
 		}
 		if uint64(len(leaves)) != ftr.Count {
 			if err := v.corruptf(id, "sealed segment %d holds %d records, its footer says %d",
 				id, len(leaves), ftr.Count); err != nil {
-				return err
+				return false, err
 			}
 		}
 		if merkle.Root(leaves) != ftr.Root {
 			if err := v.corruptf(id, "sealed segment %d does not match its footer root", id); err != nil {
-				return err
+				return false, err
 			}
 		}
 	} else if !isLast {
 		// Only the final segment can be unsealed. One in the middle means a
 		// segment was removed or the directory was rearranged.
 		if err := v.corruptf(id, "segment %d is not the last but has no footer", id); err != nil {
-			return err
+			return false, err
 		}
 	}
 
@@ -316,7 +345,7 @@ func (v *Vault) recoverSegment(id uint64, isLast bool, seals []types.SegmentSeal
 		s.sealed, s.root, s.chain, s.sealedAt = true, ftr.Root, ftr.Chain, ftr.SealedAt
 		v.head = ftr.Chain
 		if err := v.adoptSeal(s, ftr, seals); err != nil {
-			return err
+			return false, err
 		}
 
 	case tornAt >= 0 || (isLast && len(leaves) > 0):
@@ -328,20 +357,20 @@ func (v *Vault) recoverSegment(id uint64, isLast bool, seals []types.SegmentSeal
 		}
 		if !v.opts.ReadOnly {
 			if err := f.Truncate(end); err != nil {
-				return err
+				return false, err
 			}
 			if err := f.Sync(); err != nil {
-				return err
+				return false, err
 			}
 		}
 		s.leaves = leaves
 		v.segs = append(v.segs, s)
 		if !v.opts.ReadOnly {
 			if err := v.sealRecovered(s, tornAt >= 0); err != nil {
-				return err
+				return false, err
 			}
 		}
-		return nil
+		return false, nil
 
 	case len(leaves) == 0:
 		// An empty, unsealed segment: the file was created but nothing was
@@ -349,11 +378,11 @@ func (v *Vault) recoverSegment(id uint64, isLast bool, seals []types.SegmentSeal
 		// reused as the active segment.
 		s.leaves = leaves
 		v.segs = append(v.segs, s)
-		return nil
+		return false, nil
 	}
 
 	v.segs = append(v.segs, s)
-	return nil
+	return false, nil
 }
 
 // scanRecords walks a segment's records up to limit. It returns the leaf

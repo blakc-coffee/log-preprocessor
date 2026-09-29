@@ -3,6 +3,7 @@ package vault_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -423,5 +424,89 @@ func TestWriterRefusesDamagedVault(t *testing.T) {
 	if v2, err := vault.Open(opts(dir, 4)); err == nil {
 		v2.Close()
 		t.Fatal("a writer opened a vault with a missing segment")
+	}
+}
+
+// TestUninitialisedSegmentIsDiscarded is a regression test for a crash window
+// the 200-cycle suite found only under -race, at cycle 123.
+//
+// openSegment creates the file, writes the 72-byte header, and fsyncs. A crash
+// inside those few microseconds leaves a segment file shorter than a header,
+// which no record was ever acknowledged into. Recovery called that fatal
+// corruption and refused to open the vault at all — so a crash landing in a
+// microsecond-wide window of segment rollover produced a vault that could not
+// be started again.
+//
+// It is treated as never having existed: the file is removed and the id is
+// free for the next write.
+func TestUninitialisedSegmentIsDiscarded(t *testing.T) {
+	for _, size := range []int{0, 1, vault.HeaderSize - 1} {
+		t.Run(fmt.Sprintf("%d_bytes", size), func(t *testing.T) {
+			dir := t.TempDir()
+			v := open(t, dir, 4)
+			receipts := putN(t, v, 9)
+			if err := v.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			// A partially created segment beyond the last real one.
+			next := filepath.Join(dir, segName(4))
+			if err := os.WriteFile(next, make([]byte, size), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			v2, err := vault.Open(opts(dir, 4))
+			if err != nil {
+				t.Fatalf("a vault with a %d-byte uninitialised segment would not open: %v", size, err)
+			}
+			defer v2.Close()
+
+			// Everything acknowledged before the crash is still there.
+			for i, rc := range receipts {
+				got, _, err := v2.Get(context.Background(), rc.ID)
+				if err != nil {
+					t.Fatalf("record %d was lost: %v", rc.ID, err)
+				}
+				if !bytes.Equal(got.Raw, rec(i).Raw) {
+					t.Errorf("record %d came back changed", rc.ID)
+				}
+			}
+			rep, err := v2.VerifyChain(context.Background(), true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !rep.OK {
+				t.Fatalf("chain broken: %s", rep.Reason)
+			}
+
+			// And writing continues from where it left off.
+			rc, err := v2.Put(context.Background(), rec(99))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := types.RecordID(len(receipts) + 1); rc.ID != want {
+				t.Errorf("the first record after recovery got id %d, want %d", rc.ID, want)
+			}
+		})
+	}
+}
+
+// TestUninitialisedMiddleSegmentIsStillCorruption: only the LAST segment can
+// be uninitialised. One in the middle means a segment was removed, which is
+// not something a crash does.
+func TestUninitialisedMiddleSegmentIsStillCorruption(t *testing.T) {
+	dir := t.TempDir()
+	v := open(t, dir, 4)
+	putN(t, v, 16)
+	if err := v.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, segName(2)), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if v2, err := vault.Open(opts(dir, 4)); err == nil {
+		v2.Close()
+		t.Fatal("a writer opened a vault with an empty middle segment")
 	}
 }
