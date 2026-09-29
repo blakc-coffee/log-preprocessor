@@ -37,8 +37,11 @@ type UDPConfig struct {
 	// RecvBuffer is the SO_RCVBUF request. The kernel may clamp it to
 	// net.core.rmem_max, and the effective value is logged when it does.
 	RecvBuffer int
-	Now        func() time.Time
-	Log        *slog.Logger
+	// PeerMap assigns source_id from the sender's address. Unlike TCP, this
+	// is resolved per datagram, because one socket receives from everyone.
+	PeerMap *PeerMap
+	Now     func() time.Time
+	Log     *slog.Logger
 }
 
 // UDP receives syslog datagrams.
@@ -174,7 +177,9 @@ func (u *UDP) read(ctx context.Context, sink ingest.Sink) {
 		u.bytes.Add(int64(n))
 
 		rec := types.RawRecord{
-			SourceID:   u.cfg.ID,
+			// Per datagram: a single UDP socket hears from every device, so
+			// unlike a connection there is nothing to resolve once.
+			SourceID:   u.cfg.PeerMap.Lookup(peer.String(), u.cfg.ID),
 			ReceivedAt: u.cfg.Now().UTC(),
 			Origin: types.Origin{
 				Kind: types.OriginUDP,

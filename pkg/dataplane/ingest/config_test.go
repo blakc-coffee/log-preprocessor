@@ -40,10 +40,9 @@ func TestUnknownKeysAreAnError(t *testing.T) {
 		"top level": "nonsense: 1\n" + minimalConfig,
 		"nested":    minimalConfig + "vault:\n  segment_max_recrods: 10\n",
 		"source":    "sources:\n  - {id: a, type: udp, listen: \"127.0.0.1:0\", nonsense: 1}\n",
-		// These are real keys for features that do not exist yet. Accepting
-		// and ignoring them would leave an operator certain compaction was on.
+		// A real key for a feature that does not exist yet. Accepting and
+		// ignoring it would leave an operator certain compaction was on.
 		"unimplemented compaction": minimalConfig + "vault:\n  compact: true\n",
-		"unimplemented peer_map":   minimalConfig + "peer_map:\n  - {cidr: 10.0.0.0/8, source_id: x}\n",
 	}
 	for name, in := range cases {
 		if _, err := ingest.Parse([]byte(in)); err == nil {
@@ -196,6 +195,38 @@ sources:
 	for _, want := range []string{"log_level", "carrier-pigeon", "paths is required"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("the error does not mention %q:\n%s", want, msg)
+		}
+	}
+}
+
+// TestPeerMapConfig. peer_map was rejected as an unknown key until the feature
+// existed; now it parses, and a malformed entry is a startup error rather than
+// a mapping that silently never matches.
+func TestPeerMapConfig(t *testing.T) {
+	cfg, err := ingest.Parse([]byte(`
+peer_map:
+  - {cidr: "10.1.0.0/16", source_id: site-a}
+  - {cidr: "10.1.4.0/24", source_id: site-a-dmz}
+` + minimalConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.PeerMap) != 2 {
+		t.Fatalf("parsed %d peer map entries, want 2", len(cfg.PeerMap))
+	}
+	if cfg.PeerMap[0].SourceID != "site-a" || cfg.PeerMap[0].CIDR != "10.1.0.0/16" {
+		t.Errorf("first entry is %+v", cfg.PeerMap[0])
+	}
+
+	for name, entry := range map[string]string{
+		"not a cidr":   `- {cidr: "nonsense", source_id: x}`,
+		"bare address": `- {cidr: "10.1.0.0", source_id: x}`,
+		"no source_id": `- {cidr: "10.1.0.0/16"}`,
+		"no cidr":      `- {source_id: x}`,
+		"unknown key":  `- {cidr: "10.1.0.0/16", source_id: x, nonsense: 1}`,
+	} {
+		if _, err := ingest.Parse([]byte("peer_map:\n  " + entry + "\n" + minimalConfig)); err == nil {
+			t.Errorf("%s: accepted", name)
 		}
 	}
 }

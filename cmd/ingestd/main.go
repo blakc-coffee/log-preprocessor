@@ -249,6 +249,18 @@ func serve(cfg *ingest.FileConfig, once bool, log *slog.Logger, stdout io.Writer
 // buildSources turns the configuration into live sources. Listeners bind here,
 // so a port conflict is a startup error rather than a surprise later.
 func buildSources(cfg *ingest.FileConfig, healthy func() bool, log *slog.Logger) ([]ingest.Source, func(), error) {
+	peers := make([]source.PeerMapEntry, len(cfg.PeerMap))
+	for i, e := range cfg.PeerMap {
+		peers[i] = source.PeerMapEntry{CIDR: e.CIDR, SourceID: e.SourceID}
+	}
+	peerMap, err := source.NewPeerMap(peers)
+	if err != nil {
+		return nil, nil, err
+	}
+	if peerMap.Len() > 0 {
+		log.Info("peer map loaded", "entries", peerMap.Len())
+	}
+
 	var srcs []ingest.Source
 	var closers []func()
 	closeAll := func() {
@@ -262,7 +274,7 @@ func buildSources(cfg *ingest.FileConfig, healthy func() bool, log *slog.Logger)
 		case "udp":
 			u, err := source.NewUDP(source.UDPConfig{
 				ID: s.ID, Listen: s.Listen, Readers: s.Readers,
-				RecvBuffer: int(s.RecvBuffer), Log: log,
+				RecvBuffer: int(s.RecvBuffer), PeerMap: peerMap, Log: log,
 			})
 			if err != nil {
 				closeAll()
@@ -278,6 +290,7 @@ func buildSources(cfg *ingest.FileConfig, healthy func() bool, log *slog.Logger)
 				IdleTimeout:   cfg.Limits.IdleTimeout.Std(),
 				MaxFrameBytes: int(cfg.Limits.MaxFrameBytes),
 				MaxOctetLen:   int(cfg.Limits.MaxOctetLen),
+				PeerMap:       peerMap,
 				Log:           log,
 			}
 			if s.Type == "tls" {

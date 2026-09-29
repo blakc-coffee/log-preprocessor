@@ -106,7 +106,7 @@ func (f *File) followOnce(ctx context.Context, sink ingest.Sink, path string, lo
 		f: fh, ctx: ctx, poll: f.pollInterval(),
 		path: path, dev: dev, ino: ino, offset: start,
 	}
-	dec, err := f.decoder(r)
+	dec, ml, err := f.decoder(r)
 	if err != nil {
 		return err
 	}
@@ -118,6 +118,14 @@ func (f *File) followOnce(ctx context.Context, sink ingest.Sink, path string, lo
 		file: f, stream: st, log: log, path: path,
 		dev: dev, ino: ino, fingerprint: fp, fingerprintLen: fpLen, base: start,
 	}
+
+	// The multiline timeout runs alongside the read loop, because the read
+	// loop is blocked waiting for data that may never come.
+	stopTimer := f.watchMultilineTimeout(ctx, ml, func(fr frame.Frame) error {
+		return t.submit(ctx, fr)
+	})
+	defer stopTimer()
+
 	return t.pump(ctx, dec, r)
 }
 
@@ -174,6 +182,9 @@ type tailer struct {
 	// base is the file offset the framer's offsets are relative to.
 	base int64
 
+	// mu guards the position fields, which the read loop and the multiline
+	// timeout goroutine both advance.
+	mu sync.Mutex
 	// pending is the file offset after the last record submitted, which
 	// becomes the checkpoint once the stream is flushed.
 	pending int64
@@ -184,8 +195,10 @@ type tailer struct {
 // pump moves records from the decoder into the stream, checkpointing as it
 // goes.
 func (t *tailer) pump(ctx context.Context, dec frame.Decoder, r *tailReader) error {
+	t.mu.Lock()
 	t.pending = t.base
 	t.lastAt = time.Now()
+	t.mu.Unlock()
 
 	for {
 		fr, err := dec.Next()
@@ -198,32 +211,52 @@ func (t *tailer) pump(ctx context.Context, dec frame.Decoder, r *tailReader) err
 			return err
 		}
 
-		rec := types.RawRecord{
-			SourceID:   t.file.cfg.ID,
-			ReceivedAt: t.file.cfg.Now().UTC(),
-			Origin: types.Origin{
-				Kind:   types.OriginFile,
-				Addr:   t.path,
-				Offset: uint64(t.base) + fr.Offset,
-			},
-			Term: fr.Term,
-			Frag: fr.Frag,
-			Raw:  fr.Raw,
-		}
-		if err := t.stream.Submit(ctx, rec); err != nil {
+		if err := t.submit(ctx, fr); err != nil {
 			return err
 		}
 
-		// The next record starts after this one's terminator.
-		t.pending = t.base + int64(fr.Offset) + int64(len(fr.Raw)) + int64(terminatorLen(fr.Term))
-		t.since++
-
-		if t.since >= t.file.checkpointEvery() || time.Since(t.lastAt) >= defaultCheckpointAfter {
+		t.mu.Lock()
+		due := t.since >= t.file.checkpointEvery() || time.Since(t.lastAt) >= defaultCheckpointAfter
+		t.mu.Unlock()
+		if due {
 			if err := t.checkpointNow(ctx); err != nil {
 				return err
 			}
 		}
 	}
+}
+
+// submit turns a frame into a record and queues it, advancing the position
+// the next checkpoint will record.
+//
+// The multiline timeout goroutine calls this too, so it takes the lock: two
+// goroutines advancing `pending` without one would write a checkpoint that
+// skips or repeats a record.
+func (t *tailer) submit(ctx context.Context, fr frame.Frame) error {
+	rec := types.RawRecord{
+		SourceID:   t.file.cfg.ID,
+		ReceivedAt: t.file.cfg.Now().UTC(),
+		Origin: types.Origin{
+			Kind:   types.OriginFile,
+			Addr:   t.path,
+			Offset: uint64(t.base) + fr.Offset,
+		},
+		Term: fr.Term,
+		Frag: fr.Frag,
+		Raw:  fr.Raw,
+	}
+	if err := t.stream.Submit(ctx, rec); err != nil {
+		return err
+	}
+
+	t.mu.Lock()
+	// The next record starts after this one's terminator.
+	if next := t.base + int64(fr.Offset) + int64(len(fr.Raw)) + int64(terminatorLen(fr.Term)); next > t.pending {
+		t.pending = next
+	}
+	t.since++
+	t.mu.Unlock()
+	return nil
 }
 
 // checkpointNow flushes the stream and then records the position.
@@ -236,8 +269,12 @@ func (t *tailer) checkpointNow(ctx context.Context) error {
 	if err := t.stream.Flush(ctx); err != nil {
 		return err
 	}
+
+	t.mu.Lock()
 	t.since = 0
 	t.lastAt = time.Now()
+	offset := t.pending
+	t.mu.Unlock()
 
 	if t.file.cfg.CheckpointDir == "" {
 		return nil
@@ -245,7 +282,7 @@ func (t *tailer) checkpointNow(ctx context.Context) error {
 	return saveCheckpoint(t.file.cfg.CheckpointDir, checkpoint{
 		Path: t.path, Dev: t.dev, Inode: t.ino,
 		Fingerprint: t.fingerprint, FingerprintLen: t.fingerprintLen,
-		Offset: t.pending,
+		Offset: offset,
 	})
 }
 

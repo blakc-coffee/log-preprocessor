@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"regexp"
 	"strconv"
@@ -120,9 +121,17 @@ type FileConfig struct {
 	OutBuffer       int      `yaml:"out_buffer"`
 	ShutdownTimeout Duration `yaml:"shutdown_timeout"`
 
-	Vault   VaultConfig   `yaml:"vault"`
-	Limits  LimitsConfig  `yaml:"limits"`
-	Sources []SourceEntry `yaml:"sources"`
+	Vault   VaultConfig    `yaml:"vault"`
+	Limits  LimitsConfig   `yaml:"limits"`
+	PeerMap []PeerMapEntry `yaml:"peer_map"`
+	Sources []SourceEntry  `yaml:"sources"`
+}
+
+// PeerMapEntry maps a sender's network to a source_id. Longest prefix wins,
+// and a peer matching nothing keeps the listener's own id.
+type PeerMapEntry struct {
+	CIDR     string `yaml:"cidr"`
+	SourceID string `yaml:"source_id"`
 }
 
 // VaultConfig mirrors the vault's options.
@@ -275,6 +284,16 @@ func (c *FileConfig) Validate() error {
 	}
 	if err := validateEmit(c.Emit); err != nil {
 		errs = append(errs, err)
+	}
+
+	for i, e := range c.PeerMap {
+		if e.CIDR == "" || e.SourceID == "" {
+			errs = append(errs, fmt.Errorf("peer_map[%d]: cidr and source_id are both required", i))
+			continue
+		}
+		if _, err := netip.ParsePrefix(e.CIDR); err != nil {
+			errs = append(errs, fmt.Errorf("peer_map[%d]: %q is not a CIDR", i, e.CIDR))
+		}
 	}
 
 	if len(c.Sources) == 0 {

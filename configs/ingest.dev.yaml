@@ -39,6 +39,15 @@ limits:
   idle_timeout: 5m
   http_max_body: 1GiB
 
+# Assign source_id from the sender's address, so onboarding a device is a
+# config line rather than a new listener. Longest prefix wins, and a peer that
+# matches nothing keeps the listener's own id rather than being dropped.
+#
+# peer_map:
+#   - {cidr: "10.1.0.0/16", source_id: site-a}
+#   - {cidr: "10.1.4.0/24", source_id: site-a-dmz}
+#   - {cidr: "10.1.4.7/32", source_id: site-a-core-fw}
+
 sources:
   - {id: syslog-udp, type: udp, listen: "127.0.0.1:5514", readers: 4, recv_buffer: 8MiB}
   - {id: syslog-tcp, type: tcp, listen: "127.0.0.1:5514", framing: auto}

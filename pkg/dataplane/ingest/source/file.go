@@ -231,7 +231,7 @@ func (f *File) readOnce(ctx context.Context, sink ingest.Sink, path string) erro
 	}
 	defer fh.Close()
 
-	dec, err := f.decoder(fh)
+	dec, _, err := f.decoder(fh)
 	if err != nil {
 		return err
 	}
@@ -282,19 +282,72 @@ func (f *File) readOnce(ctx context.Context, sink ingest.Sink, path string) erro
 	return nil
 }
 
-// decoder builds the framing stack for a file.
-func (f *File) decoder(r io.Reader) (frame.Decoder, error) {
+// decoder builds the framing stack for a file. It also returns the multiline
+// decoder, when there is one, so the caller can drive its timeout.
+func (f *File) decoder(r io.Reader) (frame.Decoder, *frame.Multiline, error) {
 	opts := frame.Options{MaxFrameBytes: f.cfg.MaxFrameBytes}
 	dec, err := frame.New(f.cfg.Framing, r, opts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if f.cfg.Multiline == nil {
-		return dec, nil
+		return dec, nil, nil
 	}
-	return frame.NewMultiline(dec, frame.MultilineOptions{
+	ml, err := frame.NewMultiline(dec, frame.MultilineOptions{
 		Start:         f.cfg.Multiline.Start,
 		MaxLines:      f.cfg.Multiline.MaxLines,
 		MaxFrameBytes: f.cfg.MaxFrameBytes,
+		Now:           f.cfg.Now,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return ml, ml, nil
+}
+
+// watchMultilineTimeout releases a record whose continuation never arrives.
+//
+// Without it the last event before a source goes quiet is held indefinitely -
+// which is exactly the event someone is trying to read during an incident. The
+// decoder cannot do this itself: Next blocks on the reader, so it never
+// notices time passing while it waits.
+//
+// Returns a stop function the caller must call before closing the stream.
+func (f *File) watchMultilineTimeout(ctx context.Context, ml *frame.Multiline, submit func(frame.Frame) error) func() {
+	if ml == nil || f.cfg.Multiline == nil || f.cfg.Multiline.Timeout <= 0 {
+		return func() {}
+	}
+	timeout := f.cfg.Multiline.Timeout
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Check more often than the timeout, so a record is released within
+		// roughly the timeout rather than up to twice it.
+		tick := time.NewTicker(timeout / 2)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stop:
+				return
+			case <-tick.C:
+				fr, ok := ml.FlushIfOlderThan(timeout)
+				if !ok {
+					continue
+				}
+				if err := submit(fr); err != nil {
+					f.cfg.Log.Error("submitting a timed-out multiline record",
+						"source", f.cfg.ID, "err", err)
+					return
+				}
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-done
+	}
 }

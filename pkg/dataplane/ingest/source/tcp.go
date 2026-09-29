@@ -45,6 +45,11 @@ type TCPConfig struct {
 	// TLS, when set, wraps every accepted connection. Minimum TLS 1.2.
 	TLS *tls.Config
 
+	// PeerMap assigns source_id from the sender's address, so onboarding a
+	// device is a config line rather than a new listener. Nil means every
+	// record carries this listener's ID.
+	PeerMap *PeerMap
+
 	Now func() time.Time
 	Log *slog.Logger
 }
@@ -237,6 +242,12 @@ func (t *TCP) serve(ctx context.Context, sink ingest.Sink, conn net.Conn) {
 		kind = types.OriginTLS
 	}
 
+	// Resolved once per connection: the peer cannot change mid-stream.
+	sourceID := t.cfg.PeerMap.Lookup(peer, t.cfg.ID)
+	if sourceID != t.cfg.ID {
+		log = log.With("source_id", sourceID)
+	}
+
 	br := bufio.NewReader(&idleConn{Conn: conn, idle: t.cfg.IdleTimeout})
 
 	mode := t.cfg.Framing
@@ -258,7 +269,7 @@ func (t *TCP) serve(ctx context.Context, sink ingest.Sink, conn net.Conn) {
 		return
 	}
 
-	st := sink.NewStream(t.cfg.ID)
+	st := sink.NewStream(sourceID)
 	defer st.Close()
 
 	for {
@@ -268,7 +279,7 @@ func (t *TCP) serve(ctx context.Context, sink ingest.Sink, conn net.Conn) {
 			return
 		}
 		rec := types.RawRecord{
-			SourceID:   t.cfg.ID,
+			SourceID:   sourceID,
 			ReceivedAt: t.cfg.Now().UTC(),
 			Origin:     types.Origin{Kind: kind, Addr: peer, Offset: fr.Offset},
 			Term:       fr.Term,

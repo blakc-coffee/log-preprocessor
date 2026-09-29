@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -492,5 +493,73 @@ func TestTailOriginOffsets(t *testing.T) {
 		if string(body[off:int(off)+len(ev.Raw)]) != string(ev.Raw) {
 			t.Errorf("record %d: offset %d does not point at %q", i, off, ev.Raw)
 		}
+	}
+}
+
+// TestMultilineTimeoutReleasesAHeldRecord is the M4 half of multiline framing.
+//
+// A multiline record is complete only when the next record's first line
+// arrives. If a source goes quiet mid-event, the last event is held
+// indefinitely — and that is exactly the event someone is trying to read
+// during an incident. The decoder cannot notice, because Next is blocked
+// waiting for data that will never come, so the source drives the clock.
+func TestMultilineTimeoutReleasesAHeldRecord(t *testing.T) {
+	dir := t.TempDir()
+	tf := newTailFixture(t, dir, "ml.log")
+
+	h := start(t, tailSource(t, source.FileConfig{
+		Paths: []string{tf.path},
+		Multiline: &source.MultilineConfig{
+			Start:   regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T`),
+			Timeout: 60 * time.Millisecond,
+		},
+	}))
+
+	tf.write("2026-09-28T09:00:00 ERROR something failed", "\tat frame one", "\tat frame two")
+
+	// Nothing else arrives. Without the timeout this record is held forever.
+	got := h.waitFor(1)
+	want := "2026-09-28T09:00:00 ERROR something failed\n\tat frame one\n\tat frame two"
+	if string(got[0].Raw) != want {
+		t.Errorf("got %q\nwant %q", got[0].Raw, want)
+	}
+
+	// And the next event still frames correctly afterwards.
+	tf.write("2026-09-28T09:01:00 ERROR another", "\tat frame three")
+	got = h.waitFor(2)
+	if len(got) < 2 {
+		t.Fatal("the second event never arrived")
+	}
+}
+
+// TestMultilineTimeoutDoesNotCutAnActiveRecord: a record whose continuations
+// keep arriving must not be split just because it is taking a while.
+func TestMultilineTimeoutDoesNotCutAnActiveRecord(t *testing.T) {
+	dir := t.TempDir()
+	tf := newTailFixture(t, dir, "active.log")
+
+	h := start(t, tailSource(t, source.FileConfig{
+		Paths: []string{tf.path},
+		Multiline: &source.MultilineConfig{
+			Start:   regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T`),
+			Timeout: 500 * time.Millisecond,
+		},
+	}))
+
+	tf.write("2026-09-28T09:00:00 ERROR start")
+	for i := 0; i < 4; i++ {
+		time.Sleep(30 * time.Millisecond)
+		tf.write(fmt.Sprintf("\tat frame %d", i))
+	}
+	// Close the record by starting the next one.
+	tf.write("2026-09-28T09:00:10 ERROR next")
+
+	got := h.waitFor(1)
+	first := string(got[0].Raw)
+	if !strings.HasPrefix(first, "2026-09-28T09:00:00 ERROR start") {
+		t.Fatalf("first record is %q", first)
+	}
+	if n := strings.Count(first, "\n"); n != 4 {
+		t.Errorf("the first record holds %d continuation lines, want 4 — it was cut early:\n%q", n, first)
 	}
 }
