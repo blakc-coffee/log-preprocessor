@@ -49,9 +49,9 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/merkle"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/record"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // SyncMode decides when a write is considered durable.

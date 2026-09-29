@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // UDP defaults.

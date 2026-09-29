@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/vaulttest"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // fixedNow keeps seal timestamps deterministic.

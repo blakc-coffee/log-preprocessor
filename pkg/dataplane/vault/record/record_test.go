@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 func sample() types.RawRecord {

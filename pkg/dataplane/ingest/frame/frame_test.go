@@ -12,7 +12,7 @@ import (
 	"testing"
 	"testing/iotest"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // collect drains a decoder.

@@ -9,9 +9,9 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // gather collects a registry into a name -> metric family map.

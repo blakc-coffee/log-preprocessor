@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // fnSource turns a function into a Source, so a test can drive the pipeline

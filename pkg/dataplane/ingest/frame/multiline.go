@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // Multiline groups consecutive lines into one record.

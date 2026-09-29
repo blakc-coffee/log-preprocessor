@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/merkle"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/vaulttest"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // copts is opts with compaction on and a block size small enough that every

@@ -13,8 +13,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/record"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // Internal tests: these reach into compaction's unexported pieces, because the
