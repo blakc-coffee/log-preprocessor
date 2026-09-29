@@ -1,6 +1,5 @@
-// Package parquet owns lake partitioning and atomic rollover. The actual
-// Apache Parquet encoding is injected so this package does not silently invent
-// a non-Parquet format while the repository owner controls go.mod.
+// Package parquet owns Apache Parquet encoding, lake partitioning, and atomic
+// rollover.
 package parquet
 
 import (
@@ -21,51 +20,51 @@ import (
 	"github.com/blakc-coffee/log-preprocessor/pkg/sinks"
 	"github.com/blakc-coffee/log-preprocessor/pkg/sinks/internal/mapping"
 	"github.com/blakc-coffee/log-preprocessor/pkg/types"
+	parquetgo "github.com/parquet-go/parquet-go"
+	"github.com/parquet-go/parquet-go/compress/zstd"
 )
-
-// ErrEncoderRequired means parquet-go has not been wired by the go.mod owner.
-var ErrEncoderRequired = errors.New("parquet: an Apache Parquet encoder is required")
 
 // Row is the typed, map-free lake schema. ExtrasJSON retains all fields not
 // represented by typed columns.
 type Row struct {
-	EventID         string    `json:"event_id"`
-	RecordID        int64     `json:"record_id"`
-	Segment         int64     `json:"segment"`
-	RawSHA256       [32]byte  `json:"raw_sha256"`
-	SourceID        string    `json:"source_id"`
-	Vendor          string    `json:"vendor"`
-	Product         string    `json:"product"`
-	ParserID        string    `json:"parser_id"`
-	ParserVersion   string    `json:"parser_version"`
-	TemplateID      string    `json:"template_id"`
-	EventTime       time.Time `json:"event_time"`
-	ReceivedAt      time.Time `json:"received_at"`
-	SeverityID      int32     `json:"severity_id"`
-	ActionID        int32     `json:"action_id"`
-	ActivityID      int32     `json:"activity_id"`
-	ClassUID        int32     `json:"class_uid"`
-	SrcIP           string    `json:"src_ip"`
-	DstIP           string    `json:"dst_ip"`
-	SrcPort         int32     `json:"src_port"`
-	DstPort         int32     `json:"dst_port"`
-	Proto           string    `json:"proto"`
-	BytesIn         int64     `json:"bytes_in"`
-	BytesOut        int64     `json:"bytes_out"`
-	User            string    `json:"user"`
-	Host            string    `json:"host"`
-	Confidence      float32   `json:"confidence"`
-	IntegrityFlags  []string  `json:"integrity_flags"`
-	TimeFromReceipt bool      `json:"time_from_receipt"`
-	Current         bool      `json:"current"`
-	ExtrasJSON      string    `json:"extras_json"`
+	EventID         string    `json:"event_id" parquet:"event_id,dict"`
+	RecordID        int64     `json:"record_id" parquet:"record_id,delta"`
+	Segment         int64     `json:"segment" parquet:"segment,delta"`
+	RawSHA256       [32]byte  `json:"raw_sha256" parquet:"raw_sha256"`
+	SourceID        string    `json:"source_id" parquet:"source_id,dict"`
+	Vendor          string    `json:"vendor" parquet:"vendor,dict"`
+	Product         string    `json:"product" parquet:"product,dict"`
+	ParserID        string    `json:"parser_id" parquet:"parser_id,dict"`
+	ParserVersion   string    `json:"parser_version" parquet:"parser_version,dict"`
+	TemplateID      string    `json:"template_id" parquet:"template_id,dict"`
+	EventTime       time.Time `json:"event_time" parquet:"event_time,timestamp(microsecond),delta"`
+	ReceivedAt      time.Time `json:"received_at" parquet:"received_at,timestamp(microsecond),delta"`
+	SeverityID      int32     `json:"severity_id" parquet:"severity_id,dict"`
+	ActionID        int32     `json:"action_id" parquet:"action_id,dict"`
+	ActivityID      int32     `json:"activity_id" parquet:"activity_id,dict"`
+	ClassUID        int32     `json:"class_uid" parquet:"class_uid,dict"`
+	SrcIP           string    `json:"src_ip" parquet:"src_ip,dict"`
+	DstIP           string    `json:"dst_ip" parquet:"dst_ip,dict"`
+	SrcPort         int32     `json:"src_port" parquet:"src_port,dict"`
+	DstPort         int32     `json:"dst_port" parquet:"dst_port,dict"`
+	Proto           string    `json:"proto" parquet:"proto,dict"`
+	BytesIn         int64     `json:"bytes_in" parquet:"bytes_in,delta"`
+	BytesOut        int64     `json:"bytes_out" parquet:"bytes_out,delta"`
+	User            string    `json:"user" parquet:"user,dict"`
+	Host            string    `json:"host" parquet:"host,dict"`
+	Confidence      float32   `json:"confidence" parquet:"confidence"`
+	IntegrityFlags  []string  `json:"integrity_flags" parquet:"integrity_flags,list"`
+	TimeFromReceipt bool      `json:"time_from_receipt" parquet:"time_from_receipt"`
+	Current         bool      `json:"current" parquet:"current"`
+	ExtrasJSON      string    `json:"extras_json" parquet:"extras_json,json"`
 }
 
 // Encoder writes valid Apache Parquet bytes to w. Implementations must return
 // only after all rows have been encoded.
 type Encoder func(w io.Writer, rows []Row) error
 
-// Config configures lake rollover and the externally supplied parquet encoder.
+// Config configures lake rollover. Encoder is an optional test/customization
+// hook; when nil, the sink writes Apache Parquet with Zstandard compression.
 type Config struct {
 	Root        string
 	RowsPerFile int
@@ -97,7 +96,7 @@ func New(cfg Config) (*Sink, error) {
 		return nil, errors.New("parquet: Root is required")
 	}
 	if cfg.Encoder == nil {
-		return nil, ErrEncoderRequired
+		cfg.Encoder = encodeParquet
 	}
 	if cfg.RowsPerFile <= 0 {
 		cfg.RowsPerFile = 500000
@@ -114,6 +113,13 @@ func New(cfg Config) (*Sink, error) {
 	s := &Sink{cfg: cfg, parts: map[string]*partition{}, seen: map[string]struct{}{}, stop: make(chan struct{}), done: make(chan struct{}), now: time.Now}
 	go s.rolloverLoop()
 	return s, nil
+}
+
+func encodeParquet(w io.Writer, rows []Row) error {
+	return parquetgo.Write(w, rows,
+		parquetgo.Compression(&zstd.Codec{}),
+		parquetgo.MaxRowsPerRowGroup(128000),
+	)
 }
 func (s *Sink) Name() string { return "parquet" }
 func (s *Sink) Write(ctx context.Context, batch []types.NormalizedEvent) error {

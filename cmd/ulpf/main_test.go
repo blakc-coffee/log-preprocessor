@@ -26,3 +26,12 @@ func TestVersionAndUIScan(t *testing.T) {
 		t.Fatal("external URL was not rejected")
 	}
 }
+
+func TestPipelineSelftests(t *testing.T) {
+	if err := selftestVault(); err != nil {
+		t.Fatal(err)
+	}
+	if err := selftestSQLite(); err != nil {
+		t.Fatal(err)
+	}
+}

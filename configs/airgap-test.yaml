@@ -2,4 +2,8 @@ data_dir: /data
 dataplane_listen: 127.0.0.1:9000
 control_listen: 127.0.0.1:8000
 include_raw_exports: false
+sinks:
+  - parquet
+  - ocsfjson
+  - ecs
 
