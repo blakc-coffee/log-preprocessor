@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from ulpf_intel import dsl_eval
-from ulpf_intel.propose import propose_csv, propose_kv_patch
+from ulpf_intel.propose import propose_csv, propose_json, propose_kv_patch
 from ulpf_intel.validate import Thresholds, acceptance, local_dry_run, re2_violations
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,8 +49,10 @@ def check_against_manifest(doc, ls, file):
                 "src_endpoint.port": t["expected_src_port"], "dst_endpoint.port": t["expected_dst_port"],
                 "connection_info.protocol_name": t["expected_proto"], "time": ms(t["expected_time"])}
         for path, expected in want.items():
-            if expected is not None:  # null = the manifest does not know (ICMP has no ports)
-                assert o[path] == expected, f"{path}: {o.get(path)} != {expected} in {raw}"
+            if expected is None:
+                continue  # null = the manifest does not know (ICMP has no ports)
+            got = o[path] // 1000 * 1000 if path == "time" else o[path]  # the manifest keeps whole seconds; Suricata logs milliseconds
+            assert got == expected, f"{path}: {o.get(path)} != {expected} in {raw}"
 
 
 def test_palo_alto_proposal_reproduces_the_manifest_for_all_500_records(palo):
@@ -143,3 +145,51 @@ def test_acceptance_flags_a_bad_proposal_without_dropping_it(palo):
     dry = local_dry_run(g.proposal.yaml, list(enumerate(["garbage"] * 10 + ls[:10], 1)))
     assert dry.failed == 10 and any("match_rate" in w for w in acceptance(dry))
     assert dry.failures[0].error == "no extractor matched"
+
+
+@pytest.fixture(scope="module")
+def suricata():
+    ls = lines("suricata.json")
+    return ls, propose_json("suricata", ls, list(range(1, len(ls) + 1)), NOW)
+
+
+def test_json_proposal_routes_on_event_type_and_matches_every_record(suricata):
+    ls, g = suricata
+    doc = yaml.safe_load(g.proposal.yaml)
+    assert {e["when"]["path"] for e in doc["extractors"]} == {"event_type"}
+    assert {e["when"]["equals"] for e in doc["extractors"]} >= {"alert", "flow", "http", "dns"}
+    d = doc
+    parsed = dsl_eval.load(g.proposal.yaml)
+    assert all(dsl_eval.extract(parsed, l) is not None for l in ls)
+    check_against_manifest(parsed, ls, "suricata.json")
+
+
+def test_json_proposal_acceptance_re2_and_layout(suricata):
+    ls, g = suricata
+    assert acceptance(local_dry_run(g.proposal.yaml, list(enumerate(ls, 1)))) == [] and re2_violations(g.proposal.yaml) == []
+    assert "2006-01-02T15:04:05.999999-0700" in g.proposal.yaml   # Go's rfc3339 would refuse a +0530 offset
+
+
+def test_enum_keys_are_the_observed_values_because_matching_is_exact(suricata):
+    _, g = suricata
+    doc = yaml.safe_load(g.proposal.yaml)
+    proto = next(m for m in doc["extractors"][0]["map"] if m["to"] == "connection_info.protocol_num")
+    assert "TCP" in proto["enum"] and "tcp" not in proto["enum"]        # suricata writes TCP
+
+
+def test_reviewer_is_warned_when_a_severity_scale_is_unverified(suricata):
+    _, g = suricata
+    assert any("severity_id" in w and "other way" in w for w in g.warnings)
+
+
+def test_group_too_small_to_propose_is_reported_not_silently_dropped():
+    ls = lines("suricata.json")[:200] + ['{"timestamp":"2026-09-28T09:00:00.693000+0530","event_type":"rare","src_ip":"10.0.0.1"}'] * 3
+    g = propose_json("suricata", ls, [], NOW)
+    assert any("event_type=rare" in w and "quarantine" in w for w in g.warnings)
+
+
+def test_reference_evaluator_matches_enums_exactly_like_the_spec():
+    doc = "id: x\nversion: 1.0.0\nextractors:\n- {id: e, kind: kv, map: [{from: p, to: n, type: enum, enum: {tcp: 6}, default: 0}]}\n"
+    d = dsl_eval.load(doc)
+    assert dsl_eval.extract(d, "p=tcp a=1 b=2 c=3").ocsf["n"] == 6
+    assert dsl_eval.extract(d, "p=TCP a=1 b=2 c=3").ocsf["n"] == 0      # exact, not case-insensitive

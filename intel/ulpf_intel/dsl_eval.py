@@ -24,6 +24,7 @@ _GO_TO_PY = {
     "Jan _2 2006 15:04:05": "%b %d %Y %H:%M:%S",
     "Jan _2 15:04:05": "%b %d %H:%M:%S",
     "2006-01-02T15:04:05.999999-0700": "%Y-%m-%dT%H:%M:%S.%f%z",
+    "2006-01-02T15:04:05-0700": "%Y-%m-%dT%H:%M:%S%z",
     "02/Jan/2006:15:04:05 -0700": "%d/%b/%Y:%H:%M:%S %z",
 }
 _EPOCH = {"epoch_s": 1e3, "epoch_ms": 1.0, "epoch_us": 1e-3, "epoch_ns": 1e-6}   # -> milliseconds
@@ -92,7 +93,7 @@ def _convert(entry: dict, raw: str, tz: timezone) -> Any:
         return _time(v, entry["layout"], tz)
     if t == "enum":
         m = {str(k): x for k, x in entry["enum"].items()}
-        return m.get(v, m.get(v.lower(), entry.get("default")))
+        return m.get(v, entry.get("default"))  # exact match, as the spec says
     if t == "duration":
         return int(float(v) * (1000 if entry.get("unit", "s") == "s" else 1))
     return v.lower() if entry.get("lower") else v

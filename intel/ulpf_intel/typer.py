@@ -24,6 +24,7 @@ MIN_CONFIDENCE = 0.6
 
 WELL_KNOWN = {20, 21, 22, 23, 25, 53, 67, 68, 80, 110, 123, 143, 161, 389, 443, 445, 465, 514, 587, 636, 993, 995,
               1433, 1521, 3306, 3389, 5432, 5900, 6379, 8080, 8443, 9200, 27017}
+PROTO_NUM = {"tcp": 6, "udp": 17, "icmp": 1, "icmpv6": 58, "sctp": 132}
 PROTOCOLS = {"tcp", "udp", "icmp", "icmpv6", "sctp", "6", "17", "1", "58"}
 ACTIONS = {"allow", "allowed", "permit", "permitted", "accept", "accepted", "pass", "passed", "deny", "denied", "drop",
            "dropped", "block", "blocked", "reject", "rejected", "alert", "built", "teardown", "close", "closed",
@@ -45,6 +46,7 @@ LAYOUTS = [
     ("%Y-%m-%d %H:%M:%S", "2006-01-02 15:04:05"),
     ("%b %d %H:%M:%S", "Jan _2 15:04:05"),
     ("%d/%b/%Y:%H:%M:%S %z", "02/Jan/2006:15:04:05 -0700"),
+    ("%b %d %Y %H:%M:%S", "Jan _2 2006 15:04:05"),
 ]
 _RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)?$")
 _MAC = re.compile(r"^(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$")
@@ -110,8 +112,12 @@ def _internal(v: str) -> bool:
 
 def _layout(values: list[str]) -> tuple[str, float]:
     best, share = "", 0.0
-    if all(_RFC3339.match(v) for v in values[:50]):
-        return "rfc3339", 1.0
+    if all(_RFC3339.match(v) for v in values):
+        if all(re.search(r"(?:Z|[+-]\d\d:\d\d)$", v) for v in values):
+            return "rfc3339", 1.0
+        # Go's RFC3339 layout wants a colon in the offset; +0530 needs its own layout
+        frac = all("." in v for v in values)
+        return ("2006-01-02T15:04:05.999999-0700" if frac else "2006-01-02T15:04:05-0700"), 1.0
     for py, go in LAYOUTS:
         ok = 0
         for v in values:
@@ -309,7 +315,8 @@ def type_columns(cols: list[Column], min_confidence: float = MIN_CONFIDENCE) -> 
         p = cand(c.name, "protocol")
         numeric = all(v.isdigit() for v in st["vals"])
         if p and p.share >= 0.9 and st["distinct"] <= 8 and not (numeric and st["distinct"] < 2):  # a constant 1 is a flag, not ICMP
-            put(c, "protocol", "connection_info.protocol_num" if numeric else "connection_info.protocol_name", p.share, 0.5, 0.5, p.detail)
+            put(c, "protocol", "connection_info.protocol_num" if numeric else "connection_info.protocol_name", p.share, 0.5, 0.5, p.detail,
+                enum={} if numeric else {v: PROTO_NUM[v.lower()] for v in sorted(set(st["vals"])) if v.lower() in PROTO_NUM})
             continue
         if c is taken_action:
             k = cand(c.name, "action")

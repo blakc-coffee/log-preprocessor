@@ -49,11 +49,13 @@ def _map_entry(t: Typed, source_field: str) -> list[dict]:
             return [{"from": source_field, "to": p, "type": "int"}]
         return [{"from": source_field, "to": p, "type": "string", "lower": True},
                 {"from": source_field, "to": "connection_info.protocol_num", "type": "enum",
-                 "enum": {"tcp": 6, "udp": 17, "icmp": 1}, "default": 0}]
+                 "enum": dict(sorted(t.enum.items())), "default": 0}]   # keyed by the values as observed: enum match is exact
     if t.type == "action":
         return [{"from": source_field, "to": p, "type": "enum", "enum": dict(sorted(t.enum.items())), "default": 99}]
     if t.type == "mac":
         return [{"from": source_field, "to": p, "type": "mac"}]
+    if t.type == "severity":
+        return [{"from": source_field, "to": p, "type": "int"}]
     if t.type == "username":
         return [{"from": source_field, "to": p, "type": "string"}]
     return [{"from": source_field, "to": p, "type": "string"}]
@@ -176,4 +178,74 @@ def propose_kv_patch(source_id: str, baseline_yaml: str, base_version: str, line
     return Generated(Proposal(id="", kind="patch", parser_id=doc["id"], base_version=base_version, source_id=source_id, yaml=_dump(doc),
                               cluster_size=len(lines), templates=tpl, sample_record_ids=record_ids[:20],
                               typed_fields=[t.model() for t in typed if t.ocsf_path],
+                              dry_run=None, status="pending", created_at=now, drift_alert_id=drift_alert_id), warnings)
+
+
+_ROUTE_KEYS = ("event_type", "type", "kind", "category")
+
+
+def propose_json(source_id: str, lines: list[str], record_ids: list[int], now: datetime,
+                 drift_alert_id: str = "", timezone: str = "+00:00", min_group: int = 50) -> Generated:
+    """A new parser for a JSON source: one extractor per value of a low-cardinality routing key
+    (`event_type`), each mapping the paths that key's records reliably carry."""
+    import json as _json
+    from collections import Counter
+
+    from .fingerprint import fields
+
+    lines = [l for l in lines if l.strip()]
+    docs = [_json.loads(l) for l in lines]
+    route = next((k for k in _ROUTE_KEYS if sum(k in d and isinstance(d[k], str) for d in docs) >= 0.95 * len(docs)
+                  and len({d.get(k) for d in docs}) <= 10), None)
+    groups: dict[str, list[str]] = {}
+    for l, d in zip(lines, docs):
+        groups.setdefault(str(d.get(route)) if route else "all", []).append(l)
+
+    warnings: list[str] = []
+    exts: list[dict] = []
+    all_typed: list[Typed] = []
+    for value in sorted(groups):
+        g = groups[value]
+        if len(g) < min_group:
+            warnings.append(f"{route}={value}: {len(g)} records, below the {min_group} needed for an extractor; they will quarantine")
+            continue
+        cols: dict[str, list[str]] = {}
+        for l in g:
+            for k, (v, _) in fields(l, "json").items():
+                cols.setdefault(k, []).append(v)
+        cols = {k: v for k, v in cols.items() if len(v) >= 0.99 * len(g)}      # only paths the group reliably carries
+        typed = type_columns([Column(k, v, True, i) for i, (k, v) in enumerate(cols.items())])
+        maps: list[dict] = []
+        for t in typed:
+            if t.ocsf_path:
+                maps += _map_entry(t, t.field)
+            if t.ocsf_path == "severity_id":
+                warnings.append(f"{value}: {t.field} mapped straight to severity_id; its scale may run the other way "
+                                "(Suricata 1 is HIGH, OCSF 1 is Informational): confirm before approving")
+        maps.append({"const": 6, "to": "activity_id"})
+        if "severity_id" not in {m["to"] for m in maps}:
+            maps.append({"const": 1, "to": "severity_id"})
+        ext: dict = {"id": sanitize(value), "kind": "json"}
+        if route:
+            ext["when"] = {"path": route, "equals": value}
+        ext["map"] = maps
+        exts.append(ext)
+        all_typed += typed
+    if not exts:
+        raise ValueError("no group large enough to propose an extractor")
+
+    first = next(iter(_json.loads(lines[0])))
+    sig = f'^\\{{"{re.escape(first)}":'
+    if not all(re.search(sig, l) for l in lines):
+        sig = r"^\{"
+    pid = sanitize(source_id) + "_auto"
+    doc = {"id": pid, "version": "1.0.0", "vendor": sanitize(source_id), "product": "auto", "timezone": timezone,
+           "match": {"signature": sig}, "ocsf_defaults": {"class_uid": 4001, "category_uid": 4}, "extractors": exts}
+    for e in exts:
+        member = groups[e["when"]["equals"]] if route else lines
+        e["tests"] = _vectors({**doc, "extractors": [e]}, member)
+    tpl = sorted(fingerprint(lines).templates)
+    return Generated(Proposal(id="", kind="new", parser_id=pid, base_version="", source_id=source_id, yaml=_dump(doc),
+                              cluster_size=len(lines), templates=tpl, sample_record_ids=record_ids[:20],
+                              typed_fields=[t.model() for t in all_typed if t.ocsf_path],
                               dry_run=None, status="pending", created_at=now, drift_alert_id=drift_alert_id), warnings)
