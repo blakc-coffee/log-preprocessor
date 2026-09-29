@@ -3,6 +3,7 @@ module github.com/blakc-coffee/log-preprocessor
 go 1.25.0
 
 require (
+	github.com/klauspost/compress v1.20.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2
 	gopkg.in/yaml.v3 v3.0.1

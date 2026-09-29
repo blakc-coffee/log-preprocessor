@@ -23,6 +23,8 @@ now, fsync on a timer; up to one interval of acknowledged records can be lost),
 <dir>/LOCK                    flock, one writer at a time
 <dir>/chain.log               append-only JSONL ledger, one line per seal
 <dir>/seg-000000000001.wal    header(72) || framed records || footer(100) once sealed
+<dir>/seg-000000000001.zst    the same segment compacted: header || zstd blocks || footer
+<dir>/seg-000000000001.hix    its hash index (derived; verified and rebuilt at open)
 ```
 
 "Sealed" is the presence of a valid footer on disk and nothing else. An index
@@ -56,6 +58,24 @@ that claims a segment is sealed can disagree with the file; a footer cannot.
   to the whole directory can rewrite it consistently. Only a chain head held
   somewhere else defeats that — see `Head`.
 
+## Compaction
+
+`Options{Compact: true}` rewrites sealed segments from `.wal` to zstd in the
+background. **The `.wal` is deleted only after the `.zst` has been read back from
+disk and shown to reproduce the segment's Merkle root.** A compacted segment is a
+"logical WAL" — records keep their WAL offsets — so nothing above the storage
+layer knows compaction exists, and the shared conformance suite passes unmodified
+against a vault that is compacting.
+
+A failed compaction is not a failed vault: the data is intact in the `.wal`, so it
+is logged and counted and never puts the vault into `ErrFailed`. On recovery, if
+both a `.wal` and a `.zst` exist, the `.zst` is verified **first**; a bad `.zst`
+never causes the `.wal` to be deleted, because it may be the only good copy.
+
+Measured on the synthetic corpus: 5.0-8.6x per file, roughly equal to `gzip -6` —
+and the `.hix` (40 bytes/record of incompressible hash) is 62% on top of the
+compressed data. See `docs/vault-format.md` §9.2 before quoting any figure.
+
 ## Failure policy
 
 Any write or fsync error is terminal: the vault enters a failed state, every
@@ -77,7 +97,8 @@ go test ./pkg/dataplane/vault/          # incl. the conformance suite and tamper
 go test -race ./pkg/dataplane/vault/
 ```
 
-The conformance suite (`../vaulttest`) runs in five configurations, and
+The conformance suite (`../vaulttest`) runs in six configurations, one of them
+with compaction running underneath it, and
 `TestAgreesWithMemvault` asserts that this vault and `memvault` produce
 identical leaf hashes, roots, chain heads and interchangeable proofs for the
 same input — which is what makes it safe to develop against `memvault` and

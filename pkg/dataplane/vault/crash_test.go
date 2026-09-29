@@ -56,6 +56,7 @@ import (
 // never "power loss", and this is the reason.
 
 const (
+	crashCompactEnv  = "ULPF_CRASH_COMPACT"
 	crashChildEnv    = "ULPF_CRASH_CHILD"
 	crashDirEnv      = "ULPF_CRASH_DIR"
 	crashReceiptsEnv = "ULPF_CRASH_RECEIPTS"
@@ -77,15 +78,7 @@ func TestCrashChild(t *testing.T) {
 	dir := os.Getenv(crashDirEnv)
 	receiptsPath := os.Getenv(crashReceiptsEnv)
 
-	v, err := vault.Open(vault.Options{
-		Dir:  dir,
-		Sync: vault.SyncAlways,
-		// Small segments so seals — and therefore the crash windows around
-		// the footer and the ledger — happen constantly rather than once.
-		SegmentMaxRecords: 40,
-		SegmentMaxBytes:   1 << 20,
-		SealInterval:      time.Hour,
-	})
+	v, err := vault.Open(crashOptions(dir, os.Getenv(crashCompactEnv) == "1"))
 	if err != nil {
 		// A recovery failure in the child is a real failure, and the parent
 		// sees it as a non-zero exit before it gets to kill anything.
@@ -140,6 +133,29 @@ func TestCrashChild(t *testing.T) {
 	}
 }
 
+// crashOptions is shared by the child and the parent, so both open the vault
+// the same way.
+//
+// Segments are tiny so seals — and therefore the crash windows around the
+// footer and the ledger — happen constantly rather than once. With compact
+// set, every sealed segment is immediately rewritten in the background, so the
+// kill also lands mid-compaction: mid-write of the .zst, mid-verification,
+// between the renames, and between the last rename and deleting the .wal.
+func crashOptions(dir string, compact bool) vault.Options {
+	o := vault.Options{
+		Dir:               dir,
+		Sync:              vault.SyncAlways,
+		SegmentMaxRecords: 40,
+		SegmentMaxBytes:   1 << 20,
+		SealInterval:      time.Hour,
+	}
+	if compact {
+		o.Compact = true
+		o.CompactBlockBytes = 2048 // several blocks per 40-record segment
+	}
+	return o
+}
+
 // crashPayload is deterministic from its inputs, so the parent can check the
 // exact bytes rather than only a hash.
 func crashPayload(pid, i, j int) string {
@@ -150,9 +166,18 @@ func crashPayload(pid, i, j int) string {
 // TestCrash is the suite. It runs the configured number of kill -9 cycles
 // against one accumulating vault directory.
 //
-//	make crash                      # the full 200 cycles
+//	make crash                      # the full 200 cycles, both variants
 //	ULPF_CRASH_CYCLES=20 make crash # a quicker pass
-func TestCrash(t *testing.T) {
+func TestCrash(t *testing.T) { runCrash(t, false) }
+
+// TestCrashWithCompaction is the same suite with background compaction running,
+// so the process is killed while segments are being rewritten from WAL to zstd.
+// Compaction is where a silent bug would do the most damage — a dropped record
+// would not fail anything until someone asked for it — so it gets the same
+// treatment as the write path.
+func TestCrashWithCompaction(t *testing.T) { runCrash(t, true) }
+
+func runCrash(t *testing.T, compact bool) {
 	if os.Getenv(crashChildEnv) == "1" {
 		t.Skip("this is the child process")
 	}
@@ -184,8 +209,13 @@ func TestCrash(t *testing.T) {
 
 	for cycle := 1; cycle <= cycles; cycle++ {
 		cmd := exec.Command(self, "-test.run=TestCrashChild", "-test.timeout=5m")
+		compactFlag := "0"
+		if compact {
+			compactFlag = "1"
+		}
 		cmd.Env = append(os.Environ(),
 			crashChildEnv+"=1",
+			crashCompactEnv+"="+compactFlag,
 			crashDirEnv+"="+vaultDir,
 			crashReceiptsEnv+"="+receiptsPath,
 		)
@@ -228,7 +258,7 @@ func TestCrash(t *testing.T) {
 			priorReceipts = fi.Size()
 		}
 
-		highest := verifyAfterCrash(t, cycle, vaultDir, receiptsPath)
+		highest := verifyAfterCrash(t, cycle, vaultDir, receiptsPath, compact)
 		totalChecked += highest
 
 		// The vault must keep growing: if a cycle stopped adding records,
@@ -241,7 +271,11 @@ func TestCrash(t *testing.T) {
 		lastHighest = highest
 	}
 
-	t.Logf("%d kill -9 cycles, %d acknowledged records, 0 lost", cycles, lastHighest)
+	mode := "WAL only"
+	if compact {
+		mode = "with background compaction"
+	}
+	t.Logf("%d kill -9 cycles (%s), %d acknowledged records, 0 lost", cycles, mode, lastHighest)
 	_ = totalChecked
 }
 
@@ -264,7 +298,7 @@ func waitForProgress(t *testing.T, cycle int, path string, prior int64) {
 
 // verifyAfterCrash reopens the vault and checks every acknowledged record.
 // It returns the highest acknowledged RecordID.
-func verifyAfterCrash(t *testing.T, cycle int, vaultDir, receiptsPath string) uint64 {
+func verifyAfterCrash(t *testing.T, cycle int, vaultDir, receiptsPath string, compact bool) uint64 {
 	t.Helper()
 
 	receipts := readReceipts(t, receiptsPath)
@@ -273,10 +307,7 @@ func verifyAfterCrash(t *testing.T, cycle int, vaultDir, receiptsPath string) ui
 			"raise the pre-kill delay", cycle)
 	}
 
-	v, err := vault.Open(vault.Options{
-		Dir: vaultDir, Sync: vault.SyncAlways,
-		SegmentMaxRecords: 40, SegmentMaxBytes: 1 << 20, SealInterval: time.Hour,
-	})
+	v, err := vault.Open(crashOptions(vaultDir, compact))
 	if err != nil {
 		t.Fatalf("cycle %d: the vault would not reopen after a crash: %v", cycle, err)
 	}

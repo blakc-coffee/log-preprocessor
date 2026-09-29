@@ -22,6 +22,12 @@ type Metrics struct {
 	SealSeconds    prometheus.Histogram
 	VerifyFailures prometheus.Counter
 	Failed         prometheus.Gauge
+
+	CompactionSeconds  prometheus.Histogram
+	CompactionRatio    prometheus.Gauge
+	CompactedBytesIn   prometheus.Counter
+	CompactedBytesOut  prometheus.Counter
+	CompactionFailures prometheus.Counter
 }
 
 // NewMetrics registers the vault collectors. A nil registerer gives a working
@@ -92,6 +98,27 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		VerifyFailures: newCounter(prometheus.CounterOpts{
 			Name: "vault_verify_failures_total",
 			Help: "Records or chain links that failed verification. Any non-zero value means tampering or corruption and should page someone.",
+		}),
+		CompactionSeconds: newHistogram(prometheus.HistogramOpts{
+			Name:    "vault_compaction_seconds",
+			Help:    "Time to compact one segment, including the read-back verification. Compaction runs in the background and does not block writes.",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60},
+		}),
+		CompactionRatio: newGauge(prometheus.GaugeOpts{
+			Name: "vault_compaction_ratio",
+			Help: "WAL bytes divided by compacted bytes for the most recent compaction. Depends heavily on the data: repetitive log lines compress far better than random payloads.",
+		}),
+		CompactedBytesIn: newCounter(prometheus.CounterOpts{
+			Name: "vault_compaction_bytes_in_total",
+			Help: "WAL bytes consumed by compaction.",
+		}),
+		CompactedBytesOut: newCounter(prometheus.CounterOpts{
+			Name: "vault_compaction_bytes_out_total",
+			Help: "Compacted bytes produced. Divide by the in counter for the overall ratio.",
+		}),
+		CompactionFailures: newCounter(prometheus.CounterOpts{
+			Name: "vault_compaction_failures_total",
+			Help: "Compactions that failed or failed verification. The segment stays intact as a WAL, so this costs disk space, not data. Anything non-zero is worth reading the log for.",
 		}),
 		Failed: newGauge(prometheus.GaugeOpts{
 			Name: "vault_failed",

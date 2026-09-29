@@ -3,8 +3,10 @@ package vault_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -302,4 +304,114 @@ func TestBenchmarkEnvironmentIsReportable(t *testing.T) {
 		"differ by more than an order of magnitude and the PRD's targets are Linux "+
 		"targets. Run benchmarks on Linux and record them in benchmarks/results/.",
 		runtime.GOOS)
+}
+
+// BenchmarkGetCompacted measures a random read from a compacted segment, cold
+// and warm. Cold is the honest number: every read misses the block cache and
+// pays a pread, a CRC and a zstd decompression of a whole block, however small
+// the record wanted. Warm is a cache hit. The gap between them is the price of
+// compaction on the read path.
+func BenchmarkGetCompacted(b *testing.B) {
+	const n = 200_000 // ~110 blocks, well past the 32-block cache
+	dir := b.TempDir()
+	ctx := context.Background()
+
+	w, err := vault.Open(vault.Options{
+		Dir: dir, Sync: vault.SyncNone, SegmentMaxRecords: n, SealInterval: time.Hour,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	batch := make([]types.RawRecord, 500)
+	for written := 0; written < n; written += len(batch) {
+		for i := range batch {
+			batch[i] = benchRecord(written + i)
+		}
+		if _, err := w.PutBatch(ctx, batch); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		b.Fatal(err)
+	}
+
+	v, err := vault.Open(vault.Options{
+		Dir: dir, Sync: vault.SyncNone, Compact: true, SealInterval: time.Hour,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { v.Close() })
+	waitCompactedB(b, dir)
+
+	// ~1800 records of ~140 bytes per 256 KiB block. A stride of 2000 moves to
+	// a different block every read, and cycling through ~100 blocks evicts
+	// each from a 32-block cache long before it is revisited.
+	b.Run("cold", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			id := types.RecordID(1 + (i*2000)%n)
+			if _, _, err := v.Get(ctx, id); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("warm", func(b *testing.B) {
+		if _, _, err := v.Get(ctx, 5000); err != nil {
+			b.Fatal(err)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if _, _, err := v.Get(ctx, 5000); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("sequential scan", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			count := 0
+			if err := v.Scan(ctx, 1, func(types.RawRecord, types.Receipt) error { count++; return nil }); err != nil {
+				b.Fatal(err)
+			}
+			if count != n {
+				b.Fatalf("scanned %d, want %d", count, n)
+			}
+		}
+		b.ReportMetric(float64(n), "records/op")
+	})
+}
+
+func waitCompactedB(b *testing.B, dir string) {
+	b.Helper()
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			b.Fatal(err)
+		}
+		var zst, wal, tmp int
+		for _, e := range entries {
+			switch {
+			case strings.HasSuffix(e.Name(), ".zst"):
+				zst++
+			case strings.HasSuffix(e.Name(), ".wal"):
+				wal++
+			case strings.HasSuffix(e.Name(), ".tmp"):
+				tmp++
+			}
+		}
+		if zst >= 1 && wal == 0 && tmp == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			b.Fatal("compaction did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

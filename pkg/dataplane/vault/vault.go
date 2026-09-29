@@ -46,6 +46,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 
 	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
@@ -85,10 +86,31 @@ type Options struct {
 
 	MaxFrameBytes int
 
+	// Compact enables background compaction: sealed segments are rewritten
+	// from .wal to zstd-compressed .zst. Off by default at this level so a
+	// caller opts in; ingestd's configuration turns it on.
+	Compact bool
+	// CompactBlockBytes is the target uncompressed size of one compressed
+	// block. Zero means DefaultCompactBlockBytes. Larger blocks compress
+	// better and make a random read decompress more.
+	CompactBlockBytes int
+	// ZstdLevel is the compression level. Zero means DefaultZstdLevel.
+	ZstdLevel int
+	// DisableHashIndex turns off GetByHash. The index costs memory
+	// proportional to the record count, and a deployment that never looks
+	// records up by payload hash can decline to pay it.
+	DisableHashIndex bool
+
 	// ReadOnly opens the vault without taking the write lock or starting the
 	// writer. `vaultctl verify` uses it so an operator can inspect a vault
 	// another process is writing to.
 	ReadOnly bool
+
+	// openFile opens the segment and ledger files. It is unexported on
+	// purpose: it exists so tests can inject I/O failures at an exact call
+	// (the Nth write, the Nth fsync) and no caller outside the package can
+	// substitute storage under the durability guarantees.
+	openFile func(path string, flag int, perm os.FileMode) (fileIO, error)
 
 	// Now supplies timestamps. Tests set it for determinism.
 	Now func() time.Time
@@ -99,6 +121,11 @@ type Options struct {
 }
 
 func (o *Options) setDefaults() {
+	if o.openFile == nil {
+		o.openFile = func(path string, flag int, perm os.FileMode) (fileIO, error) {
+			return os.OpenFile(path, flag, perm)
+		}
+	}
 	if o.Sync == "" {
 		o.Sync = SyncAlways
 	}
@@ -123,6 +150,12 @@ func (o *Options) setDefaults() {
 	if o.MaxFrameBytes <= 0 {
 		o.MaxFrameBytes = 1 << 20
 	}
+	if o.CompactBlockBytes <= 0 {
+		o.CompactBlockBytes = DefaultCompactBlockBytes
+	}
+	if o.ZstdLevel <= 0 {
+		o.ZstdLevel = DefaultZstdLevel
+	}
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -140,7 +173,26 @@ func (o Options) validate() error {
 	default:
 		return fmt.Errorf("vault: unknown sync mode %q", o.Sync)
 	}
+	if o.CompactBlockBytes > MaxCompactBlockBytes {
+		return fmt.Errorf("vault: CompactBlockBytes %d exceeds the maximum %d",
+			o.CompactBlockBytes, MaxCompactBlockBytes)
+	}
+	if o.ZstdLevel > 22 {
+		return fmt.Errorf("vault: ZstdLevel %d is out of range 1-22", o.ZstdLevel)
+	}
 	return nil
+}
+
+// fileIO is the slice of *os.File the vault uses on its segment and ledger
+// files. It is an interface only so tests can wrap a file and make it fail at a
+// chosen call; production always passes a real *os.File.
+type fileIO interface {
+	io.ReaderAt
+	io.WriterAt
+	io.Writer
+	Sync() error
+	Truncate(size int64) error
+	Close() error
 }
 
 // segState is the in-memory view of one segment file.
@@ -149,11 +201,21 @@ type segState struct {
 	firstSeq types.RecordID
 	prev     [32]byte
 
-	file *os.File
+	file fileIO
 	size int64 // bytes written, excluding any footer
 
 	count  int
 	leaves [][32]byte // kept only while active; recomputed on demand once sealed
+
+	// compacted means file is the .zst and records are read through blocks.
+	// Offsets are WAL offsets either way; see compacted.go.
+	compacted bool
+	blocks    []block
+	hix       *hashIndex
+	// compactFailed stops the compactor retrying a segment in a tight loop.
+	// It clears on the next Open, which is when a persistent cause is most
+	// likely to have been fixed.
+	compactFailed bool
 
 	sealed bool
 	// recovered marks a segment sealed by crash recovery rather than cleanly.
@@ -197,8 +259,17 @@ type Vault struct {
 	// VerifyChain can report which segment is wrong. See corruptf.
 	issues []issue
 
-	ledger  *os.File
+	ledger  fileIO
 	metrics *Metrics
+
+	// Compacted-segment support. See compacted.go and compact.go.
+	blocks      *blockCache
+	dec         *zstd.Decoder
+	decOnce     sync.Once
+	decErr      error
+	compactKick chan struct{}
+	compactStop chan struct{}
+	compactDone chan struct{}
 
 	// leafCache holds recomputed leaf arrays for recently proved segments, so
 	// a burst of lineage requests against one segment reads the file once.
@@ -248,6 +319,7 @@ func Open(opts Options) (*Vault, error) {
 	v := &Vault{
 		opts:      opts,
 		metrics:   NewMetrics(opts.Registerer),
+		blocks:    newBlockCache(blockCacheSize),
 		byHash:    map[[32]byte]types.RecordID{},
 		leafCache: map[uint64][][32]byte{},
 		reqs:      make(chan *commitReq),
@@ -285,6 +357,15 @@ func Open(opts Options) (*Vault, error) {
 	} else {
 		close(v.stopped)
 	}
+
+	if opts.Compact && !opts.ReadOnly {
+		v.compactKick = make(chan struct{}, 1)
+		v.compactStop = make(chan struct{})
+		v.compactDone = make(chan struct{})
+		go v.compactor()
+		// Segments sealed before a restart may never have been compacted.
+		v.kickCompactor()
+	}
 	return v, nil
 }
 
@@ -316,7 +397,7 @@ func (v *Vault) openSegment() error {
 
 	h := header{Segment: id, FirstSeq: first, PrevChain: v.head, CreatedAt: v.opts.Now().UTC()}
 	path := filepath.Join(v.opts.Dir, segmentName(id, "wal"))
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
+	f, err := v.opts.openFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}
@@ -587,7 +668,9 @@ func (v *Vault) commit(group []*commitReq) {
 		id := base + types.RecordID(i)
 		rawSHA := sha256.Sum256(decodedRaw(body))
 		v.index = append(v.index, loc{seg: len(v.segs) - 1, off: offsets[i], rawSHA: rawSHA})
-		v.byHash[rawSHA] = id
+		if !v.opts.DisableHashIndex {
+			v.byHash[rawSHA] = id
+		}
 		seg.leaves = append(seg.leaves, merkle.LeafHash(body))
 		seg.count++
 	}
@@ -692,6 +775,7 @@ func (v *Vault) sealLocked(s *segState) error {
 	v.seals = append(v.seals, seal)
 	v.metrics.SegmentsSealed.Inc()
 	v.metrics.SealSeconds.Observe(time.Since(sealStart).Seconds())
+	v.kickCompactor()
 	v.metrics.ActiveBytes.Set(0)
 	v.opts.Logger.Info("segment sealed",
 		"segment", s.id, "records", count, "root", hex.EncodeToString(s.root[:]))
@@ -714,7 +798,7 @@ type ledgerLine struct {
 
 func (v *Vault) appendLedger(s types.SegmentSeal) error {
 	if v.ledger == nil {
-		f, err := os.OpenFile(filepath.Join(v.opts.Dir, "chain.log"),
+		f, err := v.opts.openFile(filepath.Join(v.opts.Dir, "chain.log"),
 			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return err
@@ -785,6 +869,14 @@ func (v *Vault) Close() error {
 		<-v.stopped
 	}
 
+	// Stop the compactor BEFORE closing any file: it reads segments without
+	// holding the vault lock, and an in-flight compaction abandons its
+	// temporaries rather than being waited out.
+	if v.compactStop != nil {
+		close(v.compactStop)
+		<-v.compactDone
+	}
+
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -804,6 +896,11 @@ func (v *Vault) Close() error {
 			}
 			s.file = nil
 		}
+		s.hix.close()
+		s.hix = nil
+	}
+	if v.dec != nil {
+		v.dec.Close()
 	}
 	if v.ledger != nil {
 		v.ledger.Close()

@@ -2,6 +2,7 @@ package vault
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -58,6 +59,9 @@ func (v *Vault) corruptf(segment uint64, format string, args ...any) error {
 // recover rebuilds in-memory state from the directory. The vault is not yet
 // shared, so no locking is needed.
 func (v *Vault) recover() error {
+	if !v.opts.ReadOnly {
+		v.cleanStaleCompaction()
+	}
 	seals, err := v.readLedger()
 	if err != nil {
 		return err
@@ -207,16 +211,31 @@ func (v *Vault) listSegments() ([]uint64, error) {
 		return nil, err
 	}
 	var ids []uint64
+	seen := map[uint64]bool{}
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasPrefix(name, "seg-") || !strings.HasSuffix(name, ".wal") {
+		var ext string
+		switch {
+		case strings.HasSuffix(name, ".wal"):
+			ext = ".wal"
+		case strings.HasSuffix(name, ".zst"):
+			ext = ".zst"
+		default:
+			continue // .hix, .tmp, chain.log, LOCK
+		}
+		if !strings.HasPrefix(name, "seg-") {
 			continue
 		}
-		id, err := strconv.ParseUint(strings.TrimSuffix(strings.TrimPrefix(name, "seg-"), ".wal"), 10, 64)
+		id, err := strconv.ParseUint(strings.TrimSuffix(strings.TrimPrefix(name, "seg-"), ext), 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("%w: unparseable segment file %q", ErrCorrupt, name)
 		}
-		ids = append(ids, id)
+		// A segment can exist as both while a compaction is between its
+		// final rename and deleting the WAL. It is one segment.
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids, nil
@@ -225,6 +244,11 @@ func (v *Vault) listSegments() ([]uint64, error) {
 // recoverSegment opens one segment, validates it, and rebuilds its index.
 // It reports whether the segment was skipped as never-initialised.
 func (v *Vault) recoverSegment(id uint64, isLast bool, seals []types.SegmentSeal) (bool, error) {
+	// A .zst is only ever renamed into place after being verified, so its
+	// presence means the segment was compacted.
+	if _, err := os.Stat(zstPath(v.opts.Dir, id)); err == nil {
+		return v.recoverCompacted(id, seals)
+	}
 	path := filepath.Join(v.opts.Dir, segmentName(id, "wal"))
 	flags := os.O_RDWR
 	if v.opts.ReadOnly {
@@ -337,7 +361,9 @@ func (v *Vault) recoverSegment(id uint64, isLast bool, seals []types.SegmentSeal
 	s.size = end
 	for i := range offsets {
 		v.index = append(v.index, loc{seg: len(v.segs), off: offsets[i], rawSHA: hashes[i]})
-		v.byHash[hashes[i]] = s.firstSeq + types.RecordID(i)
+		if !v.opts.DisableHashIndex {
+			v.byHash[hashes[i]] = s.firstSeq + types.RecordID(i)
+		}
 	}
 
 	switch {
@@ -402,7 +428,7 @@ func (v *Vault) scanRecords(s *segState, limit int64) (leaves [][32]byte, offset
 		if int64(len(hdr)) > limit-off {
 			return leaves, offsets, hashes, off, off
 		}
-		if _, err := s.file.ReadAt(hdr[:], off); err != nil {
+		if _, err := v.readSeg(s, hdr[:], off); err != nil {
 			return leaves, offsets, hashes, off, off
 		}
 		length := int(uint32(hdr[0])<<24 | uint32(hdr[1])<<16 | uint32(hdr[2])<<8 | uint32(hdr[3]))
@@ -410,7 +436,7 @@ func (v *Vault) scanRecords(s *segState, limit int64) (leaves [][32]byte, offset
 			return leaves, offsets, hashes, off, off
 		}
 		buf := make([]byte, record.FrameOverhead+length)
-		if _, err := s.file.ReadAt(buf, off); err != nil {
+		if _, err := v.readSeg(s, buf, off); err != nil {
 			return leaves, offsets, hashes, off, off
 		}
 		body, n, err := record.ParseFramed(buf, maxBody)
@@ -489,5 +515,187 @@ func (v *Vault) sealRecovered(s *segState, truncated bool) error {
 	}
 	v.opts.Logger.Info("sealed a segment left open by a crash",
 		"segment", s.id, "records", s.count, "tail_truncated", truncated)
+	return nil
+}
+
+// cleanStaleCompaction removes what an interrupted compaction leaves behind.
+//
+// Temporaries are never complete and are always safe to delete. A .hix with no
+// .zst beside it is an orphan of a compaction that renamed the index but was
+// interrupted before renaming the .zst, which is the last step: the segment is
+// still a WAL and the index describes nothing.
+func (v *Vault) cleanStaleCompaction() {
+	entries, err := os.ReadDir(v.opts.Dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, "seg-") {
+			continue
+		}
+		path := filepath.Join(v.opts.Dir, name)
+		switch {
+		case strings.HasSuffix(name, ".zst.tmp"), strings.HasSuffix(name, ".hix.tmp"):
+			v.opts.Logger.Warn("removing a temporary left by an interrupted compaction", "file", name)
+			os.Remove(path)
+		case strings.HasSuffix(name, ".hix"):
+			zst := strings.TrimSuffix(path, ".hix") + ".zst"
+			if _, err := os.Stat(zst); errors.Is(err, os.ErrNotExist) {
+				v.opts.Logger.Warn("removing an orphaned hash index", "file", name)
+				os.Remove(path)
+			}
+		}
+	}
+}
+
+// recoverCompacted opens a segment stored as a .zst.
+//
+// A compacted segment is always sealed, so unlike a WAL there is no torn tail
+// to repair: anything wrong with it is corruption. It is verified as thoroughly
+// as a WAL is - every block checksummed and decompressed, every record parsed,
+// the Merkle root recomputed against the footer - because "it opened" must
+// mean the same thing for both.
+func (v *Vault) recoverCompacted(id uint64, seals []types.SegmentSeal) (bool, error) {
+	zst := zstPath(v.opts.Dir, id)
+	wal := walPath(v.opts.Dir, id)
+
+	f, err := os.Open(zst)
+	if err != nil {
+		return false, err
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return false, err
+	}
+	fail := func(format string, args ...any) (bool, error) {
+		f.Close()
+		return false, v.corruptf(id, format, args...)
+	}
+
+	hdrBuf := make([]byte, HeaderSize)
+	if _, err := f.ReadAt(hdrBuf, 0); err != nil {
+		return fail("compacted segment %d has no readable header: %v", id, err)
+	}
+	h, err := decodeHeader(hdrBuf)
+	if err != nil {
+		return fail("compacted segment %d header: %v", id, err)
+	}
+	if h.Segment != id {
+		return fail("file %s contains segment %d", segmentName(id, "zst"), h.Segment)
+	}
+	if want := types.RecordID(len(v.index)) + 1; h.FirstSeq != want {
+		return fail("segment %d starts at sequence %d, expected %d", id, h.FirstSeq, want)
+	}
+	if h.PrevChain != v.head {
+		return fail("segment %d does not follow the previous chain hash", id)
+	}
+
+	if fi.Size() < HeaderSize+FooterSize {
+		return fail("compacted segment %d is %d bytes", id, fi.Size())
+	}
+	tail := make([]byte, FooterSize)
+	if _, err := f.ReadAt(tail, fi.Size()-FooterSize); err != nil {
+		return fail("compacted segment %d has no readable footer: %v", id, err)
+	}
+	ftr, err := decodeFooter(tail)
+	if err != nil {
+		// A compacted segment is only created from a sealed one. A missing or
+		// damaged footer here is not an interrupted write.
+		return fail("compacted segment %d footer: %v", id, err)
+	}
+
+	blocks, err := walkBlocks(f, fi.Size())
+	if err != nil {
+		return fail("compacted segment %d: %v", id, err)
+	}
+	s := &segState{
+		id: id, firstSeq: h.FirstSeq, prev: h.PrevChain,
+		file: f, compacted: true, blocks: blocks,
+	}
+
+	limit := blocks[len(blocks)-1].logEnd()
+	leaves, offsets, hashes, _, tornAt := v.scanRecords(s, limit)
+	if tornAt >= 0 {
+		return fail("compacted segment %d has a damaged record at logical offset %d", id, tornAt)
+	}
+	if uint64(len(leaves)) != ftr.Count {
+		return fail("compacted segment %d holds %d records, its footer says %d", id, len(leaves), ftr.Count)
+	}
+	if merkle.Root(leaves) != ftr.Root {
+		return fail("compacted segment %d does not match its footer root", id)
+	}
+
+	// The .zst has now proven itself, so a leftover .wal is redundant. Only
+	// at this point is it safe to remove: had the .zst failed, the .wal might
+	// be the only good copy.
+	if _, err := os.Stat(wal); err == nil && !v.opts.ReadOnly {
+		v.opts.Logger.Warn("removing a WAL whose compacted copy verified", "segment", id)
+		if err := os.Remove(wal); err != nil {
+			f.Close()
+			return false, err
+		}
+	}
+
+	if !v.opts.DisableHashIndex {
+		if err := v.attachHix(s, hashes); err != nil {
+			f.Close()
+			return false, err
+		}
+	}
+
+	s.count = len(leaves)
+	for i := range offsets {
+		v.index = append(v.index, loc{seg: len(v.segs), off: offsets[i], rawSHA: hashes[i]})
+	}
+	s.sealed, s.root, s.chain, s.sealedAt = true, ftr.Root, ftr.Chain, ftr.SealedAt
+	v.head = ftr.Chain
+	if err := v.adoptSeal(s, ftr, seals); err != nil {
+		f.Close()
+		return false, err
+	}
+	v.segs = append(v.segs, s)
+	return false, nil
+}
+
+// attachHix gives a compacted segment a hash index that is known to be right.
+//
+// The expected content is derived from the records just verified. If the .hix
+// on disk matches it byte for byte it is used as it is. If it is missing or
+// differs it is derived data that has gone wrong, not evidence of tampering
+// (the records are what carry the integrity claim, and those were just
+// checked), so a writer repairs it and a read-only open answers from memory.
+func (v *Vault) attachHix(s *segState, hashes [][32]byte) error {
+	path := hixPath(v.opts.Dir, s.id)
+	want := encodeHix(hashes, s.firstSeq)
+
+	have, err := os.ReadFile(path)
+	if err == nil && bytes.Equal(have, want) {
+		idx, err := openHixFile(path)
+		if err != nil {
+			return err
+		}
+		s.hix = idx
+		return nil
+	}
+
+	if v.opts.ReadOnly {
+		s.hix = memHix(want)
+		return nil
+	}
+	if err == nil {
+		v.opts.Logger.Warn("rebuilding a hash index that did not match its segment", "segment", s.id)
+	} else {
+		v.opts.Logger.Warn("rebuilding a missing hash index", "segment", s.id)
+	}
+	if err := writeFileAtomic(v.opts.Dir, path, want, v.dir.Sync); err != nil {
+		return err
+	}
+	idx, err := openHixFile(path)
+	if err != nil {
+		return err
+	}
+	s.hix = idx
 	return nil
 }

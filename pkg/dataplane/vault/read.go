@@ -2,6 +2,7 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
@@ -31,7 +32,7 @@ func (v *Vault) readAt(s *segState, off int64) (types.RecordID, types.RawRecord,
 	// The length prefix says how much to read, so this is two reads rather
 	// than one guess. The length is capped before it is used.
 	var hdr [record.FrameOverhead]byte
-	if _, err := s.file.ReadAt(hdr[:], off); err != nil {
+	if _, err := v.readSeg(s, hdr[:], off); err != nil {
 		return 0, types.RawRecord{}, err
 	}
 	length := int(uint32(hdr[0])<<24 | uint32(hdr[1])<<16 | uint32(hdr[2])<<8 | uint32(hdr[3]))
@@ -41,7 +42,7 @@ func (v *Vault) readAt(s *segState, off int64) (types.RecordID, types.RawRecord,
 	}
 
 	buf := make([]byte, record.FrameOverhead+length)
-	if _, err := s.file.ReadAt(buf, off); err != nil {
+	if _, err := v.readSeg(s, buf, off); err != nil {
 		return 0, types.RawRecord{}, err
 	}
 	body, _, err := record.ParseFramed(buf, maxBody)
@@ -83,16 +84,57 @@ func (v *Vault) Get(ctx context.Context, id types.RecordID) (types.RawRecord, ty
 	return r, types.Receipt{ID: id, RawSHA256: l.rawSHA, Segment: s.id}, nil
 }
 
+// ErrHashIndexDisabled is returned by GetByHash when the vault was opened with
+// DisableHashIndex.
+var ErrHashIndexDisabled = errors.New("vault: hash index is disabled")
+
 // GetByHash returns the raw bytes whose SHA-256 is sum. Newest wins when the
 // same payload was stored more than once.
+//
+// The in-memory map covers segments still stored as WALs. Compacted segments
+// keep their hashes in a .hix file instead, searched newest to oldest.
 func (v *Vault) GetByHash(ctx context.Context, sum [32]byte) ([]byte, error) {
+	if v.opts.DisableHashIndex {
+		return nil, ErrHashIndexDisabled
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	v.mu.RLock()
-	id, ok := v.byHash[sum]
+	if err := v.check(); err != nil {
+		v.mu.RUnlock()
+		return nil, err
+	}
+	best, found := v.byHash[sum]
+
+	// The newest compacted occurrence, if any.
+	for i := len(v.segs) - 1; i >= 0; i-- {
+		s := v.segs[i]
+		if !s.compacted || s.hix == nil {
+			continue
+		}
+		seq, ok, err := s.hix.lookup(sum)
+		if err != nil {
+			v.mu.RUnlock()
+			return nil, err
+		}
+		if ok {
+			// Segments are searched newest first, so this is the newest
+			// compacted hit. The map may still hold something newer if a
+			// later segment has not been compacted yet.
+			if id := types.RecordID(seq); !found || id > best {
+				best, found = id, true
+			}
+			break
+		}
+	}
 	v.mu.RUnlock()
-	if !ok {
+
+	if !found {
 		return nil, types.ErrNotFound
 	}
-	r, _, err := v.Get(ctx, id)
+	r, _, err := v.Get(ctx, best)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +188,7 @@ func (v *Vault) leavesOf(s *segState) ([][32]byte, error) {
 	off := int64(HeaderSize)
 	for i := 0; i < s.count; i++ {
 		var hdr [record.FrameOverhead]byte
-		if _, err := s.file.ReadAt(hdr[:], off); err != nil {
+		if _, err := v.readSeg(s, hdr[:], off); err != nil {
 			return nil, err
 		}
 		length := int(uint32(hdr[0])<<24 | uint32(hdr[1])<<16 | uint32(hdr[2])<<8 | uint32(hdr[3]))
@@ -155,7 +197,7 @@ func (v *Vault) leavesOf(s *segState) ([][32]byte, error) {
 				record.ErrTooLarge, s.id, off, length)
 		}
 		buf := make([]byte, record.FrameOverhead+length)
-		if _, err := s.file.ReadAt(buf, off); err != nil {
+		if _, err := v.readSeg(s, buf, off); err != nil {
 			return nil, err
 		}
 		body, n, err := record.ParseFramed(buf, maxBody)
@@ -281,7 +323,7 @@ func (v *Vault) bodyAt(s *segState, off int64) ([]byte, error) {
 
 	maxBody := record.MaxBodyBytes(v.opts.MaxFrameBytes)
 	var hdr [record.FrameOverhead]byte
-	if _, err := s.file.ReadAt(hdr[:], off); err != nil {
+	if _, err := v.readSeg(s, hdr[:], off); err != nil {
 		return nil, err
 	}
 	length := int(uint32(hdr[0])<<24 | uint32(hdr[1])<<16 | uint32(hdr[2])<<8 | uint32(hdr[3]))
@@ -289,7 +331,7 @@ func (v *Vault) bodyAt(s *segState, off int64) ([]byte, error) {
 		return nil, fmt.Errorf("%w: record at offset %d declares %d bytes", record.ErrTooLarge, off, length)
 	}
 	buf := make([]byte, record.FrameOverhead+length)
-	if _, err := s.file.ReadAt(buf, off); err != nil {
+	if _, err := v.readSeg(s, buf, off); err != nil {
 		return nil, err
 	}
 	body, _, err := record.ParseFramed(buf, maxBody)
