@@ -1,0 +1,123 @@
+{
+  "event_id": "7.cisco_asa@1.0.0",
+  "record_id": 7,
+  "segment": 1,
+  "raw_sha256": "d42c75f7dc990053af7c12c6387d6aa7d209492744257e9a28719be4dcb3e2ae",
+  "source_id": "cisco_asa",
+  "vendor": "cisco",
+  "product": "asa",
+  "parser_id": "cisco_asa",
+  "parser_version": "1.0.0",
+  "template_id": "cisco_asa/asa_302013",
+  "schema_version": "ulpf-uef/1",
+  "received_at": "2026-09-28T03:41:29.31Z",
+  "event_time": "2026-09-28T03:41:29Z",
+  "time_from_receipt": false,
+  "parse_confidence": 1,
+  "integrity_flags": [],
+  "ocsf": {
+    "action_id": 1,
+    "activity_id": 1,
+    "category_uid": 4,
+    "class_uid": 4001,
+    "connection_info": {
+      "protocol_name": "tcp",
+      "protocol_num": 6
+    },
+    "disposition_id": 1,
+    "dst_endpoint": {
+      "ip": "198.51.100.232",
+      "port": 53
+    },
+    "metadata": {
+      "product": {
+        "name": "asa",
+        "vendor_name": "cisco"
+      },
+      "version": "1.1.0"
+    },
+    "severity_id": 1,
+    "src_endpoint": {
+      "ip": "10.1.4.9",
+      "port": 60003
+    },
+    "time": 1790566889000,
+    "type_uid": 400101
+  },
+  "unmapped": {
+    "conn": "5001",
+    "dir": "outbound",
+    "dst_if": "outside",
+    "dst_nat_ip": "198.51.100.232",
+    "dst_nat_port": "53",
+    "host": "asa01",
+    "pri": "\u003c166\u003e",
+    "src_if": "inside",
+    "src_nat_ip": "10.1.4.9",
+    "src_nat_port": "60003"
+  },
+  "entities": [
+    {
+      "type": "ip",
+      "id": "10.1.4.9",
+      "role": "src",
+      "valid_from": null,
+      "valid_to": null,
+      "confidence": 1,
+      "evidence": []
+    },
+    {
+      "type": "user",
+      "id": "carol",
+      "role": "src",
+      "valid_from": "2026-09-28T03:31:35Z",
+      "valid_to": "2026-09-28T04:12:14Z",
+      "confidence": 1,
+      "evidence": [
+        {
+          "record_id": 6,
+          "kind": "radius"
+        }
+      ]
+    },
+    {
+      "type": "host",
+      "id": "laptop-carol",
+      "role": "src",
+      "valid_from": "2026-09-28T03:31:14Z",
+      "valid_to": "2026-09-28T04:13:25Z",
+      "confidence": 1,
+      "evidence": [
+        {
+          "record_id": 5,
+          "kind": "dhcp"
+        }
+      ]
+    },
+    {
+      "type": "mac",
+      "id": "aa:bb:cc:8a:06:2d",
+      "role": "src",
+      "valid_from": "2026-09-28T03:31:14Z",
+      "valid_to": "2026-09-28T04:13:25Z",
+      "confidence": 1,
+      "evidence": [
+        {
+          "record_id": 5,
+          "kind": "dhcp"
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "applicable": true,
+    "render_back_ok": true,
+    "mapped_bytes": 53,
+    "unmapped_bytes": 64,
+    "constant_bytes": 58,
+    "uncovered_bytes": 0,
+    "mapped_fields": 11,
+    "unmapped_fields": 10
+  },
+  "current": true
+}

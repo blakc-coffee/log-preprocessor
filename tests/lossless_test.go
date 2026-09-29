@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 type fixtureManifest struct {

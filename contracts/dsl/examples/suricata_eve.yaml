@@ -1,0 +1,28 @@
+id: suricata_eve
+version: 1.0.0
+vendor: oisf
+product: suricata
+timezone: "+00:00"
+match:
+  signature: '^\{"timestamp":'
+ocsf_defaults: {class_uid: 4001, category_uid: 4}
+extractors:
+  - id: eve_alert
+    kind: json
+    when: {path: event_type, equals: alert}
+    map:
+      - {from: timestamp, to: time, type: time, layout: "2006-01-02T15:04:05.999999-0700"}
+      - {from: src_ip, to: src_endpoint.ip, type: ip}
+      - {from: src_port, to: src_endpoint.port, type: port}
+      - {from: dest_ip, to: dst_endpoint.ip, type: ip}
+      - {from: dest_port, to: dst_endpoint.port, type: port}
+      - {from: proto, to: connection_info.protocol_name, type: string, lower: true}
+      - {from: proto, to: connection_info.protocol_num, type: enum, enum: {TCP: 6, UDP: 17, ICMP: 1}, default: 0}
+      - {from: alert.signature, to: message, type: string}
+      - {from: alert.severity, to: severity_id, type: enum, enum: {"1": 4, "2": 3, "3": 2}, default: 99}
+      - {from: alert.action, to: action_id, type: enum, enum: {allowed: 1, blocked: 2}, default: 99}
+      - {from: alert.action, to: disposition_id, type: enum, enum: {allowed: 15, blocked: 2}, default: 99}
+      - {const: 6, to: activity_id}
+    tests:
+      - raw: '{"timestamp":"2026-09-28T09:00:00.693000+0530","flow_id":4325588156657430,"in_iface":"eth0","event_type":"alert","src_ip":"198.51.100.236","src_port":55929,"dest_ip":"10.1.4.50","dest_port":5432,"proto":"TCP","alert":{"action":"allowed","gid":1,"signature_id":2001219,"rev":20,"signature":"ET SCAN Potential SSH Scan","category":"Attempted Information Leak","severity":2}}'
+        expect: {src_endpoint.ip: 198.51.100.236, dst_endpoint.port: 5432, connection_info.protocol_num: 6, severity_id: 3, action_id: 1, message: ET SCAN Potential SSH Scan}

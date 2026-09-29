@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "not_found",
+    "message": "event 999.cisco_asa@1.0.0 does not exist"
+  }
+}

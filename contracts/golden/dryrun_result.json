@@ -1,0 +1,36 @@
+{
+  "samples": 50,
+  "parsed": 49,
+  "failed": 1,
+  "match_rate": 0.98,
+  "mean_coverage": 0.97,
+  "render_back_ok_rate": null,
+  "field_stats": {
+    "col_29": {
+      "present": 50,
+      "distinct": 2,
+      "sample": [
+        "tcp",
+        "udp"
+      ]
+    },
+    "col_7": {
+      "present": 50,
+      "distinct": 8,
+      "sample": [
+        "10.1.4.60",
+        "10.1.4.8",
+        "10.1.4.52"
+      ]
+    }
+  },
+  "failures": [
+    {
+      "record_id": 8,
+      "error": "csv: 41 columns, expected at least 47"
+    }
+  ],
+  "warnings": [
+    "field col_12 abstained (confidence 0.41), left in unmapped"
+  ]
+}

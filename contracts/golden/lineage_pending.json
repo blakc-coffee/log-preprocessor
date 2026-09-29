@@ -1,0 +1,25 @@
+{
+  "chain": {
+    "head": "41c97a281a75e68a9f934b1a50d2bc38dc753465016be9f67a3518c652c47036",
+    "sealed_through": 8
+  },
+  "coverage": {
+    "applicable": true,
+    "render_back_ok": true,
+    "mapped_bytes": 75,
+    "unmapped_bytes": 118,
+    "constant_bytes": 317,
+    "uncovered_bytes": 0,
+    "mapped_fields": 16,
+    "unmapped_fields": 19
+  },
+  "event_id": "10.fortinet@1.0.0",
+  "proof": null,
+  "raw_sha256": "af7d5bbbefa2305995f15fe1488b896d965b756c9269c2f0eef2059a0d62a443",
+  "record_id": 10,
+  "render_back": {
+    "applicable": true,
+    "ok": true
+  },
+  "sealed": false
+}

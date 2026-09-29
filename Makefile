@@ -7,6 +7,23 @@
 help:
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
+# --- contracts (Antigravity Pro) ---
+contract-golden: ## Regenerate contracts/golden/*.json (real fixtures, real merkle output, DSL-derived coverage)
+	go run ./contracts/gen
+
+contract-test: ## Goldens vs schema, OpenAPI integrity, DSL examples vs fixtures; fails if goldens drifted
+	go test -count=1 ./contracts/... ./pkg/types/...
+	rm -rf /tmp/ulpf-golden && mkdir -p /tmp/ulpf-golden
+	go run ./contracts/gen --out /tmp/ulpf-golden
+	diff -r contracts/golden /tmp/ulpf-golden
+	@if [ -x intel/.venv/bin/pytest ]; then cd intel && .venv/bin/pytest -q tests/test_contract.py; else echo "SKIPPED: python conformance (create intel/.venv: see intel/README.md)"; fi
+
+integrate: ## Run a linking step against a running data plane: make integrate STEP=1 (see docs/integration.md)
+	go run ./cmd/integrate --step $(or $(STEP),all) $(ARGS)
+
+intel-test: ## Run the sidecar's pytest suite (needs intel/.venv, see intel/README.md)
+	cd intel && .venv/bin/pytest -q
+
 # --- ingest/vault (Codex #1) ---
 SEED ?= 20260928
 PKGS := ./tools/... ./pkg/dataplane/ingest/... ./pkg/dataplane/vault/... ./cmd/ingestd/... ./cmd/vaultctl/...
@@ -66,4 +83,23 @@ bench: ## Run the benchmarks. LINUX ONLY for reportable numbers - see docs/vault
 	@echo "acknowledgement meant on-disk; 0 means it did not."
 	go test -run '^$$' -bench . -benchmem ./pkg/dataplane/vault/ ./pkg/dataplane/ingest/...
 
-.PHONY: help check fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench
+.PHONY: help contract-golden contract-test intel-test integrate check fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench ui ui-test control-test control-build control-demo
+
+# --- control plane & frontend (Claude Code #2) ---
+ui: ## Build the React UI and copy it into pkg/control/ui/dist for go:embed
+	cd frontend && npm ci --ignore-scripts && npm run build
+	find pkg/control/ui/dist -mindepth 1 ! -name .keep -delete
+	cp -R frontend/dist/. pkg/control/ui/dist/
+
+ui-test: ## Frontend unit and component tests, lint and the design-rule check
+	cd frontend && npm run typecheck && npm run lint && npm test
+
+control-test: ## Control API, registry and mock admin tests (race detector)
+	CGO_ENABLED=1 go test -race ./pkg/control/... ./cmd/control/...
+
+control-build: ## Build cmd/control with CGO disabled (run `make ui` first to embed the UI)
+	CGO_ENABLED=0 go build -o bin/ ./cmd/control
+
+control-demo: ui control-build ## Run the control plane on 127.0.0.1:8000 against the built-in mock admin
+	./bin/control --mock --registry-db :memory:
+

@@ -1,0 +1,71 @@
+{
+  "event_id": "1.cisco_asa@1.0.0",
+  "record_id": 1,
+  "segment": 1,
+  "raw_sha256": "7a98c9a1ab65bc1b30c1dfba7319bcad1afb0b4f2cc04fa4d609b69d1227962c",
+  "source_id": "cisco_asa",
+  "vendor": "cisco",
+  "product": "asa",
+  "parser_id": "cisco_asa",
+  "parser_version": "1.0.0",
+  "template_id": "cisco_asa/asa_302013",
+  "schema_version": "ulpf-uef/1",
+  "received_at": "2026-09-28T03:30:07.12Z",
+  "event_time": "2026-09-28T03:30:07Z",
+  "time_from_receipt": false,
+  "parse_confidence": 1,
+  "integrity_flags": [],
+  "ocsf": {
+    "action_id": 1,
+    "activity_id": 1,
+    "category_uid": 4,
+    "class_uid": 4001,
+    "connection_info": {
+      "protocol_name": "tcp",
+      "protocol_num": 6
+    },
+    "disposition_id": 1,
+    "dst_endpoint": {
+      "ip": "10.1.11.225",
+      "port": 56376
+    },
+    "metadata": {
+      "product": {
+        "name": "asa",
+        "vendor_name": "cisco"
+      },
+      "version": "1.1.0"
+    },
+    "severity_id": 1,
+    "src_endpoint": {
+      "ip": "192.0.2.179",
+      "port": 22
+    },
+    "time": 1790566207000,
+    "type_uid": 400101
+  },
+  "unmapped": {
+    "conn": "1005",
+    "dir": "inbound",
+    "dst_if": "inside",
+    "dst_nat_ip": "10.1.11.225",
+    "dst_nat_port": "56376",
+    "host": "asa01",
+    "pri": "\u003c166\u003e",
+    "src_if": "outside",
+    "src_nat_ip": "192.0.2.179",
+    "src_nat_port": "22"
+  },
+  "entities": [],
+  "coverage": {
+    "applicable": true,
+    "render_back_ok": true,
+    "mapped_bytes": 53,
+    "unmapped_bytes": 63,
+    "constant_bytes": 58,
+    "uncovered_bytes": 0,
+    "mapped_fields": 11,
+    "unmapped_fields": 10
+  },
+  "current": true
+}

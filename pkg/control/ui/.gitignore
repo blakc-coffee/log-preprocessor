@@ -1,0 +1,4 @@
+# `make ui` copies frontend/dist here. Only the placeholder is committed.
+!dist/
+dist/*
+!dist/.keep

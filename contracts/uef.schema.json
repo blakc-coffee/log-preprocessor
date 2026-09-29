@@ -1,0 +1,371 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ulpf.local/contracts/uef.schema.json",
+  "title": "ULPF Unified Event Format and admin payloads",
+  "description": "Every JSON shape that crosses a workstream boundary. Go (pkg/types), Python (intel/) and the OpenAPI file all validate against these definitions. Conventions: snake_case keys, RFC 3339 UTC timestamps, lowercase hex hashes, standard base64 for raw bytes, IPs as strings.",
+  "$defs": {
+    "record_id": { "type": "integer", "minimum": 1, "description": "Global monotonic id assigned by the vault (D3)." },
+    "sha256_hex": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timestamp": { "type": "string", "format": "date-time", "pattern": "Z$", "description": "RFC 3339, UTC, nanosecond precision allowed." },
+    "timestamp_or_null": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+    "ip": { "type": "string", "pattern": "^[0-9a-fA-F.:]+$" },
+
+    "integrity_flag": {
+      "description": "Closed set; add only via contract PR.",
+      "oneOf": [
+        { "enum": ["invalid_utf8", "control_chars", "oversize_field", "too_many_fields", "duplicate_key", "nested_too_deep", "key_injection_suspect", "fragment_record", "time_unparseable", "render_back_mismatch", "low_confidence", "truncated_input"] },
+        { "type": "string", "pattern": "^missing_required:.+$" }
+      ]
+    },
+
+    "origin": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "addr", "offset"],
+      "properties": {
+        "kind": { "enum": ["unknown", "file", "udp", "tcp", "tls", "http"] },
+        "addr": { "type": "string" },
+        "offset": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "evidence_ref": {
+      "type": "object", "additionalProperties": false, "required": ["record_id", "kind"],
+      "properties": { "record_id": { "$ref": "#/$defs/record_id" }, "kind": { "enum": ["dhcp", "radius", "vpn"] } }
+    },
+
+    "entity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "id", "role", "valid_from", "valid_to", "confidence", "evidence"],
+      "properties": {
+        "type": { "enum": ["user", "host", "ip", "mac"] },
+        "id": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["src", "dst", "observer"] },
+        "valid_from": { "$ref": "#/$defs/timestamp_or_null" },
+        "valid_to": { "$ref": "#/$defs/timestamp_or_null" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence_ref" } }
+      }
+    },
+
+    "identity_fact": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "action", "ip", "at", "record_id", "source_id"],
+      "properties": {
+        "kind": { "enum": ["dhcp", "radius", "vpn"] },
+        "action": { "enum": ["bind", "release"] },
+        "ip": { "$ref": "#/$defs/ip" },
+        "mac": { "type": "string" },
+        "host": { "type": "string" },
+        "user": { "type": "string" },
+        "at": { "$ref": "#/$defs/timestamp" },
+        "record_id": { "$ref": "#/$defs/record_id" },
+        "source_id": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["applicable", "render_back_ok", "mapped_bytes", "unmapped_bytes", "constant_bytes", "uncovered_bytes", "mapped_fields", "unmapped_fields"],
+      "properties": {
+        "applicable": { "type": "boolean" },
+        "render_back_ok": { "type": ["boolean", "null"], "description": "null when render-back is not applicable." },
+        "mapped_bytes": { "type": "integer", "minimum": 0 },
+        "unmapped_bytes": { "type": "integer", "minimum": 0 },
+        "constant_bytes": { "type": "integer", "minimum": 0 },
+        "uncovered_bytes": { "type": "integer", "minimum": 0 },
+        "mapped_fields": { "type": "integer", "minimum": 0 },
+        "unmapped_fields": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "normalized_event": {
+      "type": "object", "additionalProperties": false,
+      "required": ["event_id", "record_id", "segment", "raw_sha256", "source_id", "vendor", "product", "parser_id", "parser_version", "template_id", "schema_version", "received_at", "event_time", "time_from_receipt", "parse_confidence", "integrity_flags", "ocsf", "unmapped", "entities", "coverage", "current"],
+      "properties": {
+        "event_id": { "type": "string", "pattern": "^[0-9]+\\.[a-z0-9_]+@[0-9]+\\.[0-9]+\\.[0-9]+$", "description": "<RecordID>.<parser_id>@<parser_version> (D1)" },
+        "record_id": { "$ref": "#/$defs/record_id" },
+        "segment": { "type": "integer", "minimum": 1 },
+        "raw_sha256": { "$ref": "#/$defs/sha256_hex" },
+        "source_id": { "type": "string", "minLength": 1 },
+        "vendor": { "type": "string" },
+        "product": { "type": "string" },
+        "parser_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "parser_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "template_id": { "type": "string", "pattern": "^[a-z0-9_]+/[a-z0-9_]+$", "description": "<parser_id>/<extractor_id> (D9)" },
+        "schema_version": { "const": "ulpf-uef/1" },
+        "received_at": { "$ref": "#/$defs/timestamp" },
+        "event_time": { "$ref": "#/$defs/timestamp_or_null" },
+        "time_from_receipt": { "type": "boolean" },
+        "parse_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "integrity_flags": { "type": "array", "items": { "$ref": "#/$defs/integrity_flag" }, "uniqueItems": true },
+        "ocsf": { "$ref": "#/$defs/ocsf_event" },
+        "unmapped": { "type": "object" },
+        "entities": { "type": "array", "items": { "$ref": "#/$defs/entity" } },
+        "identity": { "$ref": "#/$defs/identity_fact" },
+        "coverage": { "$ref": "#/$defs/coverage" },
+        "current": { "type": "boolean" }
+      }
+    },
+
+    "ocsf_event": {
+      "description": "OCSF 1.1.0 subset (contracts/ocsf). Core fields are required; the object is open because a class carries many optional attributes.",
+      "type": "object",
+      "required": ["class_uid", "category_uid", "activity_id", "type_uid", "time"],
+      "properties": {
+        "class_uid": { "type": "integer" },
+        "category_uid": { "type": "integer" },
+        "activity_id": { "type": "integer", "minimum": 0 },
+        "type_uid": { "type": "integer" },
+        "time": { "type": "integer", "description": "epoch milliseconds (OCSF timestamp_t)" },
+        "severity_id": { "type": "integer", "minimum": 0, "maximum": 99 },
+        "action_id": { "type": "integer", "minimum": 0, "maximum": 99 },
+        "disposition_id": { "type": "integer", "minimum": 0, "maximum": 99 },
+        "src_endpoint": { "$ref": "#/$defs/ocsf_endpoint" },
+        "dst_endpoint": { "$ref": "#/$defs/ocsf_endpoint" },
+        "connection_info": {
+          "type": "object",
+          "properties": { "protocol_num": { "type": "integer", "minimum": 0, "maximum": 255 }, "protocol_name": { "type": "string" } }
+        },
+        "traffic": {
+          "type": "object",
+          "properties": { "bytes_in": { "type": "integer", "minimum": 0 }, "bytes_out": { "type": "integer", "minimum": 0 }, "packets_in": { "type": "integer", "minimum": 0 }, "packets_out": { "type": "integer", "minimum": 0 } }
+        },
+        "metadata": {
+          "type": "object", "required": ["version", "product"],
+          "properties": { "version": { "type": "string" }, "product": { "type": "object", "required": ["vendor_name", "name"], "properties": { "vendor_name": { "type": "string" }, "name": { "type": "string" } } } }
+        },
+        "message": { "type": "string" }
+      },
+      "allOf": [
+        { "if": { "properties": { "class_uid": { "const": 4001 } }, "required": ["class_uid"] },
+          "then": { "required": ["severity_id", "action_id", "src_endpoint", "dst_endpoint", "connection_info", "metadata"] } }
+      ]
+    },
+    "ocsf_endpoint": {
+      "type": "object",
+      "properties": { "ip": { "$ref": "#/$defs/ip" }, "port": { "type": "integer", "minimum": 0, "maximum": 65535 }, "mac": { "type": "string" }, "hostname": { "type": "string" } }
+    },
+
+    "quarantine_record": {
+      "type": "object", "additionalProperties": false, "required": ["record_id", "source_id", "failure_stage", "error", "received_at", "status"],
+      "properties": {
+        "record_id": { "$ref": "#/$defs/record_id" },
+        "source_id": { "type": "string" },
+        "failure_stage": { "enum": ["detect", "extract", "normalize", "integrity"] },
+        "error": { "type": "string" },
+        "received_at": { "$ref": "#/$defs/timestamp" },
+        "status": { "enum": ["open", "resolved", "ignored"] },
+        "resolved_by": { "type": "string", "description": "parser id@version" }
+      }
+    },
+    "quarantine_list": {
+      "type": "object", "additionalProperties": false, "required": ["records", "next_cursor", "summary"],
+      "properties": {
+        "records": { "type": "array", "items": { "$ref": "#/$defs/quarantine_record" } },
+        "next_cursor": { "type": ["string", "null"] },
+        "summary": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["source_id", "open", "resolved", "ignored", "by_stage"],
+            "properties": {
+              "source_id": { "type": "string" },
+              "open": { "type": "integer", "minimum": 0 }, "resolved": { "type": "integer", "minimum": 0 }, "ignored": { "type": "integer", "minimum": 0 },
+              "by_stage": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
+            }
+          }
+        }
+      }
+    },
+
+    "drift_alert": {
+      "type": "object", "additionalProperties": false, "required": ["id", "source_id", "parser_id", "score", "signals", "quarantine_rate", "first_seen", "status"],
+      "properties": {
+        "id": { "type": "string", "description": "Empty on POST; assigned by the data plane." },
+        "source_id": { "type": "string", "minLength": 1 },
+        "parser_id": { "type": "string" },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "signals": { "type": "array", "items": { "type": "string" } },
+        "quarantine_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "first_seen": { "$ref": "#/$defs/timestamp" },
+        "status": { "enum": ["open", "proposed", "resolved", "dismissed"] }
+      }
+    },
+
+    "typed_field": {
+      "type": "object", "additionalProperties": false, "required": ["field", "ocsf_path", "type", "confidence", "evidence"],
+      "properties": {
+        "field": { "type": "string" },
+        "ocsf_path": { "type": "string", "description": "Empty string when the typer abstained." },
+        "type": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": { "type": "string" },
+        "alternatives": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "field_stat": {
+      "type": "object", "additionalProperties": false, "required": ["present", "distinct", "sample"],
+      "properties": { "present": { "type": "integer", "minimum": 0 }, "distinct": { "type": "integer", "minimum": 0 }, "sample": { "type": "array", "items": { "type": "string" } } }
+    },
+    "dryrun_result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["samples", "parsed", "failed", "match_rate", "mean_coverage", "render_back_ok_rate", "field_stats", "failures", "warnings"],
+      "properties": {
+        "samples": { "type": "integer", "minimum": 0 },
+        "parsed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "match_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "mean_coverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "render_back_ok_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "field_stats": { "type": "object", "additionalProperties": { "$ref": "#/$defs/field_stat" } },
+        "failures": { "type": "array", "maxItems": 20, "items": { "type": "object", "additionalProperties": false, "required": ["record_id", "error"], "properties": { "record_id": { "$ref": "#/$defs/record_id" }, "error": { "type": "string" } } } },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "proposal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "parser_id", "base_version", "source_id", "yaml", "cluster_size", "templates", "sample_record_ids", "typed_fields", "dry_run", "status", "created_at"],
+      "properties": {
+        "id": { "type": "string", "description": "Empty on POST; assigned by the data plane." },
+        "kind": { "enum": ["new", "patch"] },
+        "parser_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "base_version": { "type": "string", "description": "Empty for kind=new; must equal the active version for kind=patch." },
+        "source_id": { "type": "string" },
+        "yaml": { "type": "string", "minLength": 1 },
+        "drift_alert_id": { "type": "string" },
+        "cluster_size": { "type": "integer", "minimum": 0 },
+        "templates": { "type": "array", "items": { "type": "string" } },
+        "sample_record_ids": { "type": "array", "items": { "$ref": "#/$defs/record_id" } },
+        "typed_fields": { "type": "array", "items": { "$ref": "#/$defs/typed_field" } },
+        "dry_run": { "oneOf": [{ "$ref": "#/$defs/dryrun_result" }, { "type": "null" }] },
+        "status": { "enum": ["pending", "approved", "rejected", "stale"] },
+        "created_at": { "$ref": "#/$defs/timestamp" }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "patch" } } }, "then": { "properties": { "base_version": { "minLength": 1 } } } },
+        { "if": { "properties": { "kind": { "const": "new" } } }, "then": { "properties": { "base_version": { "const": "" } } } }
+      ]
+    },
+
+    "proof": {
+      "description": "Inclusion proof in wire form (vault.ProofJSON). Verify per RFC 9162 2.1.3.2 with the domain-separated hashes in `algorithm`.",
+      "type": "object", "additionalProperties": false,
+      "required": ["segment", "leaf_index", "tree_size", "leaf_hash", "path", "root", "prev_chain", "chain", "algorithm"],
+      "properties": {
+        "segment": { "type": "integer", "minimum": 1 },
+        "leaf_index": { "type": "integer", "minimum": 0 },
+        "tree_size": { "type": "integer", "minimum": 1 },
+        "leaf_hash": { "$ref": "#/$defs/sha256_hex" },
+        "path": { "type": "array", "items": { "$ref": "#/$defs/sha256_hex" } },
+        "root": { "$ref": "#/$defs/sha256_hex" },
+        "prev_chain": { "$ref": "#/$defs/sha256_hex" },
+        "chain": { "$ref": "#/$defs/sha256_hex" },
+        "algorithm": {
+          "type": "object", "additionalProperties": false, "required": ["leaf", "node", "chain", "proof_verification"],
+          "properties": { "leaf": { "type": "string" }, "node": { "type": "string" }, "chain": { "type": "string" }, "proof_verification": { "type": "string" } }
+        }
+      }
+    },
+    "lineage": {
+      "type": "object", "additionalProperties": false, "required": ["event_id", "record_id", "raw_sha256", "sealed", "proof", "chain", "coverage", "render_back"],
+      "properties": {
+        "event_id": { "type": "string" },
+        "record_id": { "$ref": "#/$defs/record_id" },
+        "raw_sha256": { "$ref": "#/$defs/sha256_hex" },
+        "sealed": { "type": "boolean", "description": "false while the record's segment is still active; then proof is null (D2)." },
+        "proof": { "oneOf": [{ "$ref": "#/$defs/proof" }, { "type": "null" }] },
+        "chain": {
+          "type": "object", "additionalProperties": false, "required": ["head", "sealed_through"],
+          "properties": { "head": { "$ref": "#/$defs/sha256_hex" }, "sealed_through": { "type": "integer", "minimum": 0 } }
+        },
+        "coverage": { "$ref": "#/$defs/coverage" },
+        "render_back": {
+          "type": "object", "additionalProperties": false, "required": ["applicable", "ok"],
+          "properties": { "applicable": { "type": "boolean" }, "ok": { "type": ["boolean", "null"] } }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "sealed": { "const": true } } }, "then": { "properties": { "proof": { "type": "object" } } }, "else": { "properties": { "proof": { "type": "null" } } } }
+      ]
+    },
+    "segment_seal": {
+      "type": "object", "additionalProperties": false, "required": ["segment", "first_seq", "last_seq", "count", "root", "prev", "chain", "sealed_at", "recovered"],
+      "properties": {
+        "segment": { "type": "integer", "minimum": 1 }, "first_seq": { "$ref": "#/$defs/record_id" }, "last_seq": { "$ref": "#/$defs/record_id" },
+        "count": { "type": "integer", "minimum": 1 }, "root": { "$ref": "#/$defs/sha256_hex" }, "prev": { "$ref": "#/$defs/sha256_hex" }, "chain": { "$ref": "#/$defs/sha256_hex" },
+        "sealed_at": { "$ref": "#/$defs/timestamp" }, "recovered": { "type": "boolean" }
+      }
+    },
+    "chain_report": {
+      "type": "object", "additionalProperties": false, "required": ["ok", "deep", "segments", "records", "head"],
+      "properties": {
+        "ok": { "type": "boolean" }, "deep": { "type": "boolean" }, "segments": { "type": "integer", "minimum": 0 }, "records": { "type": "integer", "minimum": 0 },
+        "head": { "$ref": "#/$defs/sha256_hex" }, "first_bad": { "type": "integer", "minimum": 0 }, "reason": { "type": "string" }
+      }
+    },
+
+    "raw_response": {
+      "type": "object", "additionalProperties": false,
+      "required": ["record_id", "segment", "raw_base64", "raw_sha256", "sha_match", "origin", "terminator", "fragment", "received_at"],
+      "properties": {
+        "record_id": { "$ref": "#/$defs/record_id" }, "segment": { "type": "integer", "minimum": 1 },
+        "raw_base64": { "type": "string", "pattern": "^[A-Za-z0-9+/]*={0,2}$" },
+        "raw_sha256": { "$ref": "#/$defs/sha256_hex" },
+        "sha_match": { "type": "boolean", "description": "Server-side check that SHA-256(raw) equals raw_sha256. The browser repeats it." },
+        "origin": { "$ref": "#/$defs/origin" },
+        "terminator": { "enum": ["none", "LF", "CRLF", "NUL"] },
+        "fragment": { "type": "integer", "minimum": 0, "maximum": 3, "description": "bit set: 1 more follows, 2 continuation" },
+        "received_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+
+    "telemetry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["eps_1m", "eps_peak", "events_total", "quarantined_total", "quarantine_open", "vault", "lossless", "sources", "sinks"],
+      "properties": {
+        "eps_1m": { "type": "number", "minimum": 0 }, "eps_peak": { "type": "number", "minimum": 0 },
+        "events_total": { "type": "integer", "minimum": 0 }, "quarantined_total": { "type": "integer", "minimum": 0 }, "quarantine_open": { "type": "integer", "minimum": 0 },
+        "vault": {
+          "type": "object", "additionalProperties": false, "required": ["records", "segments", "bytes_raw", "bytes_compressed", "ratio", "chain_head", "sealed_through", "failed"],
+          "properties": {
+            "records": { "type": "integer", "minimum": 0 }, "segments": { "type": "integer", "minimum": 0 },
+            "bytes_raw": { "type": "integer", "minimum": 0 }, "bytes_compressed": { "type": "integer", "minimum": 0 }, "ratio": { "type": "number", "minimum": 0 },
+            "chain_head": { "$ref": "#/$defs/sha256_hex" }, "sealed_through": { "type": "integer", "minimum": 0 }, "failed": { "type": "boolean" }
+          }
+        },
+        "lossless": {
+          "type": "object", "additionalProperties": false, "required": ["last_verify_ok", "last_verify_at"],
+          "properties": { "last_verify_ok": { "type": ["boolean", "null"] }, "last_verify_at": { "$ref": "#/$defs/timestamp_or_null" } }
+        },
+        "sources": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["id", "eps", "records"], "properties": { "id": { "type": "string" }, "eps": { "type": "number", "minimum": 0 }, "records": { "type": "integer", "minimum": 0 } } } },
+        "sinks": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["name", "lag", "errors"], "properties": { "name": { "type": "string" }, "lag": { "type": "number", "minimum": 0 }, "errors": { "type": "integer", "minimum": 0 } } } }
+      }
+    },
+
+    "replay_job": {
+      "type": "object", "additionalProperties": false, "required": ["job_id", "state", "scope", "processed", "succeeded", "failed", "started_at", "finished_at", "error"],
+      "properties": {
+        "job_id": { "type": "string" }, "state": { "enum": ["queued", "running", "done", "failed"] }, "scope": { "enum": ["quarantine", "source", "range"] },
+        "processed": { "type": "integer", "minimum": 0 }, "succeeded": { "type": "integer", "minimum": 0 }, "failed": { "type": "integer", "minimum": 0 },
+        "started_at": { "$ref": "#/$defs/timestamp_or_null" }, "finished_at": { "$ref": "#/$defs/timestamp_or_null" }, "error": { "type": ["string", "null"] }
+      }
+    },
+    "parsers_list": {
+      "type": "object", "additionalProperties": false, "required": ["parsers"],
+      "properties": {
+        "parsers": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["id", "active_version", "versions", "vendor", "product", "signature"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9_]+$" }, "active_version": { "type": "string" }, "versions": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+              "vendor": { "type": "string" }, "product": { "type": "string" }, "signature": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "error_response": {
+      "type": "object", "additionalProperties": false, "required": ["error"],
+      "properties": { "error": { "type": "object", "additionalProperties": false, "required": ["code", "message"], "properties": { "code": { "type": "string", "pattern": "^[a-z_]+$" }, "message": { "type": "string" } } } }
+    }
+  }
+}

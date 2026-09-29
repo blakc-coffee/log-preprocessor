@@ -1,0 +1,498 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: ULPF data-plane admin API
+  version: 1.0.0
+  description: |
+    Served by `cmd/dataplane` on 127.0.0.1:9000 (Parsing). Consumed by the control plane (Frontend),
+    the intelligence sidecar (Contracts) and the integration tests.
+
+    Loopback only and unauthenticated in v1; docs/spec.md says why that is acceptable and what it is not.
+    Payload shapes live in uef.schema.json and are referenced, not copied. Every response has a golden example in golden/.
+
+    Conventions: snake_case keys, RFC 3339 UTC timestamps, lowercase hex hashes, standard base64 for raw bytes.
+    Errors are `{"error": {"code": "...", "message": "..."}}`. Lists use keyset pagination: pass the previous `next_cursor` as `cursor`.
+servers:
+  - url: http://127.0.0.1:9000
+tags: [{name: events}, {name: quarantine}, {name: intelligence}, {name: parsers}, {name: replay}, {name: identity}, {name: vault}, {name: ops}]
+
+paths:
+  /admin/events:
+    get:
+      operationId: listEvents
+      tags: [events]
+      summary: List normalized events
+      description: Newest first. With `since_seq`, ascending live tail from that sequence (the live view polls this). `limit` is capped at 500.
+      parameters:
+        - {$ref: '#/components/parameters/ip'}
+        - {$ref: '#/components/parameters/src_ip'}
+        - {$ref: '#/components/parameters/dst_ip'}
+        - {$ref: '#/components/parameters/vendor'}
+        - {$ref: '#/components/parameters/severity'}
+        - {$ref: '#/components/parameters/action'}
+        - {$ref: '#/components/parameters/user'}
+        - {$ref: '#/components/parameters/host'}
+        - {$ref: '#/components/parameters/source_id'}
+        - {$ref: '#/components/parameters/from'}
+        - {$ref: '#/components/parameters/to'}
+        - {$ref: '#/components/parameters/flag'}
+        - {$ref: '#/components/parameters/limit'}
+        - {$ref: '#/components/parameters/cursor'}
+        - {$ref: '#/components/parameters/since_seq'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/EventList'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+
+  /admin/events/{event_id}:
+    get:
+      operationId: getEvent
+      tags: [events]
+      summary: One event
+      parameters: [{$ref: '#/components/parameters/event_id'}]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: 'uef.schema.json#/$defs/normalized_event'}
+              examples: {asa_built: {externalValue: golden/event_asa_built.json}, asa_deny: {externalValue: golden/event_asa_deny.json}, fortinet: {externalValue: golden/event_fortinet.json}, suricata_alert: {externalValue: golden/event_suricata_alert.json}, with_entities: {externalValue: golden/event_with_entities.json}, identity_dhcp_bind: {externalValue: golden/identity_dhcp_bind.json}}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/events/{event_id}/raw:
+    get:
+      operationId: getEventRaw
+      tags: [events]
+      summary: The raw record behind an event
+      description: "JSON by default. With `Accept: application/octet-stream` the body is exactly the raw bytes (no terminator), with `X-Raw-SHA256` set."
+      parameters: [{$ref: '#/components/parameters/event_id'}]
+      responses:
+        '200':
+          description: OK
+          headers: {X-Raw-SHA256: {schema: {type: string, pattern: '^[0-9a-f]{64}$'}}}
+          content:
+            application/json:
+              schema: {$ref: 'uef.schema.json#/$defs/raw_response'}
+              examples: {raw: {externalValue: golden/raw_response.json}}
+            application/octet-stream:
+              schema: {type: string, contentEncoding: binary}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/lineage/{event_id}:
+    get:
+      operationId: getLineage
+      tags: [events, vault]
+      summary: Full lineage of an event
+      description: |
+        `sealed` is false while the record's segment is still active; `proof` is then null and the UI shows "pending seal" (D2).
+        A sealed record carries a real inclusion proof that anyone can verify without trusting the data plane.
+      parameters: [{$ref: '#/components/parameters/event_id'}]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: 'uef.schema.json#/$defs/lineage'}
+              examples: {sealed: {externalValue: golden/lineage_sealed.json}, pending: {externalValue: golden/lineage_pending.json}}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/quarantine:
+    get:
+      operationId: listQuarantine
+      tags: [quarantine]
+      summary: Quarantined records plus a per-source summary
+      parameters:
+        - {$ref: '#/components/parameters/source_id'}
+        - {name: status, in: query, schema: {enum: [open, resolved, ignored]}}
+        - {name: stage, in: query, schema: {enum: [detect, extract, normalize, integrity]}}
+        - {$ref: '#/components/parameters/limit'}
+        - {$ref: '#/components/parameters/cursor'}
+      responses:
+        '200':
+          description: OK
+          content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/quarantine_list'}, examples: {list: {externalValue: golden/quarantine_list.json}}}}
+
+  /admin/samples:
+    get:
+      operationId: listSamples
+      tags: [intelligence]
+      summary: Sampled raw records for the intelligence sidecar
+      parameters:
+        - {name: source_id, in: query, required: true, schema: {type: string}}
+        - {name: status, in: query, schema: {enum: [parsed, quarantined, any], default: any}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/SampleList'}}}}
+
+  /admin/drift:
+    get:
+      operationId: listDrift
+      tags: [intelligence]
+      summary: List drift alerts
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {type: object, additionalProperties: false, required: [alerts], properties: {alerts: {type: array, items: {$ref: 'uef.schema.json#/$defs/drift_alert'}}}}}}}
+    post:
+      operationId: postDrift
+      tags: [intelligence]
+      summary: The sidecar posts a drift alert
+      description: Idempotent per (source_id, parser_id, first_seen bucket). A repeat returns 200 with the existing alert; a new one returns 201. `id` and `status` in the body are ignored and assigned by the data plane.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/drift_alert'}, examples: {alert: {externalValue: golden/drift_alert.json}}}}}
+      responses:
+        '200': {description: Existing alert, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/drift_alert'}}}}
+        '201': {description: Created, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/drift_alert'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+
+  /admin/proposals:
+    get:
+      operationId: listProposals
+      tags: [intelligence]
+      summary: List proposals
+      parameters: [{name: status, in: query, schema: {enum: [pending, approved, rejected, stale]}}]
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {type: object, additionalProperties: false, required: [proposals], properties: {proposals: {type: array, items: {$ref: 'uef.schema.json#/$defs/proposal'}}}}}}}
+    post:
+      operationId: postProposal
+      tags: [intelligence]
+      summary: The sidecar posts a proposal
+      description: The body carries no `id`; the response does. A proposal that misses its acceptance thresholds is still accepted, with `warnings` in its dry run, and is never dropped.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/proposal'}, examples: {palo_alto: {externalValue: golden/proposal_palo_alto.json}}}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/proposal'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+
+  /admin/proposals/{id}:
+    get:
+      operationId: getProposal
+      tags: [intelligence]
+      summary: One proposal
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/proposal'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/proposals/{id}/reject:
+    post:
+      operationId: rejectProposal
+      tags: [intelligence]
+      summary: Reject a proposal
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RejectRequest'}}}}
+      responses:
+        '200': {description: The proposal, now rejected, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/proposal'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/parsers:
+    get:
+      operationId: listParsers
+      tags: [parsers]
+      summary: Active parsers
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/parsers_list'}, examples: {list: {externalValue: golden/parsers_list.json}}}}}
+
+  /admin/parsers/dryrun:
+    post:
+      operationId: dryRunParser
+      tags: [parsers]
+      summary: Validate a parser against stored samples
+      description: No side effects. Samples come from `sample_record_ids` if given, else up to `sample_limit` (default 200, max 1000) recent records of `source_id`.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DryRunRequest'}}}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/dryrun_result'}, examples: {result: {externalValue: golden/dryrun_result.json}}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+
+  /admin/parsers/approve:
+    post:
+      operationId: approveParser
+      tags: [parsers]
+      summary: Activate a parser version, then replay
+      description: |
+        Only the control-plane registry calls this (D10). The patch version is bumped on the server.
+        `409 conflict` if the proposal's `base_version` is not the active version; the proposal is then marked `stale`.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApproveRequest'}}}}
+      responses:
+        '200': {description: Activated, content: {application/json: {schema: {$ref: '#/components/schemas/ActivationResult'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /admin/parsers/{id}/rollback:
+    post:
+      operationId: rollbackParser
+      tags: [parsers]
+      summary: Activate an older version
+      parameters: [{$ref: '#/components/parameters/id'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RollbackRequest'}}}}
+      responses:
+        '200': {description: Activated, content: {application/json: {schema: {$ref: '#/components/schemas/ActivationResult'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/parsers/{id}/versions/{v}:
+    get:
+      operationId: getParserVersion
+      tags: [parsers]
+      summary: Parser YAML
+      parameters:
+        - {$ref: '#/components/parameters/id'}
+        - {name: v, in: path, required: true, schema: {type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'}}
+      responses:
+        '200': {description: OK, content: {text/yaml: {schema: {type: string}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/replay:
+    post:
+      operationId: startReplay
+      tags: [replay]
+      summary: Start a replay from the vault
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReplayRequest'}}}}
+      responses:
+        '202': {description: Accepted, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/replay_job'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+
+  /admin/replay/{job_id}:
+    get:
+      operationId: getReplay
+      tags: [replay]
+      summary: Replay progress
+      parameters: [{name: job_id, in: path, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/replay_job'}, examples: {done: {externalValue: golden/replay_job.json}}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /admin/identity/resolve:
+    get:
+      operationId: resolveIdentity
+      tags: [identity]
+      summary: Who held this IP at this time
+      description: Empty `entities` when no claim covers `at`. The resolver never guesses and never carries a user across a release.
+      parameters:
+        - {name: ip, in: query, required: true, schema: {$ref: 'uef.schema.json#/$defs/ip'}}
+        - {name: at, in: query, required: true, schema: {type: string, format: date-time}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/ResolveResult'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+
+  /admin/identity/timeline:
+    get:
+      operationId: identityTimeline
+      tags: [identity]
+      summary: Bindings for an IP over time
+      parameters:
+        - {name: ip, in: query, required: true, schema: {$ref: 'uef.schema.json#/$defs/ip'}}
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Timeline'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+
+  /admin/identity/graph:
+    get:
+      operationId: identityGraph
+      tags: [identity]
+      summary: Neighbours of an ip, user or host (P1)
+      description: Exactly one of `ip`, `user`, `host`.
+      parameters:
+        - {name: ip, in: query, schema: {$ref: 'uef.schema.json#/$defs/ip'}}
+        - {name: user, in: query, schema: {type: string}}
+        - {name: host, in: query, schema: {type: string}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Graph'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+
+  /admin/vault/segments:
+    get:
+      operationId: listSegments
+      tags: [vault]
+      summary: Sealed segments and the active one
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Segments'}}}}
+
+  /admin/vault/verify:
+    get:
+      operationId: verifyVault
+      tags: [vault]
+      summary: Verify the hash chain
+      parameters: [{name: deep, in: query, schema: {type: boolean, default: false}}]
+      responses:
+        '200': {description: OK (`ok:false` is a valid answer, not an HTTP error), content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/chain_report'}}}}
+
+  /admin/telemetry:
+    get:
+      operationId: getTelemetry
+      tags: [ops]
+      summary: Live numbers
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/telemetry'}, examples: {live: {externalValue: golden/telemetry.json}}}}}
+
+  /healthz:
+    get:
+      operationId: healthz
+      tags: [ops]
+      summary: Liveness
+      description: 503 when the vault is in its terminal failed state (a failed fsync is never retried).
+      responses:
+        '200': {description: Healthy, content: {text/plain: {schema: {type: string, const: ok}}}}
+        '503': {description: Vault failed, restart required, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/error_response'}}}}
+
+components:
+  parameters:
+    event_id: {name: event_id, in: path, required: true, schema: {type: string}, description: '<RecordID>.<parser_id>@<version>'}
+    id: {name: id, in: path, required: true, schema: {type: string}}
+    ip: {name: ip, in: query, schema: {$ref: 'uef.schema.json#/$defs/ip'}, description: Source or destination}
+    src_ip: {name: src_ip, in: query, schema: {$ref: 'uef.schema.json#/$defs/ip'}}
+    dst_ip: {name: dst_ip, in: query, schema: {$ref: 'uef.schema.json#/$defs/ip'}}
+    vendor: {name: vendor, in: query, schema: {type: string}}
+    severity: {name: severity, in: query, schema: {type: integer, minimum: 0, maximum: 99}, description: OCSF severity_id}
+    action: {name: action, in: query, schema: {type: integer, minimum: 0, maximum: 99}, description: OCSF action_id}
+    user: {name: user, in: query, schema: {type: string}, description: Resolved user entity}
+    host: {name: host, in: query, schema: {type: string}}
+    source_id: {name: source_id, in: query, schema: {type: string}}
+    from: {name: from, in: query, schema: {type: string, format: date-time}}
+    to: {name: to, in: query, schema: {type: string, format: date-time}}
+    flag: {name: flag, in: query, schema: {type: string}, description: An integrity flag}
+    limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+    cursor: {name: cursor, in: query, schema: {type: string}}
+    since_seq: {name: since_seq, in: query, schema: {type: integer, minimum: 0}, description: Live tail; ascending from this sequence}
+
+  responses:
+    BadRequest: {description: Malformed request, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/error_response'}}}}
+    NotFound: {description: Not found, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/error_response'}, examples: {not_found: {externalValue: golden/error.json}}}}}
+    Conflict: {description: Stale base version or wrong state, content: {application/json: {schema: {$ref: 'uef.schema.json#/$defs/error_response'}}}}
+
+  schemas:
+    EventList:
+      type: object
+      additionalProperties: false
+      required: [events, next_cursor, max_seq]
+      properties:
+        events: {type: array, items: {$ref: 'uef.schema.json#/$defs/normalized_event'}}
+        next_cursor: {type: [string, 'null']}
+        max_seq: {type: integer, minimum: 0, description: Highest sequence the server has; pass as since_seq to tail}
+    SampleList:
+      type: object
+      additionalProperties: false
+      required: [samples]
+      properties:
+        samples:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [record_id, source_id, raw_base64, received_at, status, parser_id]
+            properties:
+              record_id: {$ref: 'uef.schema.json#/$defs/record_id'}
+              source_id: {type: string}
+              raw_base64: {type: string}
+              received_at: {$ref: 'uef.schema.json#/$defs/timestamp'}
+              status: {enum: [parsed, quarantined]}
+              parser_id: {type: string, description: Empty for quarantined records}
+    RejectRequest:
+      type: object
+      additionalProperties: false
+      required: [by, comment]
+      properties: {by: {type: string, minLength: 1}, comment: {type: string}}
+    DryRunRequest:
+      type: object
+      additionalProperties: false
+      required: [yaml]
+      properties:
+        yaml: {type: string, minLength: 1}
+        source_id: {type: string}
+        sample_record_ids: {type: array, items: {$ref: 'uef.schema.json#/$defs/record_id'}, maxItems: 1000}
+        sample_limit: {type: integer, minimum: 1, maximum: 1000}
+    ApproveRequest:
+      type: object
+      additionalProperties: false
+      required: [yaml, approved_by, comment, replay]
+      properties:
+        yaml: {type: string, minLength: 1}
+        proposal_id: {type: string}
+        approved_by: {type: string, minLength: 1}
+        comment: {type: string}
+        replay: {type: boolean}
+    RollbackRequest:
+      type: object
+      additionalProperties: false
+      required: [to_version, by, comment]
+      properties:
+        to_version: {type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'}
+        by: {type: string, minLength: 1}
+        comment: {type: string}
+        replay: {type: boolean, default: false}
+    ActivationResult:
+      type: object
+      additionalProperties: false
+      required: [parser_id, version, replay_job_id]
+      properties:
+        parser_id: {type: string}
+        version: {type: string}
+        replay_job_id: {type: [string, 'null'], description: null when replay was not requested}
+    ReplayRequest:
+      type: object
+      additionalProperties: false
+      required: [scope]
+      properties:
+        scope: {enum: [quarantine, source, range]}
+        source_id: {type: string}
+        from_record: {$ref: 'uef.schema.json#/$defs/record_id'}
+        to_record: {$ref: 'uef.schema.json#/$defs/record_id'}
+        parser_id: {type: string}
+    ResolveResult:
+      type: object
+      additionalProperties: false
+      required: [ip, at, entities]
+      properties:
+        ip: {type: string}
+        at: {$ref: 'uef.schema.json#/$defs/timestamp'}
+        entities: {type: array, items: {$ref: 'uef.schema.json#/$defs/entity'}}
+    Timeline:
+      type: object
+      additionalProperties: false
+      required: [ip, bindings]
+      properties:
+        ip: {type: string}
+        bindings:
+          type: array
+          description: Ordered by valid_from. Consecutive bindings with different users are a reassignment.
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, user, host, mac, valid_from, valid_to, confidence, evidence]
+            properties:
+              kind: {enum: [dhcp, radius, vpn]}
+              user: {type: string}
+              host: {type: string}
+              mac: {type: string}
+              valid_from: {$ref: 'uef.schema.json#/$defs/timestamp'}
+              valid_to: {$ref: 'uef.schema.json#/$defs/timestamp_or_null'}
+              confidence: {type: number, minimum: 0, maximum: 1}
+              evidence: {type: array, items: {$ref: 'uef.schema.json#/$defs/evidence_ref'}}
+    Graph:
+      type: object
+      additionalProperties: false
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items: {type: object, additionalProperties: false, required: [type, id], properties: {type: {enum: [ip, host, user, mac]}, id: {type: string}}}
+        edges:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, a, b, valid_from, valid_to]
+            properties:
+              type: {enum: [ip-host, ip-user, host-mac]}
+              a: {type: string}
+              b: {type: string}
+              valid_from: {$ref: 'uef.schema.json#/$defs/timestamp'}
+              valid_to: {$ref: 'uef.schema.json#/$defs/timestamp_or_null'}
+    Segments:
+      type: object
+      additionalProperties: false
+      required: [segments, active]
+      properties:
+        segments: {type: array, items: {$ref: 'uef.schema.json#/$defs/segment_seal'}}
+        active:
+          type: object
+          additionalProperties: false
+          required: [segment, first_seq, records]
+          properties: {segment: {type: integer, minimum: 1}, first_seq: {$ref: 'uef.schema.json#/$defs/record_id'}, records: {type: integer, minimum: 0}}
