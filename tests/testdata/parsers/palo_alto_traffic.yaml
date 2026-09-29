@@ -1,0 +1,33 @@
+id: palo_alto_traffic
+version: 1.0.0
+vendor: palo_alto
+product: pan-os
+timezone: "+05:30"
+match:
+  signature: '^,\d{4}/\d\d/\d\d \d\d:\d\d:\d\d,\d+,TRAFFIC,'
+ocsf_defaults: {class_uid: 4001, category_uid: 4}
+extractors:
+  - id: pan_traffic
+    kind: csv
+    sep: ","
+    quote: '"'
+    min_columns: 47
+    when: {column: 3, equals: TRAFFIC}
+    columns: [_, ts, _, _, _, _, _, src_ip, dst_ip, _, _, _, src_user, _, _, _, _, _, _, _, _, _, _, _, src_port, dst_port, _, _, _, proto, action, bytes_out, bytes_in]
+    map:
+      - {from: ts, to: time, type: time, layout: "2006/01/02 15:04:05"}
+      - {from: src_ip, to: src_endpoint.ip, type: ip}
+      - {from: dst_ip, to: dst_endpoint.ip, type: ip}
+      - {from: src_port, to: src_endpoint.port, type: port}
+      - {from: dst_port, to: dst_endpoint.port, type: port}
+      - {from: proto, to: connection_info.protocol_name, type: string, lower: true}
+      - {from: proto, to: connection_info.protocol_num, type: enum, enum: {tcp: 6, udp: 17, icmp: 1}, default: 0}
+      - {from: action, to: action_id, type: enum, enum: {allow: 1, drop: 2, deny: 2, reset-client: 2, reset-server: 2, reset-both: 2}, default: 99}
+      - {from: action, to: disposition_id, type: enum, enum: {allow: 1, drop: 6, deny: 2, reset-client: 21, reset-server: 21, reset-both: 21}, default: 99}
+      - {from: bytes_out, to: traffic.bytes_out, type: uint}
+      - {from: bytes_in, to: traffic.bytes_in, type: uint}
+      - {const: 6, to: activity_id}
+      - {const: 1, to: severity_id}
+    tests:
+      - raw: ',2026/09/28 09:00:02,001801010001,TRAFFIC,drop,2049,2026/09/28 09:00:02,10.1.4.60,203.0.113.25,198.51.100.65,0.0.0.0,allow-outbound,corp\carol,,mysql,vsys1,trust,untrust,ethernet1/2,ethernet1/1,default-logging,,971039,1,38441,110,26683,110,0x408d76,tcp,drop,635575,562013,73562,771,2026/09/28 09:00:02,426,business-and-economy,,7000998797,0x0,10.0.0.0-10.255.255.255,US,,441,330,tcp-rst-from-client'
+        expect: {src_endpoint.ip: 10.1.4.60, dst_endpoint.ip: 203.0.113.25, src_endpoint.port: 38441, dst_endpoint.port: 110, connection_info.protocol_name: tcp, action_id: 2}

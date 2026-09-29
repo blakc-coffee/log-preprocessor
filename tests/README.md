@@ -5,8 +5,9 @@ Unix, where its `flock` implementation is supported. Windows reports these as
 an explicit platform skip through build constraints; run the Linux container
 for the release gate.
 
-Replay tests depend on `pkg/dataplane/app`, quarantine, registry, and replay.
-Those packages are not present on `feature/packaging` yet, so no mock test is
-presented as an integration pass. Add `replay_test.go` when the data-plane
-branch is merged.
+`replay_test.go` pins the 500-record Palo Alto fixture, validates the reference
+parser YAML, and defines the exact real-system acceptance helper. It does not
+use a mock or report an integration pass. Once `pkg/dataplane/app`, quarantine,
+registry, and replay merge, a small adapter must invoke
+`assertPaloAltoReplay` against those real components.
 

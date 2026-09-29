@@ -3,6 +3,27 @@ set -eu
 
 image="${ULPF_IMAGE:-ulpf:dev}"
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+compose() {
+  docker compose -f "$root/docker-compose.yml" "$@"
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "airgap: $1 is required" >&2
+    exit 2
+  }
+}
+need docker
+need curl
+
+cleanup() {
+  compose down --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+# The binary itself must prove that every public probe fails when the kernel
+# gives the container no network namespace interface beyond loopback.
+echo "== network-none egress probes"
 
 docker run --rm --network none \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
@@ -10,11 +31,24 @@ docker run --rm --network none \
   -v "$root/testdata:/opt/ulpf/testdata:ro" \
   "$image" selftest --egress
 
-docker compose -f "$root/docker-compose.yml" config >/dev/null
-if ! docker compose -f "$root/docker-compose.yml" config | grep -Eq 'internal: true'; then
+config=$(compose config)
+if ! printf '%s\n' "$config" | grep -Eq 'internal: true'; then
   echo "airgap: compose network is not internal" >&2
   exit 1
 fi
+# An internal Docker network must still permit the two local services to work.
+# This section intentionally fails until Gate 2 wires ulpf start/all.
+echo "== isolated deployment health"
+compose up -d --wait
+for port in 8000 9000; do
+  binding=$(compose port ulpf "$port")
+  if [ "$binding" != "127.0.0.1:$port" ]; then
+    echo "airgap: port $port is not loopback-only (reported $binding)" >&2
+    exit 1
+  fi
+done
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:9000/healthz >/dev/null
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/ >/dev/null
 
 echo AIRGAP_VERIFIED
 
