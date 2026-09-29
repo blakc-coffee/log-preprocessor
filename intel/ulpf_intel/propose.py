@@ -388,6 +388,8 @@ def propose_text(source_id: str, lines: list[str], record_ids: list[int], now: d
                 return sum(int(v) in WELL_KNOWN for v in cols[q]) / len(g)
 
             arrow = any(cols[q][0] == ">" and q > 0 and cols[q - 1][0] == "-" for q in range(a_, b_))
+            direction = next((cols[q][0].lower() for q in range(width) if kinds[q] == "w" and q not in typed_by_pos
+                              and cols[q][0].lower() in ("inbound", "outbound") and q < a_), "")
             ca, cb = cue(a_), cue(b_)
             sa, sb = server_share(a_), server_share(b_)
             if ca == "src" or cb == "dst":
@@ -396,6 +398,11 @@ def propose_text(source_id: str, lines: list[str], record_ids: list[int], now: d
                 order, why, conf = (b_, a_), "a literal src/dst/from cue", 0.85
             elif arrow:
                 order, why, conf = (a_, b_), "the -> between the addresses", 0.85
+            elif direction:
+                # ASA-style "for FOREIGN to LOCAL": the foreign address is the source of an inbound connection and the
+                # destination of an outbound one. A vendor convention, not a law, so it is flagged for the reviewer.
+                order = (a_, b_) if direction == "inbound" else (b_, a_)
+                why, conf = f"the word '{direction}' (first address = the foreign host)", 0.75
             elif sa is not None and sb is not None and sa >= 0.8 and sb <= 0.2:
                 order, why, conf = (b_, a_), "port behaviour: the other address is paired with a well-known port", 0.75
             elif sa is not None and sb is not None and sb >= 0.8 and sa <= 0.2:

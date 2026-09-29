@@ -213,12 +213,14 @@ def test_text_proposal_matches_every_line_and_gets_time_protocol_and_addresses_r
         assert {o["src_endpoint.ip"], o["dst_endpoint.ip"]} == {t["expected_src_ip"], t["expected_dst_ip"]}, raw
 
 
-# Which address is the source is NOT derivable for every message, and this test says exactly where. The fixture
-# manifest orients 302013/302014 with the well-known port on the SOURCE (the real ASA puts it on the destination),
-# and 302015/302016 the other way round, so no rule agrees with all of it. The proposal follows the evidence
-# (cue words, arrow, port behaviour), flags weak decisions for the reviewer, and agrees with the manifest on every
-# other family. A regression in any family fails here; so does silently "fixing" the quirk.
-def test_text_direction_agrees_with_the_manifest_except_the_documented_fixture_quirk(asa):
+# Which address is the source is NOT derivable for every message, and this test says exactly where. On ASA the first
+# address is the FOREIGN host, so it is the source of an inbound connection and the destination of an outbound one:
+# 302013 ("Built inbound") and 302015 ("Built outbound") say so in words, and the manifest follows. 302016 is decided by
+# port behaviour. 302014 ("Teardown TCP") carries no direction at all; the manifest calls the first address the source,
+# which only the matching Built message (same connection id) could tell you, and no rule here reads it. The proposal
+# follows the evidence, flags weak decisions for the reviewer, and agrees with the manifest on every family but
+# 302014. A regression in any family fails here; so does silently "fixing" 302014.
+def test_text_direction_agrees_with_the_manifest_except_the_undecidable_teardown(asa):
     import re
     from collections import Counter
     ls, g = asa
@@ -238,15 +240,15 @@ def test_text_direction_agrees_with_the_manifest_except_the_documented_fixture_q
                 assert o.get(path) == expected, f"{path} in {raw}"
     families = {mid for mid, _ in agree}
     assert families == {"106023", "106100", "302013", "302014", "302015", "302016", "305011"}
-    for mid in ("106023", "106100", "302015", "302016", "305011"):
+    for mid in ("106023", "106100", "302013", "302015", "302016", "305011"):
         assert agree[(mid, False)] == 0, f"{mid} disagrees with the manifest"
-    for mid in ("302013", "302014"):
-        assert agree[(mid, True)] == 0, f"{mid} was the documented quirk; if it now agrees, update this test and DECISIONS.log"
+    assert agree[(302014 and "302014", True)] == 0, "302014 was undecidable; if it now agrees, update this test and DECISIONS.log"
 
 
 def test_weak_direction_decisions_are_flagged_for_the_reviewer(asa):
     _, g = asa
     assert any("port behaviour" in w and "confirm the direction" in w for w in g.warnings)
+    assert any("'inbound'" in w for w in g.warnings) and any("'outbound'" in w for w in g.warnings)
     weak = [t for t in g.proposal.typed_fields if t.ocsf_path.endswith("_endpoint.ip") and t.confidence < 0.85]
     assert weak and all(t.alternatives for t in weak)
 

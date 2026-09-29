@@ -53,14 +53,15 @@ All three are expected to fail; on a machine with internet access it correctly r
 | Proposal, Palo Alto CSV | 500/500 records parsed, manifest reproduced |
 | Proposal, Fortinet drift patch | old parser 0/500, patch 500/500 |
 | Proposal, Suricata JSON | 2000/2000 |
-| Proposal, Cisco ASA text | 2000/2000 parsed; source/destination agrees with the manifest for 1458/2000 (see below) |
+| Proposal, Cisco ASA text | 2000/2000 parsed; source/destination agrees with the manifest for 1725/2000 (see below) |
 
 ## Known limits
 
-- **ASA direction.** The fixture manifest orients 302013/302014 with the well-known port on the *source*; the real ASA does
-  the opposite, and 302015/302016 are the other way round, so no rule agrees with all of it. The proposal follows the evidence
-  (cue words, `->`, port behaviour), flags weak decisions with the other path as an alternative, and the reviewer confirms.
-  A test pins the exact split.
+- **ASA direction.** On ASA the first address is the foreign host: the source of an inbound connection, the destination of
+  an outbound one. The proposal reads the words `inbound`/`outbound`, then cue words (`src`, `dst`, `from`), `->`, port
+  behaviour, and last position, flags every weak decision with the other path as an alternative, and the reviewer confirms.
+  It agrees with the manifest on 1725/2000 records; the 275 it gets wrong are `Teardown TCP` (302014), which carries no
+  direction word at all (only the matching `Built` message with the same connection id would say). A test pins the split.
 - A brand-new **kv** source (no parser to patch) is not generated; nor are CEF/LEEF proposals (P1) or the optional LLM step (P2).
 - The reference evaluator has no render-back, so `render_back_ok_rate` comes only from the data plane's dry-run.
 - Timestamps without a zone use `--timezone` (default `+00:00`) and every such proposal says so in its warnings.
