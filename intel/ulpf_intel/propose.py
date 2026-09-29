@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -602,4 +603,84 @@ def propose_kv(source_id: str, lines: list[str], record_ids: list[int], now: dat
     return Generated(Proposal(id="", kind="new", parser_id=pid, base_version="", source_id=source_id, yaml=_dump(doc),
                               cluster_size=len(lines), templates=tpl, sample_record_ids=record_ids[:20],
                               typed_fields=[t.model() for t in typed if t.ocsf_path],
+                              dry_run=None, status="pending", created_at=now, drift_alert_id=drift_alert_id), warnings)
+
+
+# --- CEF and LEEF -----------------------------------------------------------------------------------------
+# The extension keys are standardized, so unlike free text the mapping starts from a table; the typer only confirms
+# that the values in this source really are what the key promises (a `src` full of hostnames is not an address).
+_CEF_TABLE: dict[str, tuple[str, str]] = {   # key -> (ocsf path, the typer type its values must have)
+    "src": ("src_endpoint.ip", "ipv4"), "dst": ("dst_endpoint.ip", "ipv4"),
+    "spt": ("src_endpoint.port", "port"), "dpt": ("dst_endpoint.port", "port"),
+    "srcPort": ("src_endpoint.port", "port"), "dstPort": ("dst_endpoint.port", "port"),
+    "smac": ("src_endpoint.mac", "mac"), "dmac": ("dst_endpoint.mac", "mac"),
+    "proto": ("connection_info.protocol_name", "protocol"), "act": ("action_id", "action"), "action": ("action_id", "action"),
+    "rt": ("time", "timestamp"), "devTime": ("time", "timestamp"),
+}
+_CEF_SEVERITY = {str(i): v for i, v in enumerate([2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5])}   # CEF: 0-3 Low, 4-6 Medium, 7-8 High, 9-10 Very-High
+
+
+def propose_cef(source_id: str, lines: list[str], record_ids: list[int], now: datetime,
+                drift_alert_id: str = "", timezone: str = "+00:00") -> Generated:
+    """A new parser for CEF or LEEF (the kind is read from the lines)."""
+    from dataclasses import replace
+
+    from .dsl_eval import CEF_HEADER, LEEF_HEADER, parse_cef, parse_leef
+    from .fingerprint import fields, line_kind
+
+    lines = [l for l in lines if l.strip()]
+    kind = Counter(line_kind(l) for l in lines).most_common(1)[0][0]
+    if kind not in ("cef", "leef"):
+        raise ValueError(f"not CEF or LEEF (looks like {kind})")
+    parse = parse_cef if kind == "cef" else parse_leef
+    head = CEF_HEADER if kind == "cef" else LEEF_HEADER
+    rows = [r for r in (parse(l) for l in lines) if r]
+    ext_keys = [k for k in dict.fromkeys(k for r in rows for k in r[0]) if k not in head]
+    cols = {k: [r[0][k] for r in rows if k in r[0]] for k in ext_keys}
+    cols = {k: v for k, v in cols.items() if len(v) >= 0.99 * len(rows)}
+    typed = {t.field: t for t in type_columns([Column(k, v, True, i) for i, (k, v) in enumerate(cols.items())])}
+
+    warnings: list[str] = []
+    maps: list[dict] = []
+    used: set[str] = set()
+    for key, (path, want) in _CEF_TABLE.items():
+        t = typed.get(key)
+        if t is None:
+            continue
+        family = {"ipv4": ("ipv4",), "port": ("port", "integer"), "mac": ("mac",), "protocol": ("protocol",), "action": ("action",), "timestamp": ("timestamp",)}[want]
+        if t.type not in family:
+            warnings.append(f"{key} is a standard key for {path}, but its values look like {t.type}: left unmapped")
+            continue
+        if path in used:
+            continue     # e.g. both rt and devTime: the first one wins
+        used.add(path)
+        entry = _map_entry(replace(t, ocsf_path=path), key)
+        if kind == "cef" and want == "port":
+            entry = [{"from": key, "to": path, "type": "port", "optional": True}]
+        maps += entry
+    sev_key = "cef.severity" if kind == "cef" else "sev"
+    sev_vals = [r[0].get(sev_key) for r in rows if r[0].get(sev_key) not in (None, "")]
+    if sev_vals and all(v in _CEF_SEVERITY for v in sev_vals) and kind == "cef":
+        seen = sorted(set(sev_vals), key=int)
+        maps.append({"from": sev_key, "to": "severity_id", "type": "enum", "enum": {v: _CEF_SEVERITY[v] for v in seen}, "default": 99})
+        warnings.append("cef.severity mapped 0-3 Low, 4-6 Medium, 7-8 High, 9-10 Very-High to OCSF 2, 3, 4, 5 (the CEF specification's bands)")
+    elif sev_vals:
+        warnings.append(f"{sev_key} has values this generator does not band; severity left unmapped")
+    maps.append({"from": head[4] if kind == "cef" else head[4], "to": "message", "type": "string"} if kind == "leef" else {"from": "cef.name", "to": "message", "type": "string"})
+    maps.append({"const": 6, "to": "activity_id"})
+    if "severity_id" not in {m["to"] for m in maps if "to" in m}:
+        maps.append({"const": 1, "to": "severity_id"})
+
+    first = rows[0][0]
+    vendor, product = first[head[1]], first[head[2]]
+    sig = (r"CEF:\d+\|" if kind == "cef" else r"LEEF:\d\.\d\|") + _esc(vendor) + r"\|" + _esc(product) + r"\|"
+    pid = sanitize(f"{vendor}_{product}") + "_auto"
+    ext = {"id": kind + "_events", "kind": kind, "map": maps}
+    doc = {"id": pid, "version": "1.0.0", "vendor": sanitize(vendor), "product": sanitize(product), "timezone": timezone,
+           "match": {"signature": sig}, "ocsf_defaults": {"class_uid": 4001, "category_uid": 4}, "extractors": [ext]}
+    ext["tests"] = _vectors(doc, lines)
+    tpl = sorted(fingerprint(lines).templates)
+    return Generated(Proposal(id="", kind="new", parser_id=pid, base_version="", source_id=source_id, yaml=_dump(doc),
+                              cluster_size=len(lines), templates=tpl, sample_record_ids=record_ids[:20],
+                              typed_fields=[replace(t, ocsf_path=_CEF_TABLE[k][0]).model() for k, t in typed.items() if k in _CEF_TABLE and _CEF_TABLE[k][0] in used],
                               dry_run=None, status="pending", created_at=now, drift_alert_id=drift_alert_id), warnings)

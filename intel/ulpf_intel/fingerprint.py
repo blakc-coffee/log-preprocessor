@@ -49,9 +49,9 @@ def line_kind(line: str) -> str:
             return "json"
         except ValueError:
             pass
-    if "CEF:" in s[:64]:
+    if re.search(r"CEF:\d+\|", s[:160]):
         return "cef"
-    if "LEEF:" in s[:64]:
+    if re.search(r"LEEF:\d\.\d\|", s[:160]):
         return "leef"
     if len(_KV.findall(s)) >= 4:
         return "kv"
@@ -87,6 +87,10 @@ def fields(line: str, kind: str) -> dict[str, tuple[str, bool]]:
         except ValueError:
             pass
         return out
+    if kind in ("cef", "leef"):
+        from .dsl_eval import parse_cef, parse_leef
+        got = (parse_cef if kind == "cef" else parse_leef)(line)
+        return {k: (v, False) for k, v in got[0].items()} if got else {}
     if kind == "csv":
         try:
             row = next(csv.reader(io.StringIO(line)))

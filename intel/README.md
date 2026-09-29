@@ -26,7 +26,7 @@ All three are expected to fail; on a machine with internet access it correctly r
 |---|---|
 | `fingerprint.py` | Structural fingerprint of raw lines (delimiters, key set, value shapes, Drain3 templates) and the drift score with human-readable signals (`keys renamed: srcip->src`). |
 | `typer.py` | Semantic typing of a column from its values: IPs, ports, timestamps (with the Go layout), protocol, action, user names. Headerless columns supported. Source vs destination disambiguation. Abstains below 0.6. |
-| `propose.py` | Proposal generators: `propose_csv` (headerless CSV), `propose_kv_patch` (drifted kv parser -> patch), `propose_json` (routes on `event_type`), `propose_text` (Drain3 templates -> anchored RE2 with typed named groups). |
+| `propose.py` | Proposal generators: `propose_csv` (headerless CSV), `propose_kv` (new kv source), `propose_kv_patch` (drifted kv parser -> patch), `propose_json` (routes on `event_type`), `propose_text` (Drain3 templates -> anchored RE2 with typed named groups), `propose_cef` (CEF and LEEF, from the standard extension keys, confirmed against the values). |
 | `dsl_eval.py` | A small reference evaluator of the parser DSL. NOT the engine: it derives the `tests:` vectors of a proposal and gives a local pre-check. |
 | `validate.py` | Acceptance thresholds, RE2-safety check (Python's `re` accepts lookaround the Go engine refuses), local dry-run. |
 | `client.py`, `state.py`, `loop.py`, `egress.py`, `__main__.py` | The admin client (bounded retries), JSON baselines, the loop, the air-gap probe, the CLI. |
@@ -62,7 +62,9 @@ All three are expected to fail; on a machine with internet access it correctly r
   behaviour, and last position, flags every weak decision with the other path as an alternative, and the reviewer confirms.
   It agrees with the manifest on 1725/2000 records; the 275 it gets wrong are `Teardown TCP` (302014), which carries no
   direction word at all (only the matching `Built` message with the same connection id would say). A test pins the split.
-- A brand-new **kv** source (no parser to patch) is not generated; nor are CEF/LEEF proposals (P1) or the optional LLM step (P2).
+- **CEF/LEEF** are tested on SYNTHETIC samples only (no CEF/LEEF file exists in the fixture corpus), and the severity banding
+  (0-3 Low ... 9-10 Very-High to OCSF 2..5) follows the CEF specification and is stated to the reviewer in every proposal.
+  The optional local-LLM step (P2) is not built.
 - The reference evaluator has no render-back, so `render_back_ok_rate` comes only from the data plane's dry-run.
 - Timestamps without a zone use `--timezone` (default `+00:00`) and every such proposal says so in its warnings.
 - "Stale" marking of proposals whose base version moved is done by the data plane on approve (`409`); the sidecar only avoids re-proposing.

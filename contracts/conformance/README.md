@@ -19,7 +19,7 @@ Three groups run as subtests:
 
 | Group | What | Source |
 |---|---|---|
-| `cases` | 33 single-behaviour cases: empty means absent, exact enums, quoted kv values never re-scanned for keys, duplicate keys, extractor order, csv `min_columns`/`when`, json routing, year inference, time zones, unparseable time, load errors that name parser/extractor/field, coverage, render-back, limits, the `identity:` block | `cases.yaml` |
+| `cases` | 44 single-behaviour cases: empty means absent, exact enums, quoted kv values never re-scanned for keys, duplicate keys, absent keys (a mismatch unless optional), CEF and LEEF, extractor order, csv `min_columns`/`when`, json routing, year inference, time zones, unparseable time, load errors that name parser/extractor/field, coverage, render-back, limits, the `identity:` block | `cases.yaml` |
 | `examples` | every `tests:` vector of the five parsers in `contracts/dsl/examples/` | the spec's own examples |
 | `fixtures` | those parsers over `testdata/`, values checked against `manifest.json`; `fortinet_drift.log` must match nothing, and non-target lines (other ASA message ids, non-alert Suricata events) must not match | ground truth |
 

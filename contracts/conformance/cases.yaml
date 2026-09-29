@@ -781,3 +781,247 @@ cases:
     matched: true
     identity: {kind: dhcp, action: bind, ip: 10.1.4.9, mac: 'aa:bb:cc:8a:06:2d', host: laptop-carol}
   python: false
+- name: 'cef: header fields are addressable as cef.*, extension keys by their own names'
+  spec: 2.5 cef
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: cef
+      map:
+      - {from: cef.severity, to: severity_id, type: int}
+      - {from: src, to: src_endpoint.ip, type: ip}
+      - {from: spt, to: src_endpoint.port, type: port, optional: true}
+  raw: CEF:0|Acme|Perimeter|1.0|100|Blocked|7|src=10.1.4.7 spt=51544 msg=hello world dst=203.0.113.9
+  expect:
+    matched: true
+    ocsf: {severity_id: 7, src_endpoint.ip: 10.1.4.7, src_endpoint.port: 51544}
+    unmapped: {cef.vendor: Acme, cef.product: Perimeter, cef.device_version: '1.0', cef.signature_id: '100', cef.name: Blocked, cef.version: '0', dst: 203.0.113.9}
+    unmapped_absent: [src, spt, cef.severity]
+  python: true
+- name: 'cef: an extension value runs to the next key, so it may contain spaces'
+  spec: 2.5 cef
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: cef
+      map:
+      - {from: cef.severity, to: severity_id, type: int}
+      - {from: src, to: src_endpoint.ip, type: ip}
+      - {from: spt, to: src_endpoint.port, type: port, optional: true}
+  raw: CEF:0|Acme|Perimeter|1.0|100|Blocked|7|src=10.1.4.7 spt=51544 msg=hello world dst=203.0.113.9
+  expect:
+    matched: true
+    unmapped: {msg: hello world}
+  python: true
+- name: 'cef: a syslog header before CEF: is ignored'
+  spec: 2.5 cef
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: cef
+      map:
+      - {from: cef.severity, to: severity_id, type: int}
+      - {from: src, to: src_endpoint.ip, type: ip}
+      - {from: spt, to: src_endpoint.port, type: port, optional: true}
+  raw: <134>Sep 28 09:00:00 fw01 CEF:0|Acme|Perimeter|1.0|100|Blocked|7|src=10.1.4.7 spt=51544 msg=hello world dst=203.0.113.9
+  expect:
+    matched: true
+    ocsf: {src_endpoint.ip: 10.1.4.7}
+    unmapped: {cef.vendor: Acme}
+  python: true
+- name: 'cef: an escaped pipe in a header field and an escaped equals in a value are literal'
+  spec: 2.5 cef
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: cef
+      map:
+      - {from: cef.severity, to: severity_id, type: int}
+      - {from: src, to: src_endpoint.ip, type: ip}
+      - {from: spt, to: src_endpoint.port, type: port, optional: true}
+  raw: CEF:0|Acme|Perimeter|1.0|100|Blocked \| by policy|7|src=10.1.4.7 note=a\=b
+  expect:
+    matched: true
+    unmapped: {cef.name: Blocked | by policy, note: a=b}
+  python: true
+- name: 'cef: a record with fewer than seven header fields does not match'
+  spec: 2.5 cef
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: cef
+      map:
+      - {from: cef.severity, to: severity_id, type: int}
+      - {from: src, to: src_endpoint.ip, type: ip}
+      - {from: spt, to: src_endpoint.port, type: port, optional: true}
+  raw: CEF:0|Acme|Perimeter|1.0|100|Blocked
+  expect: {matched: false}
+  python: true
+- name: 'cef: a duplicate extension key follows the duplicate-key rule'
+  spec: 2.5 cef
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: cef
+      map:
+      - {from: cef.severity, to: severity_id, type: int}
+      - {from: src, to: src_endpoint.ip, type: ip}
+      - {from: spt, to: src_endpoint.port, type: port, optional: true}
+  raw: CEF:0|Acme|Perimeter|1.0|100|Blocked|7|src=10.1.4.7 src=6.6.6.6
+  expect:
+    matched: true
+    ocsf: {src_endpoint.ip: 10.1.4.7}
+    unmapped:
+      _dupes:
+      - {key: src, value: 6.6.6.6}
+    flags: [duplicate_key]
+  python: true
+- name: 'leef 1.0: attributes are tab separated, header fields are leef.*'
+  spec: 2.5 leef
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: leef
+      map:
+      - {from: leef.event_id, to: message, type: string}
+      - {from: src, to: src_endpoint.ip, type: ip}
+  raw: "LEEF:1.0|Acme|Perimeter|1.0|Deny|src=10.0.0.1\tdst=8.8.8.8\tmsg=hello world"
+  expect:
+    matched: true
+    ocsf: {message: Deny, src_endpoint.ip: 10.0.0.1}
+    unmapped: {dst: 8.8.8.8, msg: hello world, leef.vendor: Acme, leef.product_version: '1.0'}
+  python: true
+- name: 'leef 2.0: the sixth header field names the attribute delimiter'
+  spec: 2.5 leef
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: leef
+      map:
+      - {from: leef.event_id, to: message, type: string}
+      - {from: src, to: src_endpoint.ip, type: ip}
+  raw: LEEF:2.0|Acme|Perimeter|1.0|Deny|^|src=10.0.0.1^dst=8.8.8.8
+  expect:
+    matched: true
+    ocsf: {src_endpoint.ip: 10.0.0.1}
+    unmapped: {dst: 8.8.8.8}
+  python: true
+- name: 'leef 2.0: a delimiter may be given as xHH'
+  spec: 2.5 leef
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: leef
+      map:
+      - {from: leef.event_id, to: message, type: string}
+      - {from: src, to: src_endpoint.ip, type: ip}
+  raw: "LEEF:2.0|Acme|Perimeter|1.0|Deny|x09|src=10.0.0.1\tdst=8.8.8.8"
+  expect:
+    matched: true
+    ocsf: {src_endpoint.ip: 10.0.0.1}
+    unmapped: {dst: 8.8.8.8}
+  python: true
+- name: a mapped key that is absent from the record makes the extractor not match (this is what makes drift visible)
+  spec: 3 absent keys
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: kv
+      map:
+      - {from: srcip, to: src_endpoint.ip, type: ip}
+      - {from: srcport, to: src_endpoint.port, type: port}
+  raw: srcip=10.1.4.7 user=alice a=1 b=2
+  expect: {matched: false}
+  python: true
+- name: an optional entry whose key is absent is skipped and the record still matches
+  spec: 3 absent keys
+  parser: |
+    id: conf
+    version: 1.0.0
+    vendor: test
+    product: conf
+    timezone: +05:30
+    match: {signature: .}
+    ocsf_defaults: {class_uid: 4001, category_uid: 4}
+    extractors:
+    - id: e
+      kind: kv
+      map:
+      - {from: srcip, to: src_endpoint.ip, type: ip}
+      - {from: srcport, to: src_endpoint.port, type: port, optional: true}
+  raw: srcip=10.1.4.7 user=alice a=1 b=2
+  expect:
+    matched: true
+    ocsf: {src_endpoint.ip: 10.1.4.7}
+    ocsf_absent: [src_endpoint.port]
+  python: true

@@ -19,7 +19,7 @@ from typing import Callable
 from .client import AdminClient, AdminError
 from .fingerprint import Drift, drift_score, fingerprint, line_kind
 from .models import DriftAlert, Proposal
-from .propose import Generated, propose_csv, propose_json, propose_kv, propose_kv_patch, propose_text
+from .propose import Generated, propose_cef, propose_csv, propose_json, propose_kv, propose_kv_patch, propose_text
 from .state import State
 from .validate import Thresholds, acceptance, re2_violations
 
@@ -168,6 +168,8 @@ class Sidecar:
             return None
         if kind == "csv":
             return propose_csv(src, lines, ids, now, alert_id, c.timezone)
+        if kind in ("cef", "leef"):
+            return propose_cef(src, lines, ids, now, alert_id, c.timezone)
         if kind == "json":
             return propose_json(src, lines, ids, now, alert_id, c.timezone, c.min_cluster)
         if kind == "text":

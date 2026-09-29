@@ -120,6 +120,84 @@ def flat(d: dict, prefix: str = "") -> dict[str, Any]:
     return out
 
 
+CEF_HEADER = ["cef.version", "cef.vendor", "cef.product", "cef.device_version", "cef.signature_id", "cef.name", "cef.severity"]
+LEEF_HEADER = ["leef.version", "leef.vendor", "leef.product", "leef.product_version", "leef.event_id"]
+_CEF_EXT = re.compile(r"(?:^|\s)([A-Za-z][\w.\[\]]*)=")
+
+
+def _split_header(s: str, n: int) -> tuple[list[str], str] | None:
+    """The first n pipe-delimited header fields (a backslash escapes | and \\) and what follows them."""
+    out, cur, i = [], [], 0
+    while i < len(s) and len(out) < n:
+        c = s[i]
+        if c == "\\" and i + 1 < len(s) and s[i + 1] in "|\\":
+            cur.append(s[i + 1])
+            i += 2
+            continue
+        if c == "|":
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(c)
+        i += 1
+    return (out, s[i:]) if len(out) == n else None
+
+
+def _unescape_ext(v: str) -> str:
+    return re.sub(r"\\([=\\])", r"\1", v)
+
+
+def parse_cef(raw: str) -> tuple[dict[str, str], list[dict]] | None:
+    """CEF:Version|Vendor|Product|DeviceVersion|SignatureID|Name|Severity|key=value ... A syslog header before CEF: is
+    ignored. Extension values run to the next ` key=`, so they may contain spaces; \\= and \\\\ are escapes."""
+    i = raw.find("CEF:")
+    if i < 0:
+        return None
+    got = _split_header(raw[i + 4:], 7)
+    if got is None:
+        return None
+    head, ext = got
+    out = dict(zip(CEF_HEADER, head))
+    dupes: list[dict] = []
+    marks = [(m.start(1), m.end(1)) for m in _CEF_EXT.finditer(ext) if not (m.start(1) > 0 and ext[m.start(1) - 1] == "\\")]
+    for n, (a, b) in enumerate(marks):
+        end = marks[n + 1][0] - 1 if n + 1 < len(marks) else len(ext)
+        k, v = ext[a:b], _unescape_ext(ext[b + 1:end].strip())
+        if k in out:
+            dupes.append({"key": k, "value": v})
+        else:
+            out[k] = v
+    return out, dupes
+
+
+def parse_leef(raw: str) -> tuple[dict[str, str], list[dict]] | None:
+    """LEEF:1.0|Vendor|Product|Version|EventID|<attributes separated by a tab>; LEEF:2.0 adds a delimiter header field
+    (a single character, or xHH for a hex code)."""
+    i = raw.find("LEEF:")
+    if i < 0:
+        return None
+    ver = raw[i + 5:].split("|", 1)[0]
+    got = _split_header(raw[i + 5:], 6 if ver.startswith("2") else 5)
+    if got is None:
+        return None
+    head, attrs = got
+    delim = "\t"
+    if ver.startswith("2"):
+        d = head.pop()
+        delim = chr(int(d[1:], 16)) if re.fullmatch(r"x[0-9A-Fa-f]{2}", d) else (d or "\t")
+    out = dict(zip(LEEF_HEADER, head))
+    dupes: list[dict] = []
+    for part in attrs.split(delim):
+        if "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        if k in out:
+            dupes.append({"key": k, "value": v})
+        else:
+            out[k] = v
+    return out, dupes
+
+
 _KV = re.compile(r'(?P<k>[A-Za-z_][\w.\-]*)=(?P<v>"[^"]*"|\S*)')
 
 
@@ -168,6 +246,8 @@ def _values(ext: dict, raw: str) -> tuple[dict[str, str], list[dict]] | None:
         if w and (out.get(w["path"]) != str(w["equals"]) if "equals" in w else out.get(w["path"]) not in map(str, w["in"])):
             return None
         return out, []
+    if kind in ("cef", "leef"):
+        return (parse_cef if kind == "cef" else parse_leef)(raw)
     if kind == "regex":
         m = re.match(ext["pattern"], raw)
         return ({k: v for k, v in m.groupdict().items() if v}, []) if m else None
@@ -195,6 +275,8 @@ def extract(parser: dict, raw: str, received_at: datetime | None = None) -> Resu
                     continue
                 srcs = m["from"] if isinstance(m["from"], list) else [m["from"]]
                 if any(s not in vals for s in srcs):
+                    if m.get("optional"):
+                        continue        # an optional entry whose key is absent is skipped (parser_dsl.md section 3)
                     raise KeyError(srcs)
                 used.update(srcs)
                 if any(vals[s] == "" for s in srcs):

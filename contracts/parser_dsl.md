@@ -57,9 +57,20 @@ extractor. Unnamed and `_` columns are kept in `unmapped` as `col_<N>` (0-based)
 uses for headerless CSV. No `render`.
 
 ### 2.5 `cef`, `leef`
-Built in. Header fields map to `cef.version`, `cef.vendor`, `cef.product`, `cef.device_version`, `cef.signature_id`,
-`cef.name`, `cef.severity` (LEEF: `leef.version`, `leef.vendor`, `leef.product`, `leef.product_version`, `leef.event_id`);
-extension keys are addressable in `map.from` by their own names. Same duplicate-key rule as `kv`.
+Built in; no `pattern` or `columns`.
+
+**CEF.** `CEF:Version|Vendor|Product|DeviceVersion|SignatureID|Name|Severity|Extension`. Text before `CEF:` (a syslog
+header) is ignored. The seven header fields are addressable as `cef.version`, `cef.vendor`, `cef.product`,
+`cef.device_version`, `cef.signature_id`, `cef.name`, `cef.severity`; a `\|` or `\\` inside a header field is a literal.
+A record with fewer than seven header fields does not match. The extension is `key=value` pairs where a value runs up to
+the next ` key=`, so it may contain spaces; `\=` and `\\` in a value are literals. Extension keys are addressable by their own
+names (`src`, `spt`, `msg`, `cs1`). The duplicate-key rule of `kv` applies.
+
+**LEEF.** `LEEF:1.0|Vendor|Product|ProductVersion|EventID|` then attributes separated by a tab; `LEEF:2.0` adds a sixth
+header field naming the delimiter (one character, or `xHH` for a hex code). Header fields are `leef.version`,
+`leef.vendor`, `leef.product`, `leef.product_version`, `leef.event_id`; attributes are addressable by their own names.
+
+Header fields and extension keys that no `map` entry reads go to `unmapped` under those names, like any other capture.
 
 ## 3. `map`
 
@@ -79,6 +90,12 @@ before parsing (`from: [date, time]`).
 | `time` | `layout` (Go reference layout) or `epoch_s`, `epoch_ms`, `epoch_ns`, `rfc3339` | uses `timezone` when the layout has none; stored as UTC, OCSF `time` in epoch milliseconds. A layout with no year takes it from `received_at`, and a month more than one ahead of the receipt month means the previous year. A value that cannot be parsed leaves `time` unset, sets `time_unparseable`, and `time_from_receipt: true`. |
 | `enum` | `enum: {captured text: value}`, `default: value` | keys are compared as strings. No `default` and no match is a normalize failure. |
 | `bool`, `bytes`, `duration` | | `duration` takes `unit: s|ms|ns` (default `s`) and stores milliseconds. |
+
+**A missing key is a mismatch, unless optional.** A map entry whose `from` does not exist in the record (a kv key, a JSON
+path, a csv column past the end of the row, a regex group that is not defined) makes that extractor **not match**; the next
+extractor is tried and, if none matches, the record is quarantined. This is deliberate: it is how a renamed key
+(`srcip` -> `src`) becomes visible as drift instead of producing half-empty events. An entry marked `optional: true` is
+skipped when its key is absent, and the extractor still matches. Empty is different: see next.
 
 **Empty means absent.** An empty value (an empty csv field, `key=` in kv, an optional regex group that did not
 participate) is treated as not present: its map entries are skipped, no error, and it is not added to `unmapped`.
