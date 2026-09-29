@@ -204,10 +204,20 @@ def _dominant(fp: Fingerprint, key: str) -> str:
     return max(sorted(h), key=lambda s: h[s]) if h else ""
 
 
+def _gone(base: Fingerprint, cur: Fingerprint, k: str) -> bool:
+    """A key the baseline had (in at least half its lines) that has mostly vanished. Not "entirely absent": the
+    window the sidecar looks at straddles the change, so old-format lines are still in it."""
+    return base.keys.get(k, 0.0) >= 0.5 and cur.keys.get(k, 0.0) < 0.5 * base.keys[k]
+
+
+def _new(base: Fingerprint, cur: Fingerprint, k: str) -> bool:
+    return cur.keys.get(k, 0.0) >= 0.5 and base.keys.get(k, 0.0) < 0.1
+
+
 def rename_candidates(base: Fingerprint, cur: Fingerprint) -> list[tuple[str, str]]:
     """A removed key paired with an added key of the same dominant value shape, best name match first."""
-    removed = [k for k in base.keys if k not in cur.keys]
-    added = [k for k in cur.keys if k not in base.keys]
+    removed = [k for k in base.keys if _gone(base, cur, k)]
+    added = [k for k in cur.keys if _new(base, cur, k)]
     pairs: list[tuple[str, str]] = []
     free = list(added)
     for r in removed:
@@ -246,8 +256,8 @@ def drift_score(base: Fingerprint, cur: Fingerprint, quarantine_rate: float = 0.
         ren = rename_candidates(base, cur)
         if ren:
             sig.append("keys renamed: " + ", ".join(f"{r}->{a}" for r, a in ren))
-        gone = sorted(k for k in base.keys if k not in cur.keys and k not in {r for r, _ in ren})
-        new = sorted(k for k in cur.keys if k not in base.keys and k not in {a for _, a in ren})
+        gone = sorted(k for k in base.keys if _gone(base, cur, k) and k not in {r for r, _ in ren})
+        new = sorted(k for k in cur.keys if _new(base, cur, k) and k not in {a for _, a in ren})
         if gone:
             sig.append("keys removed: " + ", ".join(gone))
         if new:
@@ -264,7 +274,7 @@ def drift_score(base: Fingerprint, cur: Fingerprint, quarantine_rate: float = 0.
             changed += unquoted
         for k, b, c in changed:
             sig.append(f"value shape of {k} changed: {b}->{c}")
-        if any(_dominant(cur, a) == "epoch" and _dominant(base, r) == "timestamp" for r in base.keys for a in cur.keys if r not in cur.keys and a not in base.keys):
+        if any(_dominant(cur, a) == "epoch" and _dominant(base, r) == "timestamp" for r in base.keys for a in cur.keys if _gone(base, cur, r) and _new(base, cur, a)):
             sig.append("timestamp format changed: text->epoch")
     elif base.kind == "csv" and abs(base.columns - cur.columns) >= 1:
         sig.append(f"column count changed: {base.columns:.0f}->{cur.columns:.0f}")
