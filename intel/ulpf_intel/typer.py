@@ -16,6 +16,7 @@ import math
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import Any
 from datetime import datetime
 
 from .models import TypedField
@@ -24,6 +25,7 @@ MIN_CONFIDENCE = 0.6
 
 WELL_KNOWN = {20, 21, 22, 23, 25, 53, 67, 68, 80, 110, 123, 143, 161, 389, 443, 445, 465, 514, 587, 636, 993, 995,
               1433, 1521, 3306, 3389, 5432, 5900, 6379, 8080, 8443, 9200, 27017}
+PROTO_NAME = {"6": "tcp", "17": "udp", "1": "icmp", "58": "icmpv6", "132": "sctp"}
 PROTO_NUM = {"tcp": 6, "udp": 17, "icmp": 1, "icmpv6": 58, "sctp": 132}
 PROTOCOLS = {"tcp", "udp", "icmp", "icmpv6", "sctp", "6", "17", "1", "58"}
 ACTIONS = {"allow", "allowed", "permit", "permitted", "accept", "accepted", "pass", "passed", "deny", "denied", "drop",
@@ -36,6 +38,8 @@ ACTION_ENUM = {"allow": 1, "allowed": 1, "permit": 1, "permitted": 1, "accept": 
                "dropped": 2, "block": 2, "blocked": 2, "reject": 2, "rejected": 2, "reset": 2, "reset-client": 2,
                "reset-server": 2, "reset-both": 2, "client-rst": 2, "server-rst": 2}
 
+SEVERITY_ENUM = {"emergency": 6, "fatal": 6, "alert": 5, "critical": 5, "error": 4, "high": 4, "warning": 3, "warn": 3, "medium": 3,
+                 "notice": 2, "low": 2, "information": 1, "informational": 1, "info": 1, "debug": 1}
 SRC_HINTS = ("src", "source", "sip", "client", "orig", "sender")
 DST_HINTS = ("dst", "dest", "destination", "dip", "server", "resp", "recipient")
 TIME_HINTS = ("time", "timestamp", "date", "ts", "eventtime", "datetime")
@@ -75,7 +79,7 @@ class Typed:
     evidence: str
     alternatives: list[str] = field(default_factory=list)
     layout: str = ""                      # Go layout or epoch_s|epoch_ms|epoch_us|epoch_ns, for type timestamp
-    enum: dict[str, int] = field(default_factory=dict)  # suggested value map for action columns
+    enum: dict[str, Any] = field(default_factory=dict)  # suggested value map for action columns
 
     def model(self) -> TypedField:
         return TypedField(field=self.field, ocsf_path=self.ocsf_path, type=self.type, confidence=round(self.confidence, 3),
@@ -110,8 +114,16 @@ def _internal(v: str) -> bool:
     return any(a in n for n in _INTERNAL if a.version == n.version)
 
 
+_DATE = re.compile(r"^\d{4}-\d\d-\d\d$")
+_TOD = re.compile(r"^\d\d:\d\d:\d\d$")
+
+
 def _layout(values: list[str]) -> tuple[str, float]:
     best, share = "", 0.0
+    if all(_DATE.match(v) for v in values):
+        return "2006-01-02", 1.0            # a date on its own: propose.py joins it with a time-of-day key
+    if all(_TOD.match(v) for v in values):
+        return "15:04:05", 1.0
     if all(_RFC3339.match(v) for v in values):
         if all(re.search(r"(?:Z|[+-]\d\d:\d\d)$", v) for v in values):
             return "rfc3339", 1.0
@@ -161,7 +173,7 @@ def _candidates(values: list[str]) -> list[_Cand]:
     ints = [int(v) for v in values if re.fullmatch(r"\d{1,20}", v)]
     lay, share = _layout(values)
     if lay and share >= 0.6:
-        add("timestamp", round(share * n), f"layout {lay}", lay)
+        add({"2006-01-02": "date", "15:04:05": "time_of_day"}.get(lay, "timestamp"), round(share * n), f"layout {lay}", lay)
     if len(ints) == n:
         ports = [i for i in ints if 0 <= i <= 65535]
         wk = sum(i in WELL_KNOWN for i in ints) / n
@@ -316,7 +328,8 @@ def type_columns(cols: list[Column], min_confidence: float = MIN_CONFIDENCE) -> 
         numeric = all(v.isdigit() for v in st["vals"])
         if p and p.share >= 0.9 and st["distinct"] <= 8 and not (numeric and st["distinct"] < 2):  # a constant 1 is a flag, not ICMP
             put(c, "protocol", "connection_info.protocol_num" if numeric else "connection_info.protocol_name", p.share, 0.5, 0.5, p.detail,
-                enum={} if numeric else {v: PROTO_NUM[v.lower()] for v in sorted(set(st["vals"])) if v.lower() in PROTO_NUM})
+                enum=({v: PROTO_NAME[v] for v in sorted(set(st["vals"])) if v in PROTO_NAME} if numeric
+                      else {v: PROTO_NUM[v.lower()] for v in sorted(set(st["vals"])) if v.lower() in PROTO_NUM}))
             continue
         if c is taken_action:
             k = cand(c.name, "action")
@@ -326,7 +339,15 @@ def type_columns(cols: list[Column], min_confidence: float = MIN_CONFIDENCE) -> 
             continue
         sev = cand(c.name, "severity")
         if sev and sev.share >= 0.95 and st["distinct"] <= 10 and c.named and re.search(r"sev|level|prio", c.name.lower()):
-            put(c, "severity", "severity_id", sev.share, 1.0, 0.5, sev.detail)
+            words = sorted({v.lower() for v in st["vals"] if not v.isdigit()})
+            put(c, "severity", "severity_id", sev.share, 1.0, 0.5, sev.detail, enum={w: SEVERITY_ENUM[w] for w in words if w in SEVERITY_ENUM})
+            continue
+        for part in ("date", "time_of_day"):
+            d = cand(c.name, part)
+            if d and d.share >= 0.95:
+                results[c.name] = Typed(c.name, part, "", 0.5, f"layout {d.layout}: half of a timestamp; joined with its partner by the proposal", layout=d.layout)
+                break
+        if c.name in results:
             continue
         m = cand(c.name, "mac")
         if m and m.share >= 0.95:

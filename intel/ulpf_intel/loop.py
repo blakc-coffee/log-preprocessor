@@ -19,7 +19,7 @@ from typing import Callable
 from .client import AdminClient, AdminError
 from .fingerprint import Drift, drift_score, fingerprint, line_kind
 from .models import DriftAlert, Proposal
-from .propose import Generated, propose_csv, propose_json, propose_kv_patch, propose_text
+from .propose import Generated, propose_csv, propose_json, propose_kv, propose_kv_patch, propose_text
 from .state import State
 from .validate import Thresholds, acceptance, re2_violations
 
@@ -172,8 +172,9 @@ class Sidecar:
             return propose_json(src, lines, ids, now, alert_id, c.timezone, c.min_cluster)
         if kind == "text":
             return propose_text(src, lines, ids, now, alert_id, c.timezone, c.min_cluster)
-        if kind == "kv" and parser_id:
-            active = next((p["active_version"] for p in self.client.parsers() if p["id"] == parser_id), None)
-            if active:
+        if kind == "kv":
+            active = next((p["active_version"] for p in self.client.parsers() if p["id"] == parser_id), None) if parser_id else None
+            if active:   # a source that used to parse and drifted: patch its parser
                 return propose_kv_patch(src, self.client.parser_yaml(parser_id, active), active, lines, ids, now, alert_id)
-        return None    # a brand-new kv source has no baseline parser to patch; not generated in v1
+            return propose_kv(src, lines, ids, now, alert_id, c.timezone)   # never had a parser: a new one
+        return None

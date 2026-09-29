@@ -45,8 +45,11 @@ def _map_entry(t: Typed, source_field: str) -> list[dict]:
     if t.type == "port":
         return [{"from": source_field, "to": p, "type": "port"}]
     if t.type == "protocol":
-        if p.endswith("protocol_num"):
-            return [{"from": source_field, "to": p, "type": "int"}]
+        if p.endswith("protocol_num"):     # 6 is tcp: give the reader the name too, as the number alone says little
+            out = [{"from": source_field, "to": p, "type": "int"}]
+            if t.enum:
+                out.append({"from": source_field, "to": "connection_info.protocol_name", "type": "enum", "enum": dict(sorted(t.enum.items())), "default": "other"})
+            return out
         return [{"from": source_field, "to": p, "type": "string", "lower": True},
                 {"from": source_field, "to": "connection_info.protocol_num", "type": "enum",
                  "enum": dict(sorted(t.enum.items())), "default": 0}]   # keyed by the values as observed: enum match is exact
@@ -55,6 +58,8 @@ def _map_entry(t: Typed, source_field: str) -> list[dict]:
     if t.type == "mac":
         return [{"from": source_field, "to": p, "type": "mac"}]
     if t.type == "severity":
+        if t.enum:   # words (notice, warning): map through the observed values, matching is exact
+            return [{"from": source_field, "to": p, "type": "enum", "enum": dict(sorted(t.enum.items())), "default": 99}]
         return [{"from": source_field, "to": p, "type": "int"}]
     if t.type == "username":
         return [{"from": source_field, "to": p, "type": "string"}]
@@ -537,4 +542,64 @@ def propose_text(source_id: str, lines: list[str], record_ids: list[int], now: d
     return Generated(Proposal(id="", kind="new", parser_id=pid, base_version="", source_id=source_id, yaml=_dump(doc),
                               cluster_size=len(lines), templates=tpl, sample_record_ids=record_ids[:20],
                               typed_fields=[t.model() for t in all_typed if t.ocsf_path],
+                              dry_run=None, status="pending", created_at=now, drift_alert_id=drift_alert_id), warnings)
+
+
+def _kv_prefix(lines: list[str]) -> str:
+    """A syslog <pri> in front of the pairs is skipped, not tokenized."""
+    return r"^(?:<\d+>)?" if all(re.match(r"<\d+>", l) for l in lines) else ""
+
+
+def propose_kv(source_id: str, lines: list[str], record_ids: list[int], now: datetime,
+               drift_alert_id: str = "", timezone: str = "+05:30") -> Generated:
+    """A new parser for a key=value source that has no parser yet (the case propose_kv_patch cannot serve)."""
+    from .fingerprint import fields
+
+    lines = [l for l in lines if l.strip()]
+    cols: dict[str, list[str]] = {}
+    for l in lines:
+        for k, (v, _) in fields(l, "kv").items():
+            cols.setdefault(k, []).append(v)
+    cols = {k: v for k, v in cols.items() if len(v) >= 0.99 * len(lines)}      # only keys every record carries
+    typed = type_columns([Column(k, v, True, i) for i, (k, v) in enumerate(cols.items())])
+    by = {t.field: t for t in typed}
+
+    warnings: list[str] = []
+    maps: list[dict] = []
+    date = next((t for t in typed if t.type == "date"), None)
+    tod = next((t for t in typed if t.type == "time_of_day"), None)
+    if date and tod and "time" not in {t.ocsf_path for t in typed}:
+        maps.append({"from": [date.field, tod.field], "to": "time", "type": "time", "layout": f"{date.layout} {tod.layout}"})
+        warnings.append(f"{date.field} + {tod.field} joined into one timestamp (layout {date.layout} {tod.layout})")
+    for t in typed:
+        if t.ocsf_path:
+            maps += _map_entry(t, t.field)
+            if t.ocsf_path == "severity_id":
+                warnings.append(f"{t.field} mapped straight to severity_id; confirm the scale runs the same way as OCSF")
+    maps.append({"const": 6, "to": "activity_id"})
+    if "severity_id" not in {m["to"] for m in maps if "to" in m}:
+        maps.append({"const": 1, "to": "severity_id"})
+
+    # the detector: the first key=value pair that is the same in every record (type=traffic), else the first key
+    # The detector must survive tomorrow, so it is built from structure, not from values that happen to be constant in
+    # this sample (date=2026-09-28, devname=FG-01): a `type`-like key with one value if there is one, else the first three
+    # mapped keys in the order they appear.
+    kind_key = next((k for k, v in cols.items() if k in ("type", "logtype", "log_type", "event_type", "category") and len(set(v)) == 1), None)
+    order = [f for f in cols if by[f].ocsf_path or by[f].type in ("date", "time_of_day")][:3] or list(cols)[:3]
+    if kind_key:
+        sig = rf'\b{kind_key}="?{re.escape(cols[kind_key][0])}"?(?: |$)'
+    else:
+        sig = ".*".join(rf"\b{re.escape(k)}=" for k in order)
+    pid = sanitize(source_id) + "_auto"
+    ext: dict = {"id": "kv_rows", "kind": "kv"}
+    if _kv_prefix(lines):
+        ext["skip_prefix"] = _kv_prefix(lines)
+    ext.update({"pair_sep": " ", "kv_sep": "=", "quote": '"', "render": "auto", "map": maps})
+    doc = {"id": pid, "version": "1.0.0", "vendor": sanitize(source_id), "product": "auto", "timezone": timezone,
+           "match": {"signature": sig}, "ocsf_defaults": {"class_uid": 4001, "category_uid": 4}, "extractors": [ext]}
+    ext["tests"] = _vectors(doc, lines)
+    tpl = sorted(fingerprint(lines).templates)
+    return Generated(Proposal(id="", kind="new", parser_id=pid, base_version="", source_id=source_id, yaml=_dump(doc),
+                              cluster_size=len(lines), templates=tpl, sample_record_ids=record_ids[:20],
+                              typed_fields=[t.model() for t in typed if t.ocsf_path],
                               dry_run=None, status="pending", created_at=now, drift_alert_id=drift_alert_id), warnings)

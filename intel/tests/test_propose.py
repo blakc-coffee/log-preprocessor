@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from ulpf_intel import dsl_eval
-from ulpf_intel.propose import propose_csv, propose_json, propose_kv_patch, propose_text
+from ulpf_intel.propose import propose_csv, propose_json, propose_kv, propose_kv_patch, propose_text
 from ulpf_intel.validate import Thresholds, acceptance, local_dry_run, re2_violations
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -242,7 +242,7 @@ def test_text_direction_agrees_with_the_manifest_except_the_undecidable_teardown
     assert families == {"106023", "106100", "302013", "302014", "302015", "302016", "305011"}
     for mid in ("106023", "106100", "302013", "302015", "302016", "305011"):
         assert agree[(mid, False)] == 0, f"{mid} disagrees with the manifest"
-    assert agree[(302014 and "302014", True)] == 0, "302014 was undecidable; if it now agrees, update this test and DECISIONS.log"
+    assert agree[("302014", True)] == 0, "302014 was undecidable; if it now agrees, update this test and DECISIONS.log"
 
 
 def test_weak_direction_decisions_are_flagged_for_the_reviewer(asa):
@@ -325,3 +325,57 @@ def test_message_codes_that_disagree_on_direction_become_separate_extractors():
     b = dsl_eval.flat(dsl_eval.extract(doc, ls[1]).ocsf)
     assert a["dst_endpoint.port"] == 443 and a["src_endpoint.ip"].startswith("10.1.")      # server first: the client is the source
     assert b["dst_endpoint.port"] == 443 and b["dst_endpoint.ip"].startswith("203.")       # server last: the server is the destination
+
+
+@pytest.fixture(scope="module")
+def fortinet_new():
+    ls = lines("fortinet.log")
+    return ls, propose_kv("fortinet", ls, list(range(1, len(ls) + 1)), NOW)
+
+
+def test_new_kv_proposal_parses_every_record_and_reproduces_the_manifest(fortinet_new):
+    ls, g = fortinet_new
+    doc = dsl_eval.load(g.proposal.yaml)
+    assert all(dsl_eval.extract(doc, l) is not None for l in ls)
+    check_against_manifest(doc, ls, "fortinet.log")
+    assert (g.proposal.kind, g.proposal.base_version) == ("new", "")
+
+
+def test_new_kv_proposal_works_on_the_drifted_keys_too():
+    ls = lines("fortinet_drift.log")
+    g = propose_kv("fortinet", ls, list(range(1, len(ls) + 1)), NOW)
+    doc = dsl_eval.load(g.proposal.yaml)
+    check_against_manifest(doc, ls, "fortinet_drift.log")
+    assert "eventtime" in g.proposal.yaml and "epoch_ns" in g.proposal.yaml
+
+
+def test_new_kv_detector_is_structural_not_a_value_that_was_constant_in_the_sample(fortinet_new):
+    ls, g = fortinet_new
+    sig = yaml.safe_load(g.proposal.yaml)["match"]["signature"]
+    assert "2026" not in sig and "FG" not in sig              # date=2026-09-28 and devname=FG-01 are constant here, not by design
+    tomorrow = ls[0].replace("date=2026-09-28", "date=2026-10-15").replace("devname=\"FG-01\"", "devname=\"FG-77\"")
+    assert dsl_eval.extract(dsl_eval.load(g.proposal.yaml), tomorrow) is not None
+    other_source = 'srcip=10.0.0.1 srcport=80 a=1 b=2 c=3'
+    assert dsl_eval.extract(dsl_eval.load(g.proposal.yaml), other_source) is None
+
+
+def test_new_kv_joins_date_and_time_and_maps_word_severities_through_an_exact_enum(fortinet_new):
+    _, g = fortinet_new
+    m = yaml.safe_load(g.proposal.yaml)["extractors"][0]["map"]
+    t = next(x for x in m if x["to"] == "time")
+    assert t["from"] == ["date", "time"] and t["layout"] == "2006-01-02 15:04:05"
+    sev = next(x for x in m if x["to"] == "severity_id")
+    assert sev["type"] == "enum" and sev["enum"]["notice"] == 2 and sev["enum"]["warning"] == 3
+    assert any("joined into one timestamp" in w for w in g.warnings)
+
+
+def test_new_kv_acceptance_and_re2(fortinet_new):
+    ls, g = fortinet_new
+    assert acceptance(local_dry_run(g.proposal.yaml, list(enumerate(ls, 1)))) == [] and re2_violations(g.proposal.yaml) == []
+    assert propose_kv("fortinet", ls, list(range(1, len(ls) + 1)), NOW).proposal.yaml == g.proposal.yaml
+
+
+def test_syslog_priority_in_front_of_kv_pairs_is_skipped_not_tokenized():
+    ls = ["<134>" + l for l in lines("fortinet.log")[:100]]
+    g = propose_kv("fortinet", ls, [], NOW)
+    assert yaml.safe_load(g.proposal.yaml)["extractors"][0]["skip_prefix"] == r"^(?:<\d+>)?"

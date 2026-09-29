@@ -212,3 +212,11 @@ def test_baseline_is_not_poisoned_while_a_source_is_drifting(tmp_path):
     admin.set("fortinet", lines("fortinet_drift.log")[:300], "quarantined")
     sc.run_once()
     assert State(tmp_path).load("fortinet").baseline == before          # still what healthy looked like
+
+
+def test_brand_new_kv_source_gets_a_new_parser_not_a_patch(tmp_path):
+    admin, sc = make(tmp_path)
+    admin.set("fortinet", lines("fortinet.log")[:300], "quarantined")          # never parsed: no baseline, no parser
+    (o,) = sc.run_once()
+    (p,) = admin.proposals
+    assert o.action == "proposal" and (p["kind"], p["base_version"]) == ("new", "") and p["dry_run"]["match_rate"] == 1.0
