@@ -15,7 +15,7 @@ import (
 
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/frame"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // HTTP defaults.

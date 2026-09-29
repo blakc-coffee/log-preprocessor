@@ -30,7 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/sniff"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // Defaults.

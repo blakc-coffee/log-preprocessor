@@ -28,7 +28,7 @@ import (
 	"fmt"
 	"io"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 // Defaults. MaxFrameBytes matches limits.max_frame_bytes in the ingest config,

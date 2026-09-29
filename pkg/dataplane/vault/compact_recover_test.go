@@ -12,9 +12,9 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/record"
+	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
 )
 
 const (
