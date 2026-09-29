@@ -416,3 +416,37 @@ affects: pkg/dataplane/ingest/frame/frame_test.go
 [2026-09-29 07:15] M3.1 verified: make check ALL GREEN. FuzzDelim 1.76M execs, FuzzOctet 6.4M execs, both clean.
 why: Chunk rule. Chunking invariance is tested for every mode against iotest.OneByteReader, ten fixed chunk sizes, 25 deterministic random chunkings and iotest.DataErrReader (which returns the final bytes together with io.EOF - naive decoders drop the last record on it). FuzzDelim asserts losslessness against arbitrary input rather than examples: Raw plus the recorded terminators must reconstruct the stream byte for byte.
 affects: pkg/dataplane/ingest/frame/
+
+[2026-09-29 07:40] Stream batching uses time.AfterFunc, not a goroutine per stream.
+why: A stream that goes quiet after one record would otherwise hold it in memory, undurable, until the next arrived - exactly the record a crash loses. A device sending one message a minute must not wait a minute for durability. max_conns is 1024, so a goroutine-per-stream ticker is a thousand goroutines doing nothing; the runtime timer heap already exists.
+affects: pkg/dataplane/ingest/ingest.go
+
+[2026-09-29 07:40] BUG FOUND BY THE RACE DETECTOR, worse than a race: concurrent flushes reordered a stream.
+why: The batch timer and a full-batch flush both detached the batch and then wrote, so two batches from ONE stream could reach the vault out of the order their records were appended. The visible damage was not subtle - an oversize record's fragment run was split across two out-of-order writes and reassembled into garbage ("record 4 is marked FragCont with nothing to continue"). The race detector separately caught Pipeline.Run closing the output channel while a timer flush was still sending to it.
+Fixed by taking the write lock BEFORE detaching the batch, so detach order is write order, and by having Close acquire the same lock so it blocks until any in-flight timer flush finishes. TestFlushesDoNotInterleave reproduces the exact interleaving with a one-nanosecond batch delay and asserts both offsets and vault-assigned RecordIDs are strictly ascending. Clean under -race -count=5.
+affects: pkg/dataplane/ingest/ingest.go
+
+[2026-09-29 07:40] A cancelled context during the downstream send reports which record was left unforwarded.
+why: The record is already durable and can be replayed from the vault by RecordID, so nothing is lost - but an operator restarting the data plane needs to know where the stream resumes. A bare context error would not say.
+affects: pkg/dataplane/ingest/ingest.go
+
+[2026-09-29 07:40] File source resolves every path to an absolute path.
+why: Origin.Addr is the de-duplication key for at-least-once tail replay, and a relative path stops meaning the same thing the moment the process changes directory. Globs are expanded at Run so a config can name a directory of logs.
+affects: pkg/dataplane/ingest/source/file.go
+
+[2026-09-29 07:40] File tail mode is accepted by NewFile but Run refuses it explicitly.
+why: Config can be written against `mode: tail` today, and the failure is a clear message rather than the source silently behaving like `once` - which would look like it worked and quietly stop following the file. Tail lands later in M3.
+affects: pkg/dataplane/ingest/source/file.go
+
+[2026-09-29 07:40] The e2e round-trip test picks framing from the manifest's terminator field, not a hard-coded list.
+why: crlf.log needs CRLF framing and multiline.log needs the multiline pattern. Hard-coding which files are special means a fixture added later gets ingested with the wrong framing by omission and the failure looks like a corpus bug. Reading the manifest makes the corpus itself the source of truth.
+affects: pkg/dataplane/ingest/e2e_test.go
+
+[2026-09-29 07:45] M3 GATE MET EARLY: 7598 records across all 13 fixtures round-trip byte-exact.
+why: TestRoundTripEveryFixture reads bytes[byte_start:byte_end] straight from each source file and compares against what the vault stored - bytes, SHA-256, terminator, fragment count and origin offset - then requires VerifyChain(deep) to pass. Nothing excluded: malformed.log's invalid UTF-8 and NULs, crlf.log's CRLF, multiline.log's internal newlines, oversize.log's fragments. Three independent computations agree (generator, source file, vault), not one value copied around.
+This is the PRD's "Fixture round-trip: 100% identical" success metric, met for the file source. It is NOT yet met end to end through the network sources, which are next.
+affects: pkg/dataplane/ingest/
+
+[2026-09-29 07:45] M3.2 verified: make check ALL GREEN, race clean at -count=3.
+why: Chunk rule. Pipeline behaviours covered: durability before visibility, batch timer on a quiet stream, backpressure with a 4-slot channel and 200 records, shutdown losing nothing that Submit accepted, vault failure propagating to the source, per-stream ordering across 8 concurrent streams, output channel closed on return.
+affects: pkg/dataplane/ingest/
