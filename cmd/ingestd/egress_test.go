@@ -18,13 +18,15 @@ import (
 // telemetry, an update check, a licence server — that a network-denied run
 // would only reveal by hanging or failing at some later date.
 //
-// It reads every non-test source file this workstream ships and rejects any
+// It reads every non-test source file the Ingestion & Vault workstream ships and rejects any
 // call that opens an OUTBOUND connection, and any import of a package that
 // exists only to make them. Listening is not egress and is allowed; so is the
 // loopback health probe, which dials the address the operator configured for
 // the daemon's own metrics listener.
 func TestNothingDialsOut(t *testing.T) {
-	roots := []string{"../../pkg", "../../cmd", "../../tools"}
+	// Only what THIS workstream ships. Other workstreams' code is theirs to guard: cmd/bench is a load generator that
+	// dials the address it is given, and a sink may legitimately post to a configured endpoint.
+	roots := []string{"../../pkg/dataplane/ingest", "../../pkg/dataplane/vault", "../../cmd/ingestd", "../../cmd/vaultctl", "../../tools"}
 
 	// Package selectors that open an outbound connection when called.
 	outbound := map[string]map[string]bool{
