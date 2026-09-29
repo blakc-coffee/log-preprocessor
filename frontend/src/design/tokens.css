@@ -1,0 +1,181 @@
+/*
+ * ULPF design tokens: DESIGN.md ("Basedash Midnight Data Terminal") as a
+ * Tailwind v4 theme. Components use these utilities only; a colour, radius or
+ * spacing literal in a component is a review failure (scripts/check-design.mjs).
+ *
+ * Deviations from DESIGN.md's "Tailwind CSS v4 Theme Config" block, and why:
+ *  - `--font-family-*` and `--border-radius-*` are Tailwind v3 key names; v4
+ *    ignores them, so `font-ui` and `rounded-card` would never exist. v4's
+ *    namespaces are `--font-*` and `--radius-*`, used here.
+ *  - Tailwind's default palette, shadows and blurs are reset, so a stray
+ *    `bg-red-500`, `shadow-md` or `backdrop-blur` cannot compile to anything.
+ *  - Focus: DESIGN.md sets `outline: none`; the PRD requires visible keyboard
+ *    focus. Resolved (with the user) as a 1px white outline on :focus-visible
+ *    only: no colour, no ring utility, nothing on mouse focus.
+ */
+@import 'tailwindcss';
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F,
+    U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url('/fonts/inter-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: block;
+  src: url('/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F,
+    U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: block;
+  src: url('/fonts/jetbrains-mono-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* Display face: one weight (300), and font-display: block so the serif never
+   flashes as a system fallback (DESIGN.md: no fallback for the display font). */
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: normal;
+  font-weight: 300;
+  font-display: block;
+  src: url('/fonts/cormorant-garamond-latin-300-normal.woff2') format('woff2');
+}
+
+@theme {
+  --color-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-shadow-*: initial;
+  --blur-*: initial;
+  --radius-*: initial;
+  --font-*: initial;
+  --text-*: initial;
+  --tracking-*: initial;
+
+  /* Colour: the complete DESIGN.md palette. */
+  --color-canvas: #000000;
+  --color-card: #050607;
+  --color-text-primary: #ffffff;
+  --color-text-muted: #b3b3b3;
+  --color-border: #333333;
+  --color-mint: #3fcb7f;
+  --color-lavender: #9984d8;
+  /* Derived from DESIGN.md's own component specs, not new colours. */
+  --color-hover: rgb(255 255 255 / 0.03); /* table row hover */
+  --color-selected: rgb(255 255 255 / 0.05); /* selected row: one step past hover */
+  --color-backdrop: rgb(0 0 0 / 0.7); /* modal overlay */
+
+  /* Type */
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-display: 'Cormorant Garamond', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --text-label: 11px; /* table headers (uppercase), secondary labels, hex dump */
+  --text-label--line-height: 14px;
+  --text-code: 12px; /* code blocks, YAML, JSON */
+  --text-code--line-height: 18px;
+  --text-body: 13px; /* body, table rows */
+  --text-body--line-height: 18px;
+  --text-ui: 14px; /* brand, tab labels, CTA */
+  --text-ui--line-height: 20px;
+  --text-heading: 16px; /* modal heading */
+  --text-heading--line-height: 22px;
+  --text-metric: 24px; /* stat card value: the tallest that fits the 88px strip with 24px padding */
+  --text-metric--line-height: 26px;
+  --text-section: 34px; /* section headline */
+  --text-section--line-height: 40px;
+  --text-hero: 48px; /* unused in current screens */
+  --text-hero--line-height: 52px;
+
+  --tracking-ui: -0.03em;
+  --tracking-label: 0.08em;
+
+  /* Radius */
+  --radius-card: 16px;
+  --radius-button: 6px;
+  --radius-pill: 999px;
+  --radius-bar: 2px; /* sparkline bars */
+
+  /* Layout (DESIGN.md "Spacing & Layout" plus the per-screen band heights) */
+  --spacing-page: 16px;
+  --spacing-card: 24px;
+  --spacing-row: 48px;
+  --spacing-topbar: 56px;
+  --spacing-telemetry: 88px;
+  --spacing-band: 52px; /* filter bar, modal header and footer */
+  --spacing-section: 64px; /* section header */
+  --spacing-modal: 1080px;
+  --spacing-modal-h: 640px;
+  --container-modal: 1080px; /* max-w-* reads the container namespace */
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-text-primary);
+    font-family: var(--font-ui);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    letter-spacing: var(--tracking-ui);
+    -webkit-font-smoothing: antialiased;
+    scrollbar-color: var(--color-border) var(--color-canvas);
+  }
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 1px solid var(--color-text-primary);
+    outline-offset: 2px;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline-offset: 0;
+  }
+  ::selection {
+    background: var(--color-text-primary);
+    color: var(--color-canvas);
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
