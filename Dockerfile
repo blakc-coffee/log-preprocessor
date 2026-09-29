@@ -15,7 +15,9 @@ COPY --from=ui-build /src/frontend/dist ./pkg/control/ui/dist
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILT_AT=unknown
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.builtAt=${BUILT_AT}" -o /out/ulpf ./cmd/ulpf \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.builtAt=${BUILT_AT}" -o /out/ulpf ./cmd/ulpf \
     && mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot AS ulpf

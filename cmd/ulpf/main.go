@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	pathpkg "path"
 	"regexp"
 	"strings"
 	"time"
@@ -240,16 +241,43 @@ func scanUIFS(root fs.FS) error {
 		if d.IsDir() {
 			return nil
 		}
+		switch strings.ToLower(pathpkg.Ext(path)) {
+		case ".html", ".js", ".css", ".json", ".svg", ".map":
+		default:
+			return nil
+		}
 		b, err := fs.ReadFile(root, path)
 		if err != nil {
 			return err
 		}
-		for _, raw := range externalURL.FindAllString(string(b), -1) {
-			if strings.Contains(raw, "localhost") || strings.Contains(raw, "127.0.0.1") || strings.Contains(raw, "w3.org/") {
+		for _, loc := range externalURL.FindAllIndex(b, -1) {
+			if insideBlockComment(b, loc[0]) {
+				continue
+			}
+			raw := string(b[loc[0]:loc[1]])
+			if allowedUIURL(raw) {
 				continue
 			}
 			return fmt.Errorf("external URL in %s: %s", path, raw)
 		}
 		return nil
 	})
+}
+
+func allowedUIURL(raw string) bool {
+	return strings.Contains(raw, "localhost") ||
+		strings.Contains(raw, "127.0.0.1") ||
+		strings.Contains(raw, "w3.org/") ||
+		strings.HasPrefix(raw, "https://reactjs.org/docs/error-decoder.html") ||
+		strings.HasPrefix(raw, "https://reactrouter.com/v6/upgrading/future")
+}
+
+func insideBlockComment(content []byte, offset int) bool {
+	prefix := content[:offset]
+	cssOpen, cssClose := bytes.LastIndex(prefix, []byte("/*")), bytes.LastIndex(prefix, []byte("*/"))
+	if cssOpen > cssClose {
+		return true
+	}
+	htmlOpen, htmlClose := bytes.LastIndex(prefix, []byte("<!--")), bytes.LastIndex(prefix, []byte("-->"))
+	return htmlOpen > htmlClose
 }

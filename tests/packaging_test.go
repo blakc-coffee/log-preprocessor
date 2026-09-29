@@ -63,7 +63,7 @@ func TestContainerAndAirgapProofContracts(t *testing.T) {
 		}
 	}
 	script := mustReadPackagingFile(t, filepath.Join("scripts", "verify_airgap.sh"))
-	for _, required := range []string{"--network none", "selftest --pipeline --egress --ui", "internal: true", "compose exec -T ulpf /usr/local/bin/ulpf healthcheck", "AIRGAP_VERIFIED"} {
+	for _, required := range []string{"--network none", "selftest --pipeline --egress --ui", "internal: true", "compose exec -T ulpf ulpf healthcheck", "AIRGAP_VERIFIED"} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("verify_airgap.sh missing %q", required)
 		}
