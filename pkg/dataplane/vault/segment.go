@@ -27,8 +27,11 @@ import (
 // index that could disagree with the file.
 
 const (
-	// HeaderSize and FooterSize are fixed by the format.
+	// HeaderSize is the fixed size of a segment header. Fixed by the format:
+	// docs/vault-format.md publishes it and tamper tests seek by it.
 	HeaderSize = 72
+	// FooterSize is the fixed size of a segment footer. A valid footer at the
+	// end of a file is what "sealed" means.
 	FooterSize = 100
 
 	headerMagic = "ULPFSEG1"

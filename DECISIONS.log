@@ -849,3 +849,55 @@ affects: pkg/dataplane/ingest/config.go, cmd/ingestd/main.go, configs/ingest.dev
 why: Chunk rule. ingestd with the dev config compacted three segments (5.3-7.7x), verify --deep exit 0, the source line / the compacted vault's `get --raw` / the manifest's expected_sha256 all agree, a proof from a compacted segment verified with no vault present, and a flipped byte in a compressed block exits 1 naming the segment. Compaction metrics exported: seconds, ratio, bytes in and out, failures.
 Indicative only, macOS, NOT reportable: cold random read from a compacted segment 85.6us vs 244ns warm (~350x, the price of compaction on the read path); compaction 77 MB/s of WAL including read-back verification and fsyncs.
 affects: pkg/dataplane/vault/, cmd/ingestd/
+
+[2026-09-29 15:00] Gate 1 checked against the PRD's own list, which found three gaps I had not noticed.
+why: Working from "the milestones are done" rather than from PRD_INGESTION section 16 would have missed them. (1) Two packages had no README (sniff, gen/internal/gen) - PRD working rule 7. (2) One exported identifier had no doc comment (FooterSize) - same rule; checked with a throwaway go/ast walk over pkg, cmd and tools rather than by eye. (3) The "run with no network" requirement had never been tested: only asserted. All fixed.
+affects: pkg/dataplane/ingest/sniff/README.md, tools/gen/internal/gen/README.md, pkg/dataplane/vault/segment.go
+
+[2026-09-29 15:05] "Runs with no network" proven with the operating system, plus a permanent code-level guard.
+why: A claim about the air gap should not rest on having read the code. ingestd and vaultctl were built from a fresh `git clone` with CGO_ENABLED=0, then run under sandbox-exec with `(deny network*)`. A control run first confirmed the sandbox really blocks (curl: "Could not resolve host"). With the network denied ingestd ingested 4000 records, compacted both segments (6.9x and 7.2x) and stopped cleanly, and vaultctl verified deep and returned bytes whose SHA-256 matched the source.
+That is a point-in-time run. TestNothingDialsOut is the durable half: it parses every shipped non-test source file and rejects any call to net.Dial / tls.Dial / http.Get / http.Post and any import of net/smtp or net/rpc, allowing only the loopback --healthcheck probe. Proven able to fail by planting an http.Get in a scratch file, which it caught with file:line, then removing it.
+Note this is macOS sandbox-exec; the Packaging workstream owns the container-level proof (`docker run --network none`, verify_airgap.sh).
+affects: cmd/ingestd/egress_test.go
+
+[2026-09-29 15:10] TWO GATE 1 ITEMS CANNOT BE MET FROM THIS MACHINE, and are reported as unmet rather than papered over.
+why: (1) "Benchmarks recorded with hardware and sync mode": on macOS Go's File.Sync is F_FULLFSYNC, so every fsync-bound number is an order of magnitude off the Linux target; a test fails on non-Linux saying so. The benchmarks exist and run; the recorded Linux results do not. (2) "RSS at 100k records/s under 300 MiB, excluding hash index": needs Linux and a sustained load generator, and separately the in-memory per-record index is O(records), which is a documented limit rather than something this run can dismiss. Both are handed off, not claimed.
+The compression RATIOS are the exception: they do not depend on the machine, so they ARE measured and reported (docs/vault-format.md 9.2).
+affects: the submission's measured-numbers section, benchmarks/results/ (Packaging)
+
+================================================================================
+CHECKPOINT [2026-09-29 15:15] — state of the world after M5. Gate 1 met, minus two Linux-only items.
+--------------------------------------------------------------------------------
+DONE     M0 through M5. Every requirement in PRD_INGESTION section 16 Gate 1 is met
+         EXCEPT the two listed above, which need Linux.
+
+GATE     `make check` -> ALL GREEN, repeatedly. ~3000 passing subtests. Includes a
+         40-cycle crash pass of each variant; `make crash` runs 200 of each.
+         Four direct dependencies: yaml.v3, prometheus/client_golang + client_model,
+         klauspost/compress.
+
+MEASURED - 7598 records across 13 fixtures round-trip byte-exact, before AND after
+           compaction (PS requirement (a)).
+         - 200 kill -9 cycles, 0 acknowledged records lost: 5889 records WAL-only,
+           4206 with background compaction; 3924 under -race.
+         - Tamper matrix: 10 rows on WAL storage, +8 on compacted storage
+           (incl. a block forged with every checksum recomputed), 0 undetected.
+         - Failure injection: terminal on write/fsync/footer/ledger failure, fsync
+           never retried, mutation-checked.
+         - Compression, synthetic corpus, machine-independent: 5.0-8.6x per file,
+           ~7.4x excluding one outlier; zstd-3 ~= gzip-6; the .hix adds 62%.
+         - Runs with the OS denying all network; TestNothingDialsOut guards it.
+
+NOT PROVEN, AND MEASURED TO BE SO
+         - Power-loss durability. The crash suite does not prove fsync works:
+           sync=none still passes it. Say "process crash", never "power loss".
+         - Throughput. No fsync-bound number is reportable from macOS.
+         - RSS. Not measured; the per-record index is O(records).
+         - Tamper-EVIDENT, not tamper-proof: a coherent rewrite of the directory
+           is only detectable against an externally held chain head.
+
+NEXT ACTION
+         Phase 2 support. Nothing further is buildable here without other
+         workstreams: the real pkg/types, Parsing's cmd/dataplane consuming
+         Pipeline.Out, and a Linux box for the recorded benchmarks and RSS.
+================================================================================
