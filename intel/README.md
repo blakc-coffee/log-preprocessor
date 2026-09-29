@@ -29,8 +29,10 @@ All three are expected to fail; on a machine with internet access it correctly r
 | `propose.py` | Proposal generators: `propose_csv` (headerless CSV), `propose_kv` (new kv source), `propose_kv_patch` (drifted kv parser -> patch), `propose_json` (routes on `event_type`), `propose_text` (Drain3 templates -> anchored RE2 with typed named groups), `propose_cef` (CEF and LEEF, from the standard extension keys, confirmed against the values). |
 | `dsl_eval.py` | A small reference evaluator of the parser DSL. NOT the engine: it derives the `tests:` vectors of a proposal and gives a local pre-check. |
 | `validate.py` | Acceptance thresholds, RE2-safety check (Python's `re` accepts lookaround the Go engine refuses), local dry-run. |
+| `llm.py` | OPTIONAL (`--llm-endpoint`, off by default): a local model names anonymous csv columns. Loopback only, refused otherwise; at most 5 sample values per column in the prompt, never a whole record; can only fill `_` entries of a `columns:` list, so it cannot touch a mapping, pattern or type; failures never break a proposal; the result still goes through the same dry-run and human approval. |
 | `client.py`, `state.py`, `loop.py`, `egress.py`, `__main__.py` | The admin client (bounded retries), JSON baselines, the loop, the air-gap probe, the CLI. |
 | `models.py` | Pydantic mirrors of the contract types (`extra="forbid"`). |
+| `llm.py` | OPTIONAL (`--llm-endpoint`, off by default): a local model names anonymous csv columns. Loopback only, refused otherwise; at most 5 sample values per column in the prompt, never a whole record; can only fill `_` entries of a `columns:` list, so it cannot touch a mapping, a pattern or a type; a failure never breaks a proposal; the result still goes through the same dry-run and human approval. |
 
 ## The loop, per source
 
@@ -64,7 +66,7 @@ All three are expected to fail; on a machine with internet access it correctly r
   direction word at all (only the matching `Built` message with the same connection id would say). A test pins the split.
 - **CEF/LEEF** are tested on SYNTHETIC samples only (no CEF/LEEF file exists in the fixture corpus), and the severity banding
   (0-3 Low ... 9-10 Very-High to OCSF 2..5) follows the CEF specification and is stated to the reviewer in every proposal.
-  The optional local-LLM step (P2) is not built.
+  The optional local-LLM step names only anonymous csv columns; it does not improve mappings or free-text slot names.
 - The reference evaluator has no render-back, so `render_back_ok_rate` comes only from the data plane's dry-run.
 - Timestamps without a zone use `--timezone` (default `+00:00`) and every such proposal says so in its warnings.
 - "Stale" marking of proposals whose base version moved is done by the data plane on approve (`409`); the sidecar only avoids re-proposing.

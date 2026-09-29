@@ -36,6 +36,9 @@ class Config:
     quarantine_rate_threshold: float = 0.2
     dominant_share: float = 0.8
     timezone: str = "+00:00"          # for formats that carry no zone; the data plane's per-source setting wins there
+    llm_endpoint: str = ""            # optional local model (loopback only) that names anonymous csv columns; "" = off
+    llm_model: str = "local"
+    llm_transport: object = None      # tests inject an httpx transport
     thresholds: Thresholds = field(default_factory=Thresholds)
 
 
@@ -146,6 +149,8 @@ class Sidecar:
             return Outcome(src, "alert", "no proposal: unsupported shape or no dominant template", drift.score, alert_id)
         p = gen.proposal
         warnings = list(gen.warnings)
+        if c.llm_endpoint:
+            warnings += self._refine(p, [_raw(s) for s in quar])
         if c.timezone and "layout" in p.yaml and "epoch" not in p.yaml and "-0700" not in p.yaml and "rfc3339" not in p.yaml:
             warnings.append(f"timestamps carry no zone: assumed {c.timezone}; set the source's timezone in the data-plane config if wrong")
         warnings += [f"not RE2: {v}" for v in re2_violations(p.yaml)]
@@ -159,6 +164,21 @@ class Sidecar:
         proposals.append(posted.model_dump(mode="json"))
         log.info("proposal %s for %s (match_rate %.2f, %d warnings)", posted.id, src, dry.match_rate, len(dry.warnings))
         return Outcome(src, "proposal", f"match_rate {dry.match_rate:.2f}", drift.score, alert_id, posted.id)
+
+    def _refine(self, p: Proposal, lines: list[str]) -> list[str]:
+        """Optional and best effort: a failure here costs nothing but the nicer names."""
+        from . import llm
+        c = self.cfg
+        try:
+            cols = llm.anonymous_columns(p.yaml, lines)
+            if not cols:
+                return []
+            names = llm.suggest_names(c.llm_endpoint, c.llm_model, cols, transport=c.llm_transport)
+            p.yaml, n = llm.apply_names(p.yaml, names)
+            return [f"{n} column name(s) suggested by a local model ({c.llm_model}); unverified, they change no mapping"] if n else []
+        except Exception as e:      # noqa: BLE001 - the refinement must never break the proposal
+            log.warning("LLM refinement skipped: %s", e)
+            return [f"LLM refinement skipped: {type(e).__name__}"]
 
     def _generate(self, src: str, lines: list[str], ids: list[int], parser_id: str, alert_id: str) -> Generated | None:
         c = self.cfg
