@@ -1,0 +1,203 @@
+[2026-09-29 02:10] PRDs moved to prd/ and excluded from version control, together with AGENTS.md.
+why: Per operator instruction, PRDs and the agent working-memory file are working references, not project artifacts. Keeping them out of the repo keeps the submission link clean.
+affects: .gitignore, prd/*, AGENTS.md
+
+[2026-09-29 02:10] .gitignore `*.log` kept, but negated for testdata/**/*.log and DECISIONS.log.
+why: The pre-existing `*.log` rule would have silently excluded both the committed fixture corpus (testdata/cisco_asa.log, fortinet.log, dhcp.log, ...) required by PRD_INGESTION section 4.2 and this decision log. Negation is the smallest fix that keeps vault/runtime logs ignored.
+affects: .gitignore, testdata/, DECISIONS.log
+
+[2026-09-29 02:10] `data/` ignored instead of only `data/vault/`.
+why: The ingest config (PRD section 8) also writes ./data/checkpoints; no runtime state under data/ belongs in the repo.
+affects: .gitignore
+
+[2026-09-29 02:12] Go module path assumed to be github.com/blakc-coffee/log-preprocessor.
+why: PRD_INGESTION_vault_SCOPED 9.2 says go.mod is owned by the Contracts workstream and to stop rather than invent a module path. No Contracts agent is running here and no go.mod exists, so the path is taken from the existing git remote (`git remote -v`) rather than invented. Revisit if Contracts ships a different one.
+affects: go.mod (not yet created), every package import path
+
+[2026-09-29 02:12] BLOCKER logged, not worked around: Go toolchain is not installed on this machine.
+why: `go version` -> command not found; no /usr/local/go, no Homebrew go. M0 scaffolding can proceed on paper but nothing can be compiled, tested or verified, and this workstream's rule is that no chunk is done until its tests pass. Not silently skipping verification.
+affects: all build/test milestones (M0-M5)
+
+[2026-09-29 02:20] Go installed via Homebrew: go1.27.1 darwin/arm64. go.mod declares `go 1.22`.
+why: PRD targets Go 1.22+. The go.mod directive is the language version the code is written against, deliberately not the installed toolchain, so a newer local toolchain cannot let a 1.23+ feature slip in unnoticed.
+affects: go.mod
+
+[2026-09-29 02:20] Module path set to github.com/blakc-coffee/log-preprocessor.
+why: Confirmed with the user. Taken from the existing git remote rather than invented, per PRD_INGESTION 9.2. Supersedes the 02:12 assumption.
+affects: go.mod, every import path
+
+[2026-09-29 02:22] manifest `generator.go` is the constant "go1.22", not runtime.Version().
+why: PRD 4.1 requires byte-identical corpus output across machines. runtime.Version() returns the toolchain patch release (go1.27.1 here), which differs per machine and would break determinism on the manifest alone. The constant records the declared language version instead.
+affects: tools/gen/internal/gen/gen.go (GoVersion)
+
+[2026-09-29 02:24] `make fixtures-check` diffs with `-x sample` plus a second diff of testdata/sample.
+why: The Makefile recipe in PRD 9.5 is broken as written: testdata/sample/ is nested inside testdata/, so `diff -r testdata /tmp/ulpf-fx` always reports "Only in testdata: sample" and exits 1. Excluding it and checking the sample profile separately keeps both profiles covered.
+affects: Makefile (fixtures-check)
+
+[2026-09-29 02:26] fortinet.log deliberately carries no `eventtime=` key.
+why: PRD 4.2 defines fortinet_drift.log as the same source after a firmware upgrade where epoch `eventtime=` replaces `date=`/`time=`. Real FortiOS emits both, but if the pre-drift file already had eventtime the key-replacement drift signal would be invisible to the sidecar's fingerprint diff. Realism traded for a detectable drift, which is the point of the fixture.
+affects: tools/gen/internal/gen/fortinet.go, tools/gen/internal/gen/drift.go (M1)
+
+[2026-09-29 02:26] Manifest expected_* keys are always present and null when unknown; only expected_fragments is omitted when absent.
+why: D7 freezes flat expected_* keys and the PRD 4.4 example shows an explicit `"expected_user": null`. Consumers can rely on the key existing. expected_fragments is the exception because PRD 4.4 says oversize records "add" it, i.e. it is not part of the base shape.
+affects: tools/gen/internal/gen/gen.go (Record), all manifest consumers
+
+[2026-09-29 02:26] Manifest record_id scheme: "<prefix>-%04d" per source file (asa-0001, fgt-0001, eve-0001).
+why: PRD 4.4 shows "asa-0001" but does not define the scheme for other sources. Per-file counters keep ids stable when a source's record count changes without shifting other files' ids. This is a manifest identifier only and is unrelated to the vault's RecordID.
+affects: tools/gen/internal/gen/gen.go
+
+[2026-09-29 02:26] All fixture addresses drawn from RFC 5737 (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) and RFC 1918.
+why: The corpus must be unmistakably synthetic and must never resemble a real capture or route anywhere. 10.1.4.0/24 is weighted heavily because the identity reassignment scenario lives there.
+affects: tools/gen/internal/gen/net.go
+
+[2026-09-29 02:26] ASA syslog PRI computed as facility local4 (20) * 8 + the message id's severity.
+why: PRD 4.2 gives one example, `<166>` with `%ASA-6-`. 166 = 20*8+6, so the example is internally consistent with local4. Deriving PRI keeps the two severity occurrences in each line consistent, including the sev-4 106023 deny lines, which is what a parser cross-check would look at.
+affects: tools/gen/internal/gen/asa.go
+
+[2026-09-29 02:26] Suricata EVE lines encoded from Go structs, not maps, with SetEscapeHTML(false).
+why: Determinism. Map iteration order is randomized in Go, so a map-encoded JSON line would differ run to run. HTML escaping is disabled so user agents and URLs stay byte-faithful to what Suricata writes.
+affects: tools/gen/internal/gen/suricata.go
+
+[2026-09-29 02:28] Local copy of the pkg/types contract deferred from M0 to M1.
+why: PRD 9.6 lists it as a first-hour item, but nothing in M0 compiles against it (the generator writes log files and a manifest; it never touches RawRecord or Vault). Writing it now would be untested, unused code. It lands with memvault in M1, which is the first thing that needs it.
+affects: pkg/dataplane/ingest/testutil (not yet created)
+
+[2026-09-29 02:28] Third-party dependencies (zstd, fsnotify, yaml.v3, prometheus, x/sys) not fetched yet.
+why: PRD 9.4 fetches all five in the bootstrap, but `go mod tidy` drops any module nothing imports, so they cannot be pinned before first use. Each is added at the milestone that first imports it (zstd at M5, fsnotify at M3, yaml/prometheus at M3-M4, x/sys at M3). The approved set does not change; only when it is pinned does.
+affects: go.mod, go.sum
+
+[2026-09-29 02:30] M0 verified: go vet clean, `go test -race ./tools/...` green, `make fixtures-check` clean on both profiles.
+why: Chunk rule - nothing is marked done before its tests pass. Tests written: corpus determinism (two runs, both profiles), seed sensitivity, sample-is-prefix-of-full, and an independent manifest checker that re-derives every offset, hash and terminator from the written bytes and proves records tile each file with no gaps.
+affects: tools/gen/internal/gen/gen_test.go, tools/gen/verify_test.go
+
+[2026-09-29 03:05] palo_alto_unknown.log is bare CSV with no syslog header.
+why: PAN-OS can write TRAFFIC logs either way. Bare CSV is the harder and more valuable case: the sniffer classifies it `csv` (PRD 5.3 rule 5) instead of `syslog3164`, and with no header line and several FUTURE_USE placeholder columns, a column's meaning can only be recovered from value shapes. That is exactly what the semantic typing classifier is measured on (>=90% of typed columns correct).
+affects: tools/gen/internal/gen/paloalto.go, sniff tests (M4), intel sidecar typing tests
+
+[2026-09-29 03:05] Palo Alto rows use the documented 47-column PAN-OS traffic layout, asserted in a test.
+why: PRD 4.2 says "40+ fields" without fixing the count. A short row silently shifts every column after it and, with no header, nothing else would catch it. TestPaloAltoColumnCount also asserts no row contains '=', because a stray one would flip the format sniffer from csv to kv.
+affects: tools/gen/internal/gen/paloalto.go
+
+[2026-09-29 03:05] Ground truth (expected_src_ip etc.) recorded even for expect="unknown_format" records.
+why: Palo Alto and drift records have no parser at first, but they are the corpus the quarantine -> propose -> approve -> replay path is demonstrated on. Without recorded truth there is nothing to check the replayed result against.
+affects: manifest records for palo_alto_unknown.log and fortinet_drift.log
+
+[2026-09-29 03:05] fortinet_drift.log carries four independent drift signals, guarded by a test.
+why: PRD 4.2 lists renamed keys, reordering, new fields and epoch eventtime. Implemented as: srcip/dstip/srcport/dstport -> src/dst/sport/dport; date=/time= -> nanosecond eventtime=; action="deny"/"accept" -> unquoted action=blocked/passed; new srcmac/dstcountry/utmaction/craction keys. TestDriftActuallyDrifts asserts both files' key sets, so the drift demo cannot silently become a no-op.
+affects: tools/gen/internal/gen/drift.go
+
+[2026-09-29 03:05] A record of exactly max_frame_bytes is ONE record, not two.
+why: The framer (M3) flushes a full buffer only once it knows more content follows, i.e. one byte of lookahead. Without it, a record whose length lands exactly on the limit emits a full fragment plus a trailing zero-length FragCont fragment. A byte of lookahead is cheaper to implement than that boundary case is to explain. oversize.log deliberately includes the exact-limit record, and manifest expected_fragments is 1/1/2 for 70KiB / 1MiB / 1.5MiB.
+affects: tools/gen/internal/gen/oversize.go, pkg/dataplane/ingest/frame (M3), manifest expected_fragments
+
+[2026-09-29 03:05] oversize.log is excluded from the sample profile (Sample: 0).
+why: The sample set exists so other workstreams can grab something small within the first hour; 2.6 MiB of padding defeats that. The full corpus carries it. Source.Sample == 0 now means "absent from the sample profile".
+affects: tools/gen/internal/gen/{gen.go,oversize.go}
+
+[2026-09-29 03:05] malformed.log categories are interleaved by a deterministic shuffle, not emitted in blocks.
+why: The 50-record sample profile is a prefix of the full file. Emitting 20 truncated, then 20 invalid-UTF-8, and so on would give the sample only the first two or three categories. The shuffle draws a fixed number of values before any record is written, which preserves the prefix property.
+affects: tools/gen/internal/gen/malformed.go
+
+[2026-09-29 03:05] malformed.log binary-noise records exclude 0x00 as well as 0x0A and 0x0D.
+why: 0x0A/0x0D must be excluded for correctness - a framer would split the record and the manifest would describe something unreproducible. 0x00 is excluded so the six categories stay separable: TestMalformedComposition counts NUL-bearing records, and noise that happened to roll a 0x00 made that count 21 instead of 20. Found by the test, not by inspection.
+affects: tools/gen/internal/gen/malformed.go
+
+[2026-09-29 03:05] Drift key assertions are space-prefixed where a key can be the tail of another key.
+why: The first version of TestDriftActuallyDrifts asserted fortinet_drift.log does not contain "time=", which fails because "eventtime=" contains it. A substring probe on a kv format proves nothing without a boundary. "date=" is exempt: it is the first key on a pre-drift line and so has no leading space.
+affects: tools/gen/internal/gen/fixtures_test.go
+
+[2026-09-29 03:05] multiline.log records are whole events, and MultilineStart is exported.
+why: One manifest record is one 3-8 line event, with the internal newlines part of Raw and only the event's final terminator excluded from byte_end, matching PRD 5.2 ("continuation lines append including their original terminators"). The RE2 pattern the source config needs is exported as gen.MultilineStart and asserted against the generated file, so the config and the corpus cannot drift apart.
+affects: tools/gen/internal/gen/multiline.go, configs/ingest.dev.yaml (M3)
+
+[2026-09-29 03:06] M1.1 verified: gofmt clean, go vet clean, go test -race green, make fixtures-check clean.
+why: Chunk rule. Corpus now has 9 of 13 files. Tests added: malformed composition, oversize fragment boundary (including exactly-at-limit), multiline framing against MultilineStart, Palo Alto column count and csv-not-kv, and the drift key-set diff.
+affects: tools/gen/internal/gen/fixtures_test.go, testdata/
+
+[2026-09-29 03:40] Identity scenario derived from the run seed by a pure function, buildScenario(seed).
+why: Four files (dhcp.log, radius.log, openvpn.log, identity_firewall.log) plus identity_truth.json must agree on who held which address when, but each emitter gets its own independent RNG stream. A pure function of the seed gives all five the same answer with no shared mutable state and no ordering dependency between emitters.
+affects: tools/gen/internal/gen/{identity.go,identity_sources.go,truth.go,gen.go}
+
+[2026-09-29 03:40] NEW FILE not in the PRD's file table: identity_firewall.log.
+why: PRD 4.3 requires firewall events on both sides of each reassignment carrying expected_user, but PRD 4.2's file table names no file for them. Putting them in cisco_asa.log would mix a pure vendor-format fixture with scenario data and force the identity test to ingest 2000 irrelevant records. A separate file lets the identity test ingest exactly the 45 records it reasons about. Additive, so nothing that depends on the existing files is affected.
+affects: testdata/identity_firewall.log, manifest.json, B7 identity tests
+
+[2026-09-29 03:40] Truth intervals are half-open: [ack, release). Documented in the file itself.
+why: An address is bound from the DHCPACK up to but not including the release. Closed-at-both-ends intervals make the release instant ambiguous, and the whole scenario turns on gap boundaries being exact - the shortest gap is 45 seconds.
+affects: testdata/identity_truth.json, pkg/dataplane/identity (B7, Contracts)
+
+[2026-09-29 03:40] identity_truth.json carries resolution_cases in addition to intervals.
+why: PRD 4.3 specifies only {ip,user,host,mac,from,to}. The 45 (ip, time, expected_user) triples are also in the manifest, but only on the firewall records, so testing B7's resolver would mean ingesting a log first. Duplicating them in the answer key lets the resolver be unit-tested in isolation. A test asserts the two copies agree, so the duplication cannot rot.
+affects: testdata/identity_truth.json, B7 unit tests
+
+[2026-09-29 03:40] identity_truth.json is deliberately absent from the manifest's `files` map.
+why: That map is iterated by the round-trip tests, which ingest every file in it and assert byte-exact vault storage. identity_truth.json is an answer key, not a log, and ingesting it would be meaningless.
+affects: tools/gen/internal/gen/gen.go, tests/lossless_test.go (Packaging)
+
+[2026-09-29 03:40] Identity files are identical in the sample and full profiles.
+why: They are small (200/100/60/45 records) and they are the Contracts workstream's hand-off. A sliced sample would contain tenancies whose releases were cut off, making the answer key wrong for the sample set. Shipping the complete scenario in both profiles avoids a second, subtly different truth file.
+affects: tools/gen/internal/gen/identity_sources.go
+
+[2026-09-29 03:40] BUG FOUND AND FIXED: tenancy B on 10.1.4.12 was also alice, so that address was never reassigned.
+why: The second tenant was chosen as identityUsers[(i+5)%10], which for i=5 is alice - the same user the "same user on two addresses" override had just forced onto tenancy A. The address was leased to alice twice, so reassignment went untested there and a RADIUS cross-check failed. Now the second tenant walks forward until it differs from the first. Caught by TestIntervalsDoNotOverlapPerIP, not by inspection.
+affects: tools/gen/internal/gen/identity.go
+
+[2026-09-29 03:45] merkle package imports the local contract copy for VerifyChainLink only.
+why: PRD calls the package "pure, dependency-free". It has no vault dependency, which is the point; types.InclusionProof is the contract, not the vault. Every other function takes and returns plain arrays, so a caller that only needs inclusion verification pulls in nothing.
+affects: pkg/dataplane/vault/merkle/merkle.go
+
+[2026-09-29 03:45] Root(nil) returns SHA-256 of the empty string, per RFC 6962 MTH({}).
+why: The vault never seals an empty segment, so this should not arise. Returning the RFC value rather than a zero array means an empty root can never be confused with an unset one.
+affects: pkg/dataplane/vault/merkle/merkle.go
+
+[2026-09-29 03:45] FINDING: an RFC 6962 inclusion proof does not independently bind the tree size.
+why: TestTamperedProofsFail originally asserted that claiming the wrong size must fail. It does not: for n=100, 96 of 100 leaves still verify against a claimed size of 101 when the root is held fixed. This is correct behaviour, not a defect - the root is the commitment, and size and index only steer how the path is folded. Verified that the security-relevant property does hold: a proof from a tree of 100 verifies against the real root of a tree of 101 in 0 of 100 cases. The assertion was replaced with that one, and TestSizeAloneIsNotBinding documents the caveat. Recorded because the Frontend browser verifier and the Contracts Python tests will meet the same property and could easily assume the opposite.
+affects: pkg/dataplane/vault/merkle/merkle_test.go, frontend proof verifier, intel sidecar tests
+
+[2026-09-29 03:45] merkle_vectors.json has a drift check, not just an -update flag.
+why: PRD 12.1 specifies -update. Without a check, the committed file can silently fall out of step with the Go implementation while the browser and Python verifiers keep validating against the stale copy. TestWriteVectors now fails when the committed file differs, and TestVectorsAreSelfConsistent re-derives every hash from the leaf bodies the way an outside implementation would.
+affects: pkg/dataplane/vault/merkle/vectors_test.go, testdata/merkle_vectors.json
+
+[2026-09-29 03:45] `make fixtures-check` also excludes merkle_vectors.json from the diff.
+why: It lives in testdata/ but is written by the merkle test, not the corpus generator, so the generator's determinism diff reported it as an unexpected extra file. It has its own drift check.
+affects: Makefile
+
+[2026-09-29 03:46] M1.2-M1.4 verified: gofmt and go vet clean, go test -race green across all packages, make fixtures-check clean.
+why: Chunk rule. Corpus complete at 13 files plus merkle_vectors.json. Identity cross-checks added per PRD 12.4: truth intervals matched against DHCPACK/DHCPRELEASE lines, RADIUS sessions confined to their lease, no per-address overlap, resolution cases re-resolved from the intervals, manifest expected_user matched to the answer key, and both special cases (one user on two addresses, overlapping RADIUS/VPN evidence) asserted present.
+affects: tools/gen/internal/gen/identity_test.go, pkg/dataplane/vault/merkle/*_test.go
+
+[2026-09-29 04:20] Record codec pulled forward from M2 into M1, as its own package pkg/dataplane/vault/record.
+why: Two deviations, one reason. memvault needs to encode records to hash them, and if it invents its own encoding it is a lookalike rather than a reference implementation: components built against it would see different leaf hashes and roots than they get from the real vault. Sharing one codec makes memvault produce byte-identical proofs. A separate package rather than the PRD's vault/record.go because memvault must import it without importing the whole on-disk vault. The codec was M2's first sub-chunk anyway, so nothing is built twice.
+affects: pkg/dataplane/vault/record/, pkg/dataplane/vault/memvault/, M2 scope
+
+[2026-09-29 04:20] Decode rejects any body that would not re-encode to itself, and rejects unknown flag bits.
+why: Two spellings of one record would give that record two different Merkle leaves, so a canonical encoding is a correctness requirement, not tidiness. Rejecting unknown flag bits stops an older reader silently ignoring a flag a newer writer set. Both are asserted by FuzzRecordDecode, which ran 10.8M executions with no failures.
+affects: pkg/dataplane/vault/record/record.go
+
+[2026-09-29 04:20] ParseFramed checks the declared length against the cap before consulting the buffer.
+why: The length field comes from disk, and disk content is as hostile as the network in the tamper threat model. Checking first means a corrupt or crafted length can never drive an allocation.
+affects: pkg/dataplane/vault/record/record.go
+
+[2026-09-29 04:20] PutBatch is all-or-nothing: every record is encoded and validated before any is stored.
+why: The real vault writes a batch as one write and one fsync, so a half-applied batch is not a state it can be in; memvault must not be able to reach one either or code written against memvault will assume the wrong thing. A rejected batch also consumes no RecordIDs. Asserted by TestBatchIsAtomic.
+affects: pkg/dataplane/vault/memvault/memvault.go
+
+[2026-09-29 04:20] memvault.Verify returns OK with Sealed=false for a record in the active segment, rather than an error.
+why: The record is stored and intact; its segment simply has no root yet (D2). Making that an error would force every caller to special-case the normal path, since most records are verified before their segment seals. Callers distinguish on VerifyResult.Sealed.
+affects: pkg/dataplane/vault/memvault/memvault.go, vaulttest
+
+[2026-09-29 04:20] vaulttest.Factory carries SealEvery rather than probing for it.
+why: The suite has to know how many records force a seal to test proofs, ErrNotSealed and head advancement, and there is nothing in types.Vault that exposes it. An explicit field is honest; guessing by writing until a seal appears would make failures unreadable.
+affects: pkg/dataplane/vault/vaulttest/vaulttest.go
+
+[2026-09-29 04:20] Conformance suite mutation-tested against four deliberate breakages of memvault.
+why: A conformance suite that passes everything is worse than none, because it licenses the claim that two implementations agree. Checked: RecordIDs starting at 0 (24 subtest failures), chain hash without its domain prefix (8), proofs reporting leaf index 0 (4), one byte dropped from Raw on write (10). All four caught; memvault restored and re-verified afterwards.
+affects: pkg/dataplane/vault/vaulttest/, pkg/dataplane/vault/memvault/
+
+[2026-09-29 04:20] Makefile fuzz target points at ./pkg/dataplane/vault/record, not ./pkg/dataplane/vault.
+why: Follows the codec's move into its own package. Same target name, FuzzRecordDecode, as the PRD specifies.
+affects: Makefile
+
+[2026-09-29 04:22] M1 COMPLETE and verified: gofmt and go vet clean, go test -race green on all packages, 40 conformance subtests passing across two segment sizes, FuzzRecordDecode 30s / 10.8M execs clean, make fixtures-check byte-identical on both profiles.
+why: Chunk rule. Hand-offs now unblocked: testdata/ (13 files + manifest + identity_truth.json + merkle_vectors.json) for everyone, memvault + vaulttest for Parsing and Packaging, identity fixtures and truth for Contracts, merkle_vectors.json for Frontend. READMEs written for all six packages.
+affects: all owned packages

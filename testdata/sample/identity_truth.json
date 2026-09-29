@@ -1,0 +1,400 @@
+{
+  "generator": {
+    "version": "1.0.0",
+    "seed": 20260928,
+    "go": "go1.22",
+    "base_time": "2026-09-28T09:00:00+05:30",
+    "synthetic": true
+  },
+  "intervals": [
+    {
+      "ip": "10.1.4.7",
+      "user": "alice",
+      "host": "laptop-alice",
+      "mac": "aa:bb:cc:cd:79:68",
+      "from": "2026-09-28T09:00:00+05:30",
+      "to": "2026-09-28T10:00:47+05:30"
+    },
+    {
+      "ip": "10.1.4.7",
+      "user": "frank",
+      "host": "laptop-frank",
+      "mac": "aa:bb:cc:f8:71:84",
+      "from": "2026-09-28T10:06:05+05:30",
+      "to": null
+    },
+    {
+      "ip": "10.1.4.8",
+      "user": "bob",
+      "host": "laptop-bob",
+      "mac": "aa:bb:cc:b7:e4:cb",
+      "from": "2026-09-28T09:00:37+05:30",
+      "to": "2026-09-28T10:07:11+05:30"
+    },
+    {
+      "ip": "10.1.4.8",
+      "user": "grace",
+      "host": "laptop-grace",
+      "mac": "aa:bb:cc:f0:fa:f8",
+      "from": "2026-09-28T10:08:11+05:30",
+      "to": null
+    },
+    {
+      "ip": "10.1.4.9",
+      "user": "carol",
+      "host": "laptop-carol",
+      "mac": "aa:bb:cc:8a:06:2d",
+      "from": "2026-09-28T09:01:14+05:30",
+      "to": "2026-09-28T09:43:25+05:30"
+    },
+    {
+      "ip": "10.1.4.9",
+      "user": "heidi",
+      "host": "laptop-heidi",
+      "mac": "aa:bb:cc:6d:53:f9",
+      "from": "2026-09-28T10:13:25+05:30",
+      "to": null
+    },
+    {
+      "ip": "10.1.4.10",
+      "user": "dave",
+      "host": "laptop-dave",
+      "mac": "aa:bb:cc:4e:ad:42",
+      "from": "2026-09-28T09:01:51+05:30",
+      "to": "2026-09-28T09:53:59+05:30"
+    },
+    {
+      "ip": "10.1.4.10",
+      "user": "ivan",
+      "host": "laptop-ivan",
+      "mac": "aa:bb:cc:3a:87:b4",
+      "from": "2026-09-28T09:55:59+05:30",
+      "to": null
+    },
+    {
+      "ip": "10.1.4.11",
+      "user": "erin",
+      "host": "laptop-erin",
+      "mac": "aa:bb:cc:a3:08:bc",
+      "from": "2026-09-28T09:02:28+05:30",
+      "to": "2026-09-28T10:03:21+05:30"
+    },
+    {
+      "ip": "10.1.4.11",
+      "user": "judy",
+      "host": "laptop-judy",
+      "mac": "aa:bb:cc:7b:d8:82",
+      "from": "2026-09-28T10:15:21+05:30",
+      "to": null
+    },
+    {
+      "ip": "10.1.4.12",
+      "user": "alice",
+      "host": "phone-alice",
+      "mac": "aa:bb:cc:74:21:2e",
+      "from": "2026-09-28T09:03:05+05:30",
+      "to": "2026-09-28T10:01:00+05:30"
+    },
+    {
+      "ip": "10.1.4.12",
+      "user": "bob",
+      "host": "laptop-bob",
+      "mac": "aa:bb:cc:b7:e4:cb",
+      "from": "2026-09-28T10:01:45+05:30",
+      "to": null
+    },
+    {
+      "ip": "10.1.4.13",
+      "user": "grace",
+      "host": "laptop-grace",
+      "mac": "aa:bb:cc:f0:fa:f8",
+      "from": "2026-09-28T09:03:42+05:30",
+      "to": "2026-09-28T10:13:10+05:30"
+    },
+    {
+      "ip": "10.1.4.13",
+      "user": "bob",
+      "host": "laptop-bob",
+      "mac": "aa:bb:cc:b7:e4:cb",
+      "from": "2026-09-28T10:21:10+05:30",
+      "to": null
+    },
+    {
+      "ip": "10.1.4.14",
+      "user": "heidi",
+      "host": "laptop-heidi",
+      "mac": "aa:bb:cc:6d:53:f9",
+      "from": "2026-09-28T09:04:19+05:30",
+      "to": "2026-09-28T10:01:58+05:30"
+    },
+    {
+      "ip": "10.1.4.14",
+      "user": "carol",
+      "host": "laptop-carol",
+      "mac": "aa:bb:cc:8a:06:2d",
+      "from": "2026-09-28T10:21:58+05:30",
+      "to": null
+    },
+    {
+      "ip": "10.1.4.15",
+      "user": "ivan",
+      "host": "laptop-ivan",
+      "mac": "aa:bb:cc:3a:87:b4",
+      "from": "2026-09-28T09:04:56+05:30",
+      "to": "2026-09-28T09:49:38+05:30"
+    },
+    {
+      "ip": "10.1.4.15",
+      "user": "dave",
+      "host": "laptop-dave",
+      "mac": "aa:bb:cc:4e:ad:42",
+      "from": "2026-09-28T09:52:38+05:30",
+      "to": null
+    }
+  ],
+  "resolution_cases": [
+    {
+      "ip": "10.1.4.9",
+      "at": "2026-09-28T09:11:29+05:30",
+      "expected_user": "carol"
+    },
+    {
+      "ip": "10.1.4.10",
+      "at": "2026-09-28T09:14:36+05:30",
+      "expected_user": "dave"
+    },
+    {
+      "ip": "10.1.4.7",
+      "at": "2026-09-28T09:14:45+05:30",
+      "expected_user": "alice"
+    },
+    {
+      "ip": "10.1.4.15",
+      "at": "2026-09-28T09:15:26+05:30",
+      "expected_user": "ivan"
+    },
+    {
+      "ip": "10.1.4.12",
+      "at": "2026-09-28T09:17:05+05:30",
+      "expected_user": "alice"
+    },
+    {
+      "ip": "10.1.4.8",
+      "at": "2026-09-28T09:17:07+05:30",
+      "expected_user": "bob"
+    },
+    {
+      "ip": "10.1.4.11",
+      "at": "2026-09-28T09:17:13+05:30",
+      "expected_user": "erin"
+    },
+    {
+      "ip": "10.1.4.14",
+      "at": "2026-09-28T09:18:19+05:30",
+      "expected_user": "heidi"
+    },
+    {
+      "ip": "10.1.4.13",
+      "at": "2026-09-28T09:20:42+05:30",
+      "expected_user": "grace"
+    },
+    {
+      "ip": "10.1.4.9",
+      "at": "2026-09-28T09:21:44+05:30",
+      "expected_user": "carol"
+    },
+    {
+      "ip": "10.1.4.15",
+      "at": "2026-09-28T09:25:56+05:30",
+      "expected_user": "ivan"
+    },
+    {
+      "ip": "10.1.4.10",
+      "at": "2026-09-28T09:27:21+05:30",
+      "expected_user": "dave"
+    },
+    {
+      "ip": "10.1.4.7",
+      "at": "2026-09-28T09:29:30+05:30",
+      "expected_user": "alice"
+    },
+    {
+      "ip": "10.1.4.12",
+      "at": "2026-09-28T09:31:05+05:30",
+      "expected_user": "alice"
+    },
+    {
+      "ip": "10.1.4.11",
+      "at": "2026-09-28T09:31:58+05:30",
+      "expected_user": "erin"
+    },
+    {
+      "ip": "10.1.4.14",
+      "at": "2026-09-28T09:32:19+05:30",
+      "expected_user": "heidi"
+    },
+    {
+      "ip": "10.1.4.8",
+      "at": "2026-09-28T09:33:37+05:30",
+      "expected_user": "bob"
+    },
+    {
+      "ip": "10.1.4.13",
+      "at": "2026-09-28T09:37:42+05:30",
+      "expected_user": "grace"
+    },
+    {
+      "ip": "10.1.4.15",
+      "at": "2026-09-28T09:51:08+05:30",
+      "expected_user": null
+    },
+    {
+      "ip": "10.1.4.10",
+      "at": "2026-09-28T09:54:59+05:30",
+      "expected_user": null
+    },
+    {
+      "ip": "10.1.4.9",
+      "at": "2026-09-28T09:58:25+05:30",
+      "expected_user": null
+    },
+    {
+      "ip": "10.1.4.15",
+      "at": "2026-09-28T09:59:38+05:30",
+      "expected_user": "dave"
+    },
+    {
+      "ip": "10.1.4.12",
+      "at": "2026-09-28T10:01:22+05:30",
+      "expected_user": null
+    },
+    {
+      "ip": "10.1.4.10",
+      "at": "2026-09-28T10:02:59+05:30",
+      "expected_user": "ivan"
+    },
+    {
+      "ip": "10.1.4.7",
+      "at": "2026-09-28T10:03:26+05:30",
+      "expected_user": null
+    },
+    {
+      "ip": "10.1.4.8",
+      "at": "2026-09-28T10:07:41+05:30",
+      "expected_user": null
+    },
+    {
+      "ip": "10.1.4.12",
+      "at": "2026-09-28T10:08:45+05:30",
+      "expected_user": "bob"
+    },
+    {
+      "ip": "10.1.4.11",
+      "at": "2026-09-28T10:09:21+05:30",
+      "expected_user": null
+    },
+    {
+      "ip": "10.1.4.14",
+      "at": "2026-09-28T10:11:58+05:30",
+      "expected_user": null
+    },
+    {
+      "ip": "10.1.4.7",
+      "at": "2026-09-28T10:13:05+05:30",
+      "expected_user": "frank"
+    },
+    {
+      "ip": "10.1.4.8",
+      "at": "2026-09-28T10:15:11+05:30",
+      "expected_user": "grace"
+    },
+    {
+      "ip": "10.1.4.13",
+      "at": "2026-09-28T10:17:10+05:30",
+      "expected_user": null
+    },
+    {
+      "ip": "10.1.4.15",
+      "at": "2026-09-28T10:17:38+05:30",
+      "expected_user": "dave"
+    },
+    {
+      "ip": "10.1.4.9",
+      "at": "2026-09-28T10:20:25+05:30",
+      "expected_user": "heidi"
+    },
+    {
+      "ip": "10.1.4.10",
+      "at": "2026-09-28T10:20:59+05:30",
+      "expected_user": "ivan"
+    },
+    {
+      "ip": "10.1.4.11",
+      "at": "2026-09-28T10:22:21+05:30",
+      "expected_user": "judy"
+    },
+    {
+      "ip": "10.1.4.12",
+      "at": "2026-09-28T10:26:45+05:30",
+      "expected_user": "bob"
+    },
+    {
+      "ip": "10.1.4.13",
+      "at": "2026-09-28T10:28:10+05:30",
+      "expected_user": "bob"
+    },
+    {
+      "ip": "10.1.4.14",
+      "at": "2026-09-28T10:28:58+05:30",
+      "expected_user": "carol"
+    },
+    {
+      "ip": "10.1.4.7",
+      "at": "2026-09-28T10:31:05+05:30",
+      "expected_user": "frank"
+    },
+    {
+      "ip": "10.1.4.8",
+      "at": "2026-09-28T10:33:11+05:30",
+      "expected_user": "grace"
+    },
+    {
+      "ip": "10.1.4.9",
+      "at": "2026-09-28T10:38:25+05:30",
+      "expected_user": "heidi"
+    },
+    {
+      "ip": "10.1.4.11",
+      "at": "2026-09-28T10:40:21+05:30",
+      "expected_user": "judy"
+    },
+    {
+      "ip": "10.1.4.13",
+      "at": "2026-09-28T10:46:10+05:30",
+      "expected_user": "bob"
+    },
+    {
+      "ip": "10.1.4.14",
+      "at": "2026-09-28T10:46:58+05:30",
+      "expected_user": "carol"
+    }
+  ],
+  "notes": {
+    "synthetic": true,
+    "intervals_half_open": true,
+    "shortest_gap_seconds": 45,
+    "same_user_two_ips": [
+      "alice",
+      "bob",
+      "grace",
+      "carol",
+      "heidi",
+      "dave",
+      "ivan"
+    ],
+    "overlapping_radius_vpn_evidence": [
+      "10.1.4.9"
+    ],
+    "description": "Every address is leased twice with an unleased gap between tenancies. A resolver that ignores time answers the second tenancy with the first tenant; one that pads or rounds its intervals invents a user for traffic inside the gap. The firewall records in identity_firewall.log carry only an IP, and the manifest's expected_user on each is the same answer as resolution_cases here."
+  }
+}
