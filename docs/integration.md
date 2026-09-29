@@ -4,6 +4,11 @@ Run in order. A step passes only when its gate command exits 0 and prints what i
 owning workstream with the failing command and the expected output, and the checklist stops there: later steps depend on
 earlier ones. Status column is as of this writing; "not yet" means the owning workstream has not delivered.
 
+**The gates for steps 1, 2, 4 and 5 are executable**: `make integrate STEP=1` (or `2`, `4`, `5`, `all`) runs them against
+the data plane on `--admin` (default `127.0.0.1:9000`) and exits 0 only if every gate passes. Every response is also
+validated against `admin.openapi.yaml`. Step 3 (sinks) is Packaging's and step 6 is a walk-through. The checks live in
+`contracts/integration/`; each gate was proven able to fail (see its tests).
+
 Prerequisite for every step: `make check` green on `master`, and `make contract-test` green.
 
 | # | Link | Owner of a failure | Status |

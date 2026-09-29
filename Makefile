@@ -18,6 +18,9 @@ contract-test: ## Goldens vs schema, OpenAPI integrity, DSL examples vs fixtures
 	diff -r contracts/golden /tmp/ulpf-golden
 	@if [ -x intel/.venv/bin/pytest ]; then cd intel && .venv/bin/pytest -q tests/test_contract.py; else echo "SKIPPED: python conformance (create intel/.venv: see intel/README.md)"; fi
 
+integrate: ## Run a linking step against a running data plane: make integrate STEP=1 (see docs/integration.md)
+	go run ./cmd/integrate --step $(or $(STEP),all) $(ARGS)
+
 intel-test: ## Run the sidecar's pytest suite (needs intel/.venv, see intel/README.md)
 	cd intel && .venv/bin/pytest -q
 
@@ -80,4 +83,4 @@ bench: ## Run the benchmarks. LINUX ONLY for reportable numbers - see docs/vault
 	@echo "acknowledgement meant on-disk; 0 means it did not."
 	go test -run '^$$' -bench . -benchmem ./pkg/dataplane/vault/ ./pkg/dataplane/ingest/...
 
-.PHONY: help contract-golden contract-test intel-test check fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench
+.PHONY: help contract-golden contract-test intel-test integrate check fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench
