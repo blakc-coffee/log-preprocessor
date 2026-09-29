@@ -1,0 +1,29 @@
+services:
+  ulpf:
+    build:
+      context: .
+      target: ulpf
+    image: ulpf:dev
+    command: ["all", "--config", "/etc/ulpf/config.yaml"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    volumes:
+      - ulpf-data:/data
+      - ./configs/demo.yaml:/etc/ulpf/config.yaml:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:9000:9000"
+    networks: [ulpf_internal]
+
+volumes:
+  ulpf-data: {}
+
+networks:
+  ulpf_internal:
+    driver: bridge
+    internal: true
+
