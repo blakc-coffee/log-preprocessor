@@ -605,3 +605,39 @@ NEXT ACTION
          It is advisory only and must never affect Raw or storage. Test it
          against every fixture with an expected hint per file.
 ================================================================================
+
+[2026-09-29 10:05] Sniff hint computed AFTER the vault write, never before.
+why: It is a heuristic run on attacker-controlled input. Computing it before storage would mean a crafted log line could influence how that line was kept, which is the one thing the byte-exactness claim cannot allow. It is attached to the RawEvent on the way out. TestHintsReachDownstream asserts both halves: every record of a vendor's file sniffs the same way, and the stored bytes equal the source bytes regardless of what the sniffer decided.
+affects: pkg/dataplane/ingest/ingest.go, pkg/dataplane/ingest/sniff/
+
+[2026-09-29 10:05] Sniffer is hand-rolled byte scanning, not regexp.
+why: PRD 5.3's rules are expressible as regexes, and Go's RE2 is linear-time so it would be safe. But this runs on every record on the hot path, and the rules reduce to one pass over at most 256 bytes with no allocation. Measured: 132 ns/op, 0 allocs, ~1 GB/s on this machine. A regex-based version would be paid for by every event whether or not anything used the answer.
+affects: pkg/dataplane/ingest/sniff/sniff.go
+
+[2026-09-29 10:05] A syslog-framed CEF or LEEF message is classified CEF or LEEF, not syslog.
+why: PRD 5.3 rule 1 says so, and the reason is that the transport is incidental - the payload is the part a parser has to understand. Checked within 200 bytes of the PRI header.
+affects: pkg/dataplane/ingest/sniff/sniff.go
+
+[2026-09-29 10:05] Expected hint per fixture is asserted, and three fixtures are deliberately "unknown".
+why: multiline.log (ISO-dated stack traces), dhcp.log (ISC dhcpd prose) and openvpn.log have no machine-readable shape at a glance. Returning unknown is the honest answer; inventing a classification for them would mislead the parser registry into trying an extractor that cannot work. All 7810 fixture lines were also checked to return a valid hint and never panic.
+affects: pkg/dataplane/ingest/sniff/sniff_test.go
+
+[2026-09-29 10:10] client_ca means RequireAndVerifyClientCert, never VerifyClientCertIfGiven.
+why: Optional client authentication is the worst of both worlds - it reads as mutual TLS in the configuration and authenticates nobody. If an operator sets client_ca they mean it.
+affects: pkg/dataplane/ingest/source/tls.go
+
+[2026-09-29 10:10] A client_ca file containing no parseable PEM is a startup error.
+why: Go's CertPool silently accepts an empty pool, and the listener would then reject every client. That surfaces as a network problem being chased for an afternoon rather than as the configuration error it is.
+affects: pkg/dataplane/ingest/source/tls.go
+
+[2026-09-29 10:10] FINDING: mutual TLS cannot be tested by checking whether the connection opened.
+why: Under TLS 1.3 the client completes its half of the handshake before the server has validated the client certificate, so a client with NO certificate sees Dial, Handshake and its first Write all succeed; the rejection arrives as an alert on a later read. Verified against a live daemon: a Go client with no certificate reported "ACCEPTED (TLS 1.3)" and its record never reached the vault, while the authenticated client's did. The security property holds - but a naive test would conclude mutual TLS is broken when it works, or worse that it works when it does not. The unit tests write AND read; documented at the top of TLSConfig so the next person does not have to rediscover it.
+affects: pkg/dataplane/ingest/source/tls.go, tls_test.go
+
+[2026-09-29 10:10] `ingestd certs` generates ECDSA P-256, not RSA.
+why: Far faster handshakes, universally supported by anything speaking TLS 1.2+, and small enough that the PEM files are readable. Serials are random 128-bit rather than sequential: sequential serials leak how many certificates have been issued and collide across independent runs. Private keys are written 0600 and the directory 0700. A generated README sits next to the files saying they are development-only, rather than that warning living somewhere an operator has to go looking.
+affects: cmd/ingestd/certs.go
+
+[2026-09-29 10:12] M4.1 and M4.2 verified: make check ALL GREEN.
+why: Chunk rule. Sniff: 30 rule cases, every fixture's expected hint, all 7810 fixture lines valid and panic-free, input-not-modified, window bound, 132 ns/op. TLS: records carried with OriginTLS, untrusted server refused, TLS 1.1 refused, mutual TLS accepting a valid client and refusing both no-certificate and wrong-CA clients, config validation. Verified end to end against a live daemon with certificates from `ingestd certs`.
+affects: pkg/dataplane/ingest/sniff/, pkg/dataplane/ingest/source/tls.go, cmd/ingestd/certs.go

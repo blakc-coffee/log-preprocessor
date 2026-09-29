@@ -44,6 +44,18 @@ sources:
   - {id: syslog-tcp, type: tcp, listen: "127.0.0.1:5514", framing: auto}
   - {id: http, type: http, listen: "127.0.0.1:8080", dynamic_sources: true}
 
+  # TLS syslog. Generate the certificates first:
+  #     ./bin/ingestd certs --out ./certs
+  # client_ca REQUIRES and verifies client certificates; leave it out for
+  # server-authenticated TLS only.
+  # - id: syslog-tls
+  #   type: tls
+  #   listen: "127.0.0.1:6514"
+  #   framing: auto
+  #   cert: ./certs/server.pem
+  #   key: ./certs/server.key
+  #   client_ca: ./certs/ca.pem
+
   # One-shot fixture readers, for `ingestd --once`.
   - id: asa-file
     type: file

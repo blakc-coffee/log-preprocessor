@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/sniff"
 	types "github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/testutil/types"
 )
 
@@ -337,7 +338,10 @@ func (s *stream) write(ctx context.Context, batch []types.RawRecord) error {
 
 	// Durable. Only now does anything go downstream.
 	for i, r := range batch {
-		ev := types.RawEvent{RawRecord: r, Receipt: receipts[i], Hint: types.HintUnknown}
+		// The hint is computed here, after storage, which is the point: it is
+		// advisory, so it must be impossible for it to influence what was
+		// stored. A parser may ignore it and must be correct when it is wrong.
+		ev := types.RawEvent{RawRecord: r, Receipt: receipts[i], Hint: sniff.Detect(r.Raw)}
 		select {
 		case s.p.out <- ev:
 		case <-ctx.Done():

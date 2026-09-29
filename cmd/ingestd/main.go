@@ -49,6 +49,12 @@ const (
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	// `ingestd certs` generates development certificates and exits. It takes
+	// no config, so it is dispatched before any of the daemon's flags.
+	if len(args) > 0 && args[0] == "certs" {
+		return generateCerts(args[1:], stdout, stderr)
+	}
+
 	fs := flag.NewFlagSet("ingestd", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	configPath := fs.String("config", "", "path to the configuration file")
@@ -275,8 +281,12 @@ func buildSources(cfg *ingest.FileConfig, healthy func() bool, log *slog.Logger)
 				Log:           log,
 			}
 			if s.Type == "tls" {
-				closeAll()
-				return nil, nil, fmt.Errorf("source %s: tls listeners arrive in M4", s.ID)
+				tlsCfg, err := source.TLSConfig(s.Cert, s.Key, s.ClientCA)
+				if err != nil {
+					closeAll()
+					return nil, nil, fmt.Errorf("source %s: %w", s.ID, err)
+				}
+				tc.TLS = tlsCfg
 			}
 			t, err := source.NewTCP(tc)
 			if err != nil {

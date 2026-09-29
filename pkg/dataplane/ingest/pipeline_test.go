@@ -96,8 +96,9 @@ func TestSubmitIsDurableBeforeItIsVisible(t *testing.T) {
 		if string(ev.Raw) != fmt.Sprintf("record %d", i) {
 			t.Errorf("event %d is %q", i, ev.Raw)
 		}
+		// "record N" is plain text: the honest hint is unknown.
 		if ev.Hint != types.HintUnknown {
-			t.Errorf("event %d carries hint %q; sniffing is M4, so it must be unknown", i, ev.Hint)
+			t.Errorf("event %d carries hint %q, want unknown for plain text", i, ev.Hint)
 		}
 	}
 }

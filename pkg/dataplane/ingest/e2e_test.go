@@ -384,3 +384,70 @@ func (r *recordingVault) Head(ctx context.Context) ([32]byte, types.RecordID, er
 	return r.inner.Head(ctx)
 }
 func (r *recordingVault) Close() error { return nil } // the test closes inner
+
+// TestHintsReachDownstream proves the sniff hint is attached on the way out,
+// and that it never touches what was stored.
+//
+// The second half matters more than the first. The hint is a heuristic on
+// attacker-controlled input; if it could influence storage, a crafted log line
+// could change how it was kept. It is computed after PutBatch returns, and
+// this asserts the stored bytes are identical to the source regardless of what
+// the sniffer decided.
+func TestHintsReachDownstream(t *testing.T) {
+	m := loadManifest(t)
+
+	want := map[string]types.FormatHint{
+		"cisco_asa.log":         types.HintSyslog3164,
+		"fortinet.log":          types.HintKV,
+		"suricata.json":         types.HintJSON,
+		"palo_alto_unknown.log": types.HintCSV,
+	}
+
+	for name, hint := range want {
+		t.Run(name, func(t *testing.T) {
+			v, err := vault.Open(vault.Options{
+				Dir: t.TempDir(), Sync: vault.SyncAlways,
+				SegmentMaxRecords: 500, MaxFrameBytes: 2 << 20,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer v.Close()
+
+			events := runPipeline(t, v, name, m)
+			if len(events) == 0 {
+				t.Fatal("no events")
+			}
+
+			mismatched := 0
+			for _, ev := range events {
+				if ev.Hint != hint {
+					mismatched++
+				}
+			}
+			// Every line of a vendor's own log file should agree. A single
+			// disagreement means a record of that vendor's format does not
+			// look like the rest, which is worth knowing.
+			if mismatched != 0 {
+				t.Errorf("%d of %d records did not sniff as %q", mismatched, len(events), hint)
+			}
+
+			// The stored bytes must be exactly the source's, whatever the
+			// sniffer thought.
+			body, err := os.ReadFile(filepath.Join(testdata, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, ev := range events {
+				got, _, err := v.Get(context.Background(), ev.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				off := int(ev.Origin.Offset)
+				if !bytes.Equal(got.Raw, body[off:off+len(got.Raw)]) {
+					t.Fatalf("record %d differs from the source file", ev.ID)
+				}
+			}
+		})
+	}
+}
