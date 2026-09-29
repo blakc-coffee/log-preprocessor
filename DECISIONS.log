@@ -711,3 +711,17 @@ affects: scripts/send_samples.sh
 why: Chunk rule. Sniff hint (advisory, computed after storage, 132 ns/op), TLS listeners with mutual TLS and `ingestd certs`, peer map, the multiline timeout, the full Prometheus metric set from PRD section 13 on a loopback /metrics, and scripts/send_samples.sh. The script was run against a live daemon and passed every check: all five ingest paths, verify --deep exit 0, three independent SHA-256s agreeing, a proof verifying with no vault present, and vault_failed at 0.
 Remaining: M5 - compaction (.zst/.meta/.hix), the 200-cycle kill -9 suite, benchmarks, docs/vault-format.md. The kill -9 suite is what "0 acknowledged records lost" is measured on and still does not exist.
 affects: pkg/dataplane/ingest/, pkg/dataplane/vault/, cmd/ingestd/, scripts/
+
+[2026-09-29 11:45] 200-cycle kill -9 crash suite implemented. RESULT: 4417 acknowledged records, 0 lost.
+why: This is the test behind the project's central claim, and it did not exist until now. A child process writes with sync=always and appends each acknowledged record to a log; the parent SIGKILLs it at a random moment between 15 and 75 ms, reopens the vault, and requires every logged record to be present byte-exact with a verifying chain. The vault directory is reused across all 200 cycles, so recovery runs against a real accumulated history - 4417 records, roughly 110 seals - rather than a fresh directory each time. It also asserts the vault grows every cycle, or a suite where recovery quietly discarded everything would pass vacuously. Runs in 18 seconds.
+affects: pkg/dataplane/vault/crash_test.go
+
+[2026-09-29 11:50] FINDING: the crash suite does NOT prove fsync works. Established by mutation, not assumed.
+why: Two deliberate breakages were run against it. Reversing the seal order - appending the ledger line before fsyncing the footer - fails within 60 cycles with "segment 37 footer disagrees with its chain.log line", so the suite genuinely exercises the seal windows. But switching the child to sync=none, where an acknowledgement no longer means the record is on disk at all, PASSES.
+That is not a gap in the test; it is the boundary of what killing a process can show. SIGKILL does not discard the page cache, so a record written with no fsync at all is still readable by the next process to open the file. The suite proves the recovery logic is correct - torn tails, interrupted seals, missing ledger lines, sequence contiguity - and it does not prove fsync put anything on a platter. Proving that requires cutting power, which no test can do.
+This is recorded prominently because it is exactly the kind of thing a submission overclaims. "0 acknowledged records lost across 200 kill -9 cycles" is true and measured. "Durable" without qualification is not what it shows.
+affects: pkg/dataplane/vault/crash_test.go, README.md, docs/vault-format.md (M5), the submission's claims section
+
+[2026-09-29 11:50] The crash child does not fsync its receipt log.
+why: SIGKILL does not discard the page cache, so the parent sees every line the child wrote without it. Fsyncing would double the I/O of the whole suite and prove nothing extra - and the one failure mode it would guard against, power loss, is explicitly not claimed anyway.
+affects: pkg/dataplane/vault/crash_test.go

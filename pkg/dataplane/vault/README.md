@@ -44,9 +44,14 @@ that claims a segment is sealed can disagree with the file; a footer cannot.
 
 ## What is NOT claimed
 
-- **Power-loss durability.** The crash tests kill the process; they do not cut
-  power and say nothing about the disk's own write cache. We rely on fsync
-  being honest and state that plainly.
+- **Power-loss durability.** The crash suite kills the process; it does not cut
+  power. This is not a hedge — it was measured. Switching the crash child to
+  `sync=none`, where an acknowledgement means nothing is on disk at all, still
+  **passes** the suite, because SIGKILL does not discard the page cache. The
+  200-cycle suite proves the *recovery logic* is correct (torn tails,
+  interrupted seals, missing ledger lines, sequence continuity); it does not
+  prove fsync put anything on a platter. Reversing the seal order, by contrast,
+  fails it within 60 cycles — so the suite does exercise what it claims to.
 - **Tamper-proof storage.** This is tamper-*evident*. Someone with write access
   to the whole directory can rewrite it consistently. Only a chain head held
   somewhere else defeats that — see `Head`.
