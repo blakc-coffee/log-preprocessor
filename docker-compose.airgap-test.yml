@@ -1,0 +1,6 @@
+services:
+  ulpf:
+    command: ["selftest", "--pipeline", "--egress", "--ui"]
+    network_mode: none
+    ports: []
+
