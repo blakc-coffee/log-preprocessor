@@ -1,0 +1,62 @@
+# CODEOWNERS for Universal Log Pre-processing Framework (ULPF)
+# Defined per PRD_00_index_and_roster.md & PRD_CONTRACTS_intel_identity.md
+
+# Antigravity Pro + Project Owner (Frozen Contracts, Spec, Governance & Submission)
+pkg/types/                              @your-username
+contracts/                              @your-username
+docs/spec.md                            @your-username
+presentation/                           @your-username
+intel/                                  @your-username
+PRD_00_index_and_roster.md              @your-username
+PRD_CONTRACTS_intel_identity.md         @your-username
+.github/                                @your-username
+
+# Codex #1 (Ingestion, Framing, Hash-Chained Vault & Fixtures)
+tools/gen/                              @codex-1
+testdata/                               @codex-1
+pkg/dataplane/ingest/                   @codex-1
+pkg/dataplane/vault/                    @codex-1
+cmd/ingestd/                            @codex-1
+cmd/vaultctl/                           @codex-1
+configs/ingest.dev.yaml                 @codex-1
+docs/vault-format.md                    @codex-1
+PRD_INGESTION_vault_MASTER.md           @codex-1
+PRD_INGESTION_vault_SCOPED.md           @codex-1
+
+# Claude Code #1 (Data Plane Engine, Regexp Parsers, Normalizer & Admin API)
+pkg/dataplane/parsers/                  @claude-1
+pkg/dataplane/normalizer/               @claude-1
+pkg/dataplane/quarantine/               @claude-1
+pkg/dataplane/replay/                   @claude-1
+pkg/dataplane/registry/                 @claude-1
+pkg/dataplane/enrich/                   @claude-1
+pkg/dataplane/store/                    @claude-1
+pkg/dataplane/admin/                    @claude-1
+pkg/dataplane/app/                      @claude-1
+pkg/dataplane/telemetry/                @claude-1
+parsers/                                @claude-1
+config/parsers/                         @claude-1
+cmd/dataplane/                          @claude-1
+configs/dataplane.dev.yaml              @claude-1
+PRD_PARSING_normalization_core.md       @claude-1
+
+# Claude Code #2 (Control Plane, API Proxy, Approval Registry & React UI)
+frontend/                               @claude-2
+pkg/control/                            @claude-2
+cmd/control/                            @claude-2
+PRD_FRONTEND_control_plane.md           @claude-2
+
+# Codex #2 (Export Sinks, Benchmarks, Integration Tests, Docker & Air-Gap)
+pkg/sinks/                              @codex-2
+tests/                                  @codex-2
+cmd/bench/                              @codex-2
+cmd/ulpf/                               @codex-2
+benchmarks/results/                     @codex-2
+Dockerfile                              @codex-2
+docker-compose*.yml                     @codex-2
+scripts/verify_airgap.sh                @codex-2
+scripts/demo*.sh                        @codex-2
+configs/airgap-test.yaml                @codex-2
+configs/demo.yaml                       @codex-2
+docs/design-tokens.md                   @codex-2
+PRD_PACKAGING_sinks_qa_docker.md        @codex-2
