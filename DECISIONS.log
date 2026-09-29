@@ -569,3 +569,39 @@ affects: pkg/dataplane/ingest/config.go
 why: Chunk rule. All six sub-chunks done: frame decoders, file source (once and tail), TCP/UDP/HTTP, Pipeline, config + ingestd, and the e2e byte-exact round-trip gate (7598 records across 13 fixtures). Tail covers appends, partial lines held until terminated, rename-and-create rotation, copy-truncate truncation, from: end, waiting for a file to appear, checkpoint resume, at-least-once ordering, stale and corrupt checkpoints, and multiple files concurrently.
 Still outstanding for M4: TLS listeners (currently refused explicitly), the format sniff hint (every RawEvent carries HintUnknown), peer-CIDR to source_id mapping, the multiline timeout being driven by the source, and the Prometheus registry. M5: compaction, the 200-cycle kill -9 suite, benchmarks, docs/vault-format.md.
 affects: pkg/dataplane/ingest/, cmd/ingestd/
+
+================================================================================
+CHECKPOINT [2026-09-29 09:50] — state of the world after M3
+--------------------------------------------------------------------------------
+DONE     M0 fixtures scaffold · M1 corpus + memvault + merkle · M2 on-disk vault
+         + vaultctl · M3 ingest (framers, file once+tail, TCP, UDP, HTTP,
+         Pipeline, config, ingestd, e2e round-trip gate)
+NOT DONE M4 sniff hint, TLS, peer map, multiline timeout, Prometheus,
+         scripts/send_samples.sh
+         M5 compaction, 200-cycle kill -9 suite, benchmarks, docs/vault-format.md
+
+GATE     `make check` -> ALL GREEN. 2812 passing subtests, race clean at
+         -count=2. One dependency: gopkg.in/yaml.v3.
+
+PROVEN   - 7598 records across all 13 fixtures round-trip byte-exact against the
+           manifest (bytes, SHA-256, terminator, fragment count, byte offset),
+           then VerifyChain(deep). This is PS requirement (a) with evidence.
+         - Tamper matrix: 10 rows, 0 undetected.
+         - Torn tails cut at every byte offset; exactly the whole records survive.
+         - memvault and the on-disk vault issue interchangeable proofs.
+         - A live ingestd exercised on all five source paths, SIGTERM exit 0,
+           resulting vault verifies deep and a proof verifies standalone.
+
+NOT PROVEN - Power-loss durability. Crash tests kill the process only.
+         - "0 acknowledged records lost" is measured on the 200-cycle kill -9
+           suite, which is M5 and does not exist. Current crash coverage is
+           directory snapshots: same on-disk states, NOT the same claim.
+         - No throughput number measured, and none can be from this machine.
+         - Tamper-EVIDENT, not tamper-proof.
+
+NEXT ACTION
+         M4.1: the format sniff hint in pkg/dataplane/ingest/sniff. Every
+         RawEvent carries HintUnknown today. PRD 5.3 gives the ordered rules.
+         It is advisory only and must never affect Raw or storage. Test it
+         against every fixture with an expected hint per file.
+================================================================================
