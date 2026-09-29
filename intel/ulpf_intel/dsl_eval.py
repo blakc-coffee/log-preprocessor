@@ -38,6 +38,7 @@ class Result:
     mapped_bytes: int
     unmapped_bytes: int
     raw_len: int
+    flags: list[str] = field(default_factory=list)
 
     @property
     def coverage(self) -> float:
@@ -58,7 +59,7 @@ def _tz(s: str) -> timezone:
     return timezone(-d if m and m[1] == "-" else d)
 
 
-def _time(v: str, layout: str, tz: timezone, year: int = 2026) -> int:
+def _time(v: str, layout: str, tz: timezone, received_at: datetime | None = None) -> int:
     if layout in _EPOCH:
         return int(int(v) * _EPOCH[layout])
     if layout == "rfc3339":
@@ -67,7 +68,12 @@ def _time(v: str, layout: str, tz: timezone, year: int = 2026) -> int:
     if not py:
         raise ValueError(f"unsupported layout {layout}")
     if "%Y" not in py:
-        d = datetime.strptime(f"{year} {v}", "%Y " + py)
+        # a layout with no year takes it from received_at; a month more than one ahead of the receipt month
+        # means the previous year (a Dec 31 line received on Jan 2)
+        ref = received_at or datetime(2026, 6, 1, tzinfo=timezone.utc)
+        d = datetime.strptime(f"2000 {v}", "%Y " + py)          # 2000 is a leap year: "Feb 29" must parse
+        year = ref.year - 1 if d.month - ref.month > 1 else ref.year
+        d = d.replace(year=year)
     else:
         d = datetime.strptime(v, py)
     if d.tzinfo is None:
@@ -75,7 +81,7 @@ def _time(v: str, layout: str, tz: timezone, year: int = 2026) -> int:
     return int(d.timestamp() * 1000)
 
 
-def _convert(entry: dict, raw: str, tz: timezone) -> Any:
+def _convert(entry: dict, raw: str, tz: timezone, received_at: datetime | None = None) -> Any:
     t = entry.get("type", "string")
     v = raw
     if t == "ip":
@@ -90,7 +96,7 @@ def _convert(entry: dict, raw: str, tz: timezone) -> Any:
     if t == "float":
         return float(v)
     if t == "time":
-        return _time(v, entry["layout"], tz)
+        return _time(v, entry["layout"], tz, received_at)
     if t == "enum":
         m = {str(k): x for k, x in entry["enum"].items()}
         return m.get(v, entry.get("default"))  # exact match, as the spec says
@@ -117,7 +123,7 @@ def flat(d: dict, prefix: str = "") -> dict[str, Any]:
 _KV = re.compile(r'(?P<k>[A-Za-z_][\w.\-]*)=(?P<v>"[^"]*"|\S*)')
 
 
-def _values(ext: dict, raw: str) -> dict[str, str] | None:
+def _values(ext: dict, raw: str) -> tuple[dict[str, str], list[dict]] | None:
     """Named values of one extraction, or None if the extractor does not apply."""
     kind = ext["kind"]
     if kind == "csv":
@@ -131,13 +137,18 @@ def _values(ext: dict, raw: str) -> dict[str, str] | None:
         if w and (w["column"] >= len(row) or (row[w["column"]] != str(w["equals"]) if "equals" in w else row[w["column"]] not in map(str, w["in"]))):
             return None
         names = ext.get("columns", [])
-        return {(names[i] if i < len(names) and names[i] != "_" else f"col_{i}"): v for i, v in enumerate(row)}
+        return {(names[i] if i < len(names) and names[i] != "_" else f"col_{i}"): v for i, v in enumerate(row)}, []
     if kind == "kv":
         out: dict[str, str] = {}
+        dupes: list[dict] = []
         for m in _KV.finditer(raw):
             v = m["v"]
-            out.setdefault(m["k"], v[1:-1] if v.startswith('"') and v.endswith('"') and len(v) >= 2 else v)
-        return out or None
+            v = v[1:-1] if v.startswith('"') and v.endswith('"') and len(v) >= 2 else v
+            if m["k"] in out:
+                dupes.append({"key": m["k"], "value": v})     # the first occurrence maps, later ones are kept aside
+            else:
+                out[m["k"]] = v
+        return (out, dupes) if out else None
     if kind == "json":
         try:
             doc = json.loads(raw)
@@ -156,25 +167,27 @@ def _values(ext: dict, raw: str) -> dict[str, str] | None:
         w = ext.get("when")
         if w and (out.get(w["path"]) != str(w["equals"]) if "equals" in w else out.get(w["path"]) not in map(str, w["in"])):
             return None
-        return out
+        return out, []
     if kind == "regex":
         m = re.match(ext["pattern"], raw)
-        return {k: v for k, v in m.groupdict().items() if v} if m else None
+        return ({k: v for k, v in m.groupdict().items() if v}, []) if m else None
     raise ValueError(f"kind {kind} not supported by the reference evaluator")
 
 
-def extract(parser: dict, raw: str) -> Result | None:
+def extract(parser: dict, raw: str, received_at: datetime | None = None) -> Result | None:
     """First extractor to succeed wins. None means the record would be quarantined."""
     sig = (parser.get("match") or {}).get("signature")
     if sig and not re.search(sig, raw[:512]):
         return None
     tz = _tz(parser.get("timezone", "+00:00"))
     for ext in parser["extractors"]:
-        vals = _values(ext, raw)
-        if vals is None:
+        got = _values(ext, raw)
+        if got is None:
             continue
+        vals, dupes = got
         ocsf: dict[str, Any] = {}
         used: set[str] = set()
+        flags: list[str] = []
         try:
             for m in ext.get("map", []):
                 if "const" in m:
@@ -186,10 +199,49 @@ def extract(parser: dict, raw: str) -> Result | None:
                 used.update(srcs)
                 if any(vals[s] == "" for s in srcs):
                     continue  # empty means absent (parser_dsl.md section 3)
-                _set(ocsf, m["to"], _convert(m, " ".join(vals[s] for s in srcs), tz))
+                try:
+                    _set(ocsf, m["to"], _convert(m, " ".join(vals[s] for s in srcs), tz, received_at))
+                except ValueError:
+                    if m.get("type") != "time":
+                        raise
+                    if "time_unparseable" not in flags:      # the event is kept: time stays unset and is flagged
+                        flags.append("time_unparseable")
         except (KeyError, ValueError, TypeError):
             continue
-        um = {k: v for k, v in vals.items() if k not in used and v != ""}
-        return Result(ext["id"], {**{k: v for k, v in (parser.get("ocsf_defaults") or {}).items()}, **ocsf}, um,
-                      sum(len(vals[k]) for k in used), sum(len(str(v)) for v in um.values()), len(raw))
+        um: dict[str, Any] = {k: v for k, v in vals.items() if k not in used and v != ""}
+        if dupes:
+            um["_dupes"] = dupes
+            flags.append("duplicate_key")
+        return Result(ext["id"], {k: v for k, v in (parser.get("ocsf_defaults") or {}).items()} | ocsf, um,
+                      sum(len(vals[k]) for k in used), sum(len(str(v)) for k, v in um.items() if k != "_dupes"), len(raw), flags)
     return None
+
+
+def validate_parser(doc: dict) -> None:
+    """Load-time checks. Every error names the parser, the extractor and the field, in that order (spec section 8)."""
+    from .validate import _NOT_RE2
+
+    pid = doc.get("id", "?")
+    seen: set[str] = set()
+    for e in doc.get("extractors", []):
+        eid = e.get("id", "?")
+        who = f'parser "{pid}" extractor "{eid}"'
+        if eid in seen:
+            raise ValueError(f"{who}: duplicate extractor id")
+        seen.add(eid)
+        names: set[str] = set()
+        if e.get("kind") == "regex":
+            for rx, what in _NOT_RE2:
+                if re.search(rx, e["pattern"]):
+                    raise ValueError(f"{who} pattern: RE2 does not support {what}")
+            try:
+                names = set(re.compile(e["pattern"]).groupindex)
+            except re.error as err:
+                raise ValueError(f"{who} pattern: {err}")
+        if e.get("kind") == "csv":
+            names = {c for c in e.get("columns", []) if c != "_"}
+        if e.get("kind") in ("regex", "csv"):
+            for i, m in enumerate(e.get("map", [])):
+                for f in ([] if "const" in m else (m["from"] if isinstance(m["from"], list) else [m["from"]])):
+                    if f not in names and not (e["kind"] == "csv" and re.fullmatch(r"col_\d+", f)):
+                        raise ValueError(f'{who} map[{i}] (from: {f}): capture "{f}" is not defined by the pattern')

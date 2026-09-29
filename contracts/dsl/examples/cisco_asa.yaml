@@ -38,7 +38,7 @@ extractors:
       - {from: dst_ip, to: dst_endpoint.ip, type: ip}
       - {from: dst_port, to: dst_endpoint.port, type: port}
       - {from: proto, to: connection_info.protocol_name, type: string, lower: true}
-      - {from: proto, to: connection_info.protocol_num, type: enum, enum: {TCP: 6, UDP: 17, ICMP: 1}, default: 0}
+      - {from: proto, to: connection_info.protocol_num, type: enum, enum: {tcp: 6, udp: 17, icmp: 1}, default: 0}
       - {const: 5, to: activity_id}
       - {const: 2, to: action_id}
       - {const: 2, to: disposition_id}
