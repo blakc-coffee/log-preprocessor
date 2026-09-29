@@ -81,3 +81,21 @@ bench: ## Run the benchmarks. LINUX ONLY for reportable numbers - see docs/vault
 	go test -run '^$$' -bench . -benchmem ./pkg/dataplane/vault/ ./pkg/dataplane/ingest/...
 
 .PHONY: help contract-golden contract-test intel-test check fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench
+
+# --- control plane & frontend (Claude Code #2) ---
+ui: ## Build the React UI and copy it into pkg/control/ui/dist for go:embed
+	cd frontend && npm ci --ignore-scripts && npm run build
+	find pkg/control/ui/dist -mindepth 1 ! -name .keep -delete
+	cp -R frontend/dist/. pkg/control/ui/dist/
+
+ui-test: ## Frontend unit and component tests, lint and the design-rule check
+	cd frontend && npm run typecheck && npm run lint && npm test
+
+control-test: ## Control API, registry and mock admin tests (race detector)
+	CGO_ENABLED=1 go test -race ./pkg/control/... ./cmd/control/...
+
+control-build: ## Build cmd/control with CGO disabled (run `make ui` first to embed the UI)
+	CGO_ENABLED=0 go build -o bin/ ./cmd/control
+
+control-demo: ui control-build ## Run the control plane on 127.0.0.1:8000 against the built-in mock admin
+	./bin/control --mock --registry-db :memory:
