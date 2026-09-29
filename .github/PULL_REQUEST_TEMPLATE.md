@@ -1,5 +1,3 @@
-<!-- GitHub reads this from the repository root. PRD_CONTRACTS 7.2 puts it in .github/, which .gitignore excludes. -->
-
 ## What and why
 
 
