@@ -7,6 +7,9 @@ dependencies = [
   "pydantic>=2.13,<3",
   "PyYAML>=6.0,<7",
   "jsonschema>=4.26,<5",
+  "drain3>=0.9.1,<1",
+  "cachetools>=5,<7",  # drain3 imports it but does not declare it
+  "httpx>=0.28,<1",
 ]
 
 [project.optional-dependencies]
