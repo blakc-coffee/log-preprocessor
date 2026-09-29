@@ -380,3 +380,39 @@ invariants, the hand-off state, the next chunk's sub-steps and the hard-won find
 is gitignored it can be lost, so the same material is duplicated into this log's CHECKPOINT
 blocks, which are committed.
 affects: AGENTS.md, DECISIONS.log
+
+[2026-09-29 07:10] M3.1 started: frame decoders. ModeLines added alongside lf and crlf.
+why: PRD 5.1 gives TCP the modes lf/crlf/octet/nul/auto, but HTTP's `?framing=lines` is "LF/CRLF" - a third behaviour where \n terminates and a preceding \r is dropped and recorded as CRLF. lf and crlf are strict: in lf mode a lone \r is CONTENT, which is exactly what makes malformed.log's bare-CR records a meaningful test. All four are one delimiter decoder with a policy flag rather than four implementations.
+affects: pkg/dataplane/ingest/frame/frame.go
+
+[2026-09-29 07:10] Frame.Raw is a fresh allocation the caller owns, not a view into the read buffer.
+why: An aliased buffer would be cheaper, but the stream batcher holds up to 256 frames before calling PutBatch, so views into a reusing buffer are a use-after-free waiting to happen. Framing is not the hot loop - the fsync is - so the copy is not where throughput is won or lost.
+affects: pkg/dataplane/ingest/frame/frame.go
+
+[2026-09-29 07:10] Fragmentation happens inside the scan, not as a wrapper around a completed record.
+why: Fragmentation exists to bound memory. A decorator that fragments an already-assembled record would have buffered the whole thing first, so a single gigabyte-long line would still take the process down. The delimiter decoder emits a fragment as soon as its window covers max_frame_bytes and it can see that no delimiter starts within it, and the octet decoder streams a long message through without ever holding it whole. TestFragmentsAreBoundedInMemory writes 100 KiB through a 64-byte buffer.
+affects: pkg/dataplane/ingest/frame/frame.go
+
+[2026-09-29 07:10] The multiline timeout is the source's job, not the decoder's.
+why: PRD 5.2 lists a timeout among the multiline flush triggers, but Next() blocks on the reader, so a decoder physically cannot notice time passing while it waits. Multiline exposes Flush() and the source drives a timer. Putting a timer inside the decoder would have meant a goroutine per connection and a mutex around the accumulator, for a trigger the source already has the clock for.
+affects: pkg/dataplane/ingest/frame/multiline.go, pkg/dataplane/ingest/source (M3.2+)
+
+[2026-09-29 07:10] A multiline continuation line with no record in progress is emitted, not discarded.
+why: It means the stream did not begin at a record boundary, or the pattern does not match this source. Both are real situations (a tail resuming mid-event, a misconfigured start pattern). Dropping the line would be ingest deciding that data is worthless, which is the one judgement this workstream must never make. Emitting it keeps the round-trip lossless, which TestMultilineIsLossless checks by reconstructing the input from the records plus their terminators.
+affects: pkg/dataplane/ingest/frame/multiline.go
+
+[2026-09-29 07:10] A truncated octet message keeps the bytes that arrived, then reports the violation on the next call.
+why: The sender declared 20 bytes and delivered 5. Discarding them loses data the vault could have stored. The partial frame is marked FragMore so nothing downstream mistakes it for complete, and the following Next() returns io.ErrUnexpectedEOF so the source can close the connection and count it rather than treating a cut message as a clean end. Standard Go convention: data first, error on the next call.
+affects: pkg/dataplane/ingest/frame/frame.go
+
+[2026-09-29 07:12] The framer is checked against the corpus now, not only at the M3.6 e2e gate.
+why: testdata/oversize.log and testdata/multiline.log were generated against rules this package has to implement - expected_fragments at max_frame_bytes=1MiB, and one manifest record per multiline event with the internal newlines inside byte_start..byte_end. Asserting that here means a generator/framer disagreement fails with a message naming the rule, rather than surfacing at M3.6 as a mysterious round-trip mismatch in a test that ingests thirteen files at once. Both pass: 3 oversize records, 40 multiline events, byte-exact.
+affects: pkg/dataplane/ingest/frame/{fragment_test.go,multiline_test.go}
+
+[2026-09-29 07:12] Detect() is asserted against every fixture, not just hand-written examples.
+why: Auto framing is a guess a syslog listener is forced to make, and a wrong guess reads a length out of log text and swallows the connection. No fixture is octet-counted, so Detect must choose line framing for all 13. Checked.
+affects: pkg/dataplane/ingest/frame/frame_test.go
+
+[2026-09-29 07:15] M3.1 verified: make check ALL GREEN. FuzzDelim 1.76M execs, FuzzOctet 6.4M execs, both clean.
+why: Chunk rule. Chunking invariance is tested for every mode against iotest.OneByteReader, ten fixed chunk sizes, 25 deterministic random chunkings and iotest.DataErrReader (which returns the final bytes together with io.EOF - naive decoders drop the last record on it). FuzzDelim asserts losslessness against arbitrary input rather than examples: Raw plus the recorded terminators must reconstruct the stream byte for byte.
+affects: pkg/dataplane/ingest/frame/
