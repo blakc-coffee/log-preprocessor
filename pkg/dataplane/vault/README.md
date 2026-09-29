@@ -1,0 +1,105 @@
+# vault — the durable, hash-chained record store
+
+Requirements (a) and (d) — never lose a record, and be able to prove what it
+originally said — are satisfied here or nowhere. Parsers can be wrong and be
+fixed later, but only if the raw bytes were kept exactly.
+
+## Use
+
+```go
+v, err := vault.Open(vault.Options{Dir: "./data/vault", Sync: vault.SyncAlways})
+defer v.Close()                       // seals the active segment
+rc, err := v.PutBatch(ctx, records)   // durable on return, contiguous ids
+```
+
+Sync modes: `always` (fsync before acknowledging — the only mode where the
+acknowledgement means "on disk", and the default), `interval` (acknowledge
+now, fsync on a timer; up to one interval of acknowledged records can be lost),
+`none` (benchmarks only). **Any benchmark must state which mode it ran in.**
+
+## Layout
+
+```
+<dir>/LOCK                    flock, one writer at a time
+<dir>/chain.log               append-only JSONL ledger, one line per seal
+<dir>/seg-000000000001.wal    header(72) || framed records || footer(100) once sealed
+<dir>/seg-000000000001.zst    the same segment compacted: header || zstd blocks || footer
+<dir>/seg-000000000001.hix    its hash index (derived; verified and rebuilt at open)
+```
+
+"Sealed" is the presence of a valid footer on disk and nothing else. An index
+that claims a segment is sealed can disagree with the file; a footer cannot.
+
+## What is guaranteed, and tested
+
+- A record acknowledged in `sync=always` survives process death and reads back
+  byte for byte.
+- Bytes out equal bytes in — invalid UTF-8, NULs, CR/LF, empty payloads.
+  Terminators are recorded, not stripped.
+- Any single-record edit, deletion or reordering, and any segment deletion,
+  swap or truncation, is caught by `VerifyChain(deep)`. Ten-row tamper matrix,
+  zero undetected.
+- Reopening after a crash never yields a corrupt segment: a torn tail is
+  truncated at the last intact record boundary and the remainder is sealed and
+  flagged `recovered`. Tested by cutting the last write at **every** byte
+  offset.
+
+## What is NOT claimed
+
+- **Power-loss durability.** The crash suite kills the process; it does not cut
+  power. This is not a hedge — it was measured. Switching the crash child to
+  `sync=none`, where an acknowledgement means nothing is on disk at all, still
+  **passes** the suite, because SIGKILL does not discard the page cache. The
+  200-cycle suite proves the *recovery logic* is correct (torn tails,
+  interrupted seals, missing ledger lines, sequence continuity); it does not
+  prove fsync put anything on a platter. Reversing the seal order, by contrast,
+  fails it within 60 cycles — so the suite does exercise what it claims to.
+- **Tamper-proof storage.** This is tamper-*evident*. Someone with write access
+  to the whole directory can rewrite it consistently. Only a chain head held
+  somewhere else defeats that — see `Head`.
+
+## Compaction
+
+`Options{Compact: true}` rewrites sealed segments from `.wal` to zstd in the
+background. **The `.wal` is deleted only after the `.zst` has been read back from
+disk and shown to reproduce the segment's Merkle root.** A compacted segment is a
+"logical WAL" — records keep their WAL offsets — so nothing above the storage
+layer knows compaction exists, and the shared conformance suite passes unmodified
+against a vault that is compacting.
+
+A failed compaction is not a failed vault: the data is intact in the `.wal`, so it
+is logged and counted and never puts the vault into `ErrFailed`. On recovery, if
+both a `.wal` and a `.zst` exist, the `.zst` is verified **first**; a bad `.zst`
+never causes the `.wal` to be deleted, because it may be the only good copy.
+
+Measured on the synthetic corpus: 5.0-8.6x per file, roughly equal to `gzip -6` —
+and the `.hix` (40 bytes/record of incompressible hash) is 62% on top of the
+compressed data. See `docs/vault-format.md` §9.2 before quoting any figure.
+
+## Failure policy
+
+Any write or fsync error is terminal: the vault enters a failed state, every
+later call returns `ErrFailed`, and the process must restart. **A failed fsync
+is never retried** — afterwards the kernel may already have dropped the dirty
+pages, so a retry that "succeeded" would be a lie about data that is gone.
+
+## Read-only opens are lenient on purpose
+
+A writer refuses to open structurally damaged storage: appending to a broken
+history only buries the evidence under valid-looking new chain links. A
+read-only open records the damage and continues, because `vaultctl verify` has
+to be able to open a tampered vault in order to say what is wrong with it.
+
+## Test
+
+```sh
+go test ./pkg/dataplane/vault/          # incl. the conformance suite and tamper matrix
+go test -race ./pkg/dataplane/vault/
+```
+
+The conformance suite (`../vaulttest`) runs in six configurations, one of them
+with compaction running underneath it, and
+`TestAgreesWithMemvault` asserts that this vault and `memvault` produce
+identical leaf hashes, roots, chain heads and interchangeable proofs for the
+same input — which is what makes it safe to develop against `memvault` and
+switch over later.

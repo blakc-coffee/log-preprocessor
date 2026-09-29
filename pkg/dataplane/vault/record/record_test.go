@@ -354,3 +354,68 @@ func FuzzRecordDecode(f *testing.F) {
 func binaryBE32(b []byte) uint32 {
 	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 }
+
+// TestZeroTimeDoesNotBecomeAPlausibleDate is a regression test.
+//
+// Timestamps are stored as int64 Unix nanoseconds, and time.Time.UnixNano()
+// is undefined outside 1678-2262: the zero time silently overflows to
+// 1754-08-30. A record whose ReceivedAt was never set would therefore have
+// come back carrying a confident, wrong, eighteenth-century date - which is
+// worse than an obviously empty one, because nothing downstream would
+// question it.
+func TestZeroTimeDoesNotBecomeAPlausibleDate(t *testing.T) {
+	if got := TimeToNanos(time.Time{}); got != 0 {
+		t.Errorf("the zero time stores as %d, want 0", got)
+	}
+
+	r := sample()
+	r.ReceivedAt = time.Time{}
+	body, err := Encode(nil, 1, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, out, err := Decode(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Unix(0, 0).UTC(); !out.ReceivedAt.Equal(want) {
+		t.Errorf("a zero ReceivedAt came back as %s, want the epoch %s", out.ReceivedAt, want)
+	}
+	if y := out.ReceivedAt.Year(); y == 1754 {
+		t.Errorf("the zero time overflowed to %d, the bug this test exists for", y)
+	}
+}
+
+// TestTimeIsClampedNotCorrupted covers the other end. Ordering in this system
+// comes from the sequence number, never from a timestamp, so a nonsense clock
+// must not make a record unstorable - but it must not wrap around either.
+func TestTimeIsClampedNotCorrupted(t *testing.T) {
+	for name, tm := range map[string]time.Time{
+		"far future": time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC),
+		"far past":   time.Date(1000, 1, 1, 0, 0, 0, 0, time.UTC),
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := sample()
+			r.ReceivedAt = tm
+			body, err := Encode(nil, 1, r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := Decode(body); err != nil {
+				t.Fatalf("a record with an absurd timestamp became unreadable: %v", err)
+			}
+		})
+	}
+
+	// Round-trip must be exact everywhere inside the representable range.
+	for _, tm := range []time.Time{
+		time.Unix(0, 0).UTC(),
+		time.Unix(1790566201, 123456789).UTC(),
+		time.Date(1700, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2261, 1, 1, 0, 0, 0, 0, time.UTC),
+	} {
+		if got := TimeFromNanos(TimeToNanos(tm)); !got.Equal(tm) {
+			t.Errorf("%s round-tripped to %s", tm, got)
+		}
+	}
+}

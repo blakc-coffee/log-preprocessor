@@ -201,3 +201,703 @@ affects: Makefile
 [2026-09-29 04:22] M1 COMPLETE and verified: gofmt and go vet clean, go test -race green on all packages, 40 conformance subtests passing across two segment sizes, FuzzRecordDecode 30s / 10.8M execs clean, make fixtures-check byte-identical on both profiles.
 why: Chunk rule. Hand-offs now unblocked: testdata/ (13 files + manifest + identity_truth.json + merkle_vectors.json) for everyone, memvault + vaulttest for Parsing and Packaging, identity fixtures and truth for Contracts, merkle_vectors.json for Frontend. READMEs written for all six packages.
 affects: all owned packages
+
+[2026-09-29 04:45] Branch switched to feature/ingest-vault for M2 onward, per PRD 9.2.
+why: M0-M1 (fixtures, memvault) shipped on feature/fixtures. The vault and ingest work is the second branch the PRD defines.
+affects: git history
+
+[2026-09-29 04:50] Segment format: "sealed" is the presence of a valid footer on disk, nothing else.
+why: An index that says a segment is sealed can disagree with the file; a footer cannot. Recovery finds the segment it must repair by looking for the one without a valid footer, and ErrShort or ErrBadMagic from decodeFooter is the normal reading of "still active", not corruption.
+affects: pkg/dataplane/vault/segment.go, recovery (M2.4)
+
+[2026-09-29 04:50] Segment file names are fixed-width: seg-%012d.<ext>.
+why: A plain lexical sort of the directory is then also a numeric sort, so recovery and `vaultctl ls` can order segments without parsing them first. Asserted by TestSegmentName.
+affects: pkg/dataplane/vault/segment.go
+
+[2026-09-29 04:55] BUG FOUND AND FIXED AT THE ROOT: the zero time.Time encoded as 1754-08-30.
+why: Timestamps are stored as int64 Unix nanoseconds to keep headers fixed-width, and time.Time.UnixNano() is explicitly undefined outside 1678-2262 - the zero time (year 1) silently overflows to 1754. A record whose ReceivedAt was never set would have come back carrying a confident, wrong, eighteenth-century date, which is worse than an obviously empty one because nothing downstream would question it.
+Found by the segment header round-trip test, but the same defect was already in the record codec, which its own tests had missed by using time.Unix(0,0) rather than time.Time{}. Fixed once in record.TimeToNanos / TimeFromNanos, now used by both codecs: the zero time maps to the Unix epoch, and times outside the representable range are clamped rather than wrapped. Clamping rather than erroring because ordering comes from the sequence number, never from a timestamp, so a nonsense clock must not make a record unstorable.
+Consequence to document in docs/vault-format.md: "no time" and 1970-01-01T00:00:00Z are indistinguishable on disk.
+affects: pkg/dataplane/vault/record/record.go, pkg/dataplane/vault/segment.go, docs/vault-format.md (M5)
+
+[2026-09-29 04:56] M2.1 verified: gofmt and go vet clean, go test -race green on all packages.
+why: Chunk rule. Segment header (72B) and footer (100B) codecs done, with every covered byte proven to be checksummed by flipping it, and the header-cannot-be-read-as-a-footer case asserted.
+affects: pkg/dataplane/vault/segment.go, segment_test.go
+
+[2026-09-29 05:30] A read-only Open is lenient about structural damage; a writer refuses.
+why: This was a design gap, not a preference. Open originally refused on any damaged segment, which meant `vaultctl verify` could never REPORT a tamper - it could only fail to start, and "could not open" is far less useful to an operator than "segment 2 does not match its footer root". A writer must still refuse, because appending to a broken history buries the evidence under valid-looking new chain links. Damage found during a read-only open is recorded and surfaced by VerifyChain, which reports it ahead of anything the ledger walk finds: a ledger can look perfectly consistent precisely because it was the thing that was edited.
+affects: pkg/dataplane/vault/{recover.go,read.go,vault.go}, cmd/vaultctl (M2.6)
+
+[2026-09-29 05:30] Crash simulated by snapshotting the directory mid-run rather than by killing a process.
+why: In sync=always every acknowledged record is already fsynced, so a copy taken while the active segment is open is byte-identical to what kill -9 would leave. That gives the same on-disk states deterministically, in milliseconds, with no process management in the test. It does NOT replace the 200-cycle kill -9 suite, which is still M5 and is what the success metric is measured on.
+affects: pkg/dataplane/vault/recover_test.go
+
+[2026-09-29 05:30] Torn tails tested at every byte offset, not at a sample of offsets.
+why: The claim is that an acknowledged record never disappears. A sampled test would leave the boundary between "last intact record" and "first torn byte" mostly unexercised, and that boundary is the entire failure mode. Cutting the last write at all ~1200 offsets of a 12-record segment and asserting that exactly the whole records survive is cheap and leaves nothing to chance.
+affects: pkg/dataplane/vault/recover_test.go
+
+[2026-09-29 05:30] The recovered flag is set before sealing, not patched onto the seal afterwards.
+why: The first version appended the ledger line and then set Recovered on the in-memory copy, so disk said false and memory said true, and the flag silently vanished on the next reopen. An operator asking which segments a crash closed needs an answer that survives a restart.
+affects: pkg/dataplane/vault/{vault.go,recover.go}
+
+[2026-09-29 05:30] Recovery reads each record's length prefix before reading the record.
+why: The first version speculatively read max_frame_bytes for every record, so recovering a segment of 200-byte syslog lines would have allocated a megabyte per record. Two small reads beat one large speculative one.
+affects: pkg/dataplane/vault/recover.go
+
+[2026-09-29 05:30] flock via stdlib syscall.Flock rather than golang.org/x/sys/unix.
+why: PRD 10 lists x/sys for SO_REUSEPORT and flock. syscall.Flock is in the standard library and works on both linux and darwin, so the dependency buys nothing here. x/sys is still needed at M3 for SO_REUSEPORT, and will be added then.
+affects: pkg/dataplane/vault/vault.go, go.mod
+
+[2026-09-29 05:30] A cancelled context during PutBatch stops the caller waiting; it does not cancel the commit.
+why: The batch is already queued and will be written. Abandoning it mid-flight is exactly the partially-applied batch PutBatch promises cannot happen, and a record the vault wrote but never acknowledged is far less harmful than a batch half of which exists.
+affects: pkg/dataplane/vault/vault.go
+
+[2026-09-29 05:32] M2.2 and M2.3 verified. TAMPER MATRIX: 10 rows, 0 undetected.
+why: Chunk rule. The on-disk vault passes the same conformance suite as memvault in five configurations (SealEvery 8 and 2, group-commit delay, sync=interval, sync=none), 1069 subtests in the package, race clean. TestAgreesWithMemvault asserts the two implementations produce identical leaf hashes, roots, chain heads and interchangeable proofs, so building against memvault and switching at Gate 1 is safe. Detected rows: flipped byte in a record, deleted record, truncated segment, deleted middle segment, swapped segments, edited footer root, edited ledger root, ledger line removed from the middle, emptied chain.log, edited segment header. Each names the offending segment and a specific reason.
+Still outstanding for M2: vaultctl (M2.6). Still outstanding overall: the 200-cycle kill -9 suite (M5), which is what the "0 acknowledged records lost" metric is actually measured on - today's crash coverage is directory snapshots, which is not the same claim.
+affects: pkg/dataplane/vault/
+
+[2026-09-29 05:55] ProofJSON lives in the vault package, not in vaultctl.
+why: types.InclusionProof holds [32]byte arrays, which encoding/json renders as arrays of 32 numbers. Three consumers have to agree on the wire form - vaultctl, the Frontend browser verifier and the Contracts Python tests - so it belongs next to the vault rather than in one of them. Each proof also carries an `algorithm` block naming the three hashes and the RFC section, so nobody implementing a verifier has to infer the domain prefixes.
+affects: pkg/dataplane/vault/proofjson.go, cmd/vaultctl, frontend, intel sidecar
+
+[2026-09-29 05:55] BUG FOUND BY SMOKE TEST: Open validated before applying defaults.
+why: Options.validate ran first, so any caller that left Sync empty and expected the documented default was rejected with "unknown sync mode". vaultctl is exactly such a caller, and no unit test caught it because every test set Sync explicitly. Found the first time vaultctl was pointed at a real vault. Defaults now run first, with TestZeroOptionsWork as the regression test and TestUnknownSyncModeIsStillRejected to prove validation was not simply turned off.
+affects: pkg/dataplane/vault/vault.go
+
+[2026-09-29 05:55] BUG FOUND BY SMOKE TEST: `verify --deep` ran a shallow check.
+why: Go's flag package stops parsing at the first non-flag argument, so in `--dir X verify --deep` the --deep flag landed in Args() and was never parsed. The command printed "chain intact (shallow)" while the operator had asked for deep. A verification command that quietly does less than it says is worse than one that fails outright. Fixed by parsing repeatedly, taking one positional each time, so flags may appear anywhere. TestDeepFlagIsActuallyParsed covers both orderings.
+affects: cmd/vaultctl/main.go
+
+[2026-09-29 05:55] vaultctl's run() takes io.Writer rather than *os.File.
+why: Exit codes are contract, so they need tests, and that means running the command in-process and capturing its output. The change is two lines and removes the need for a subprocess harness.
+affects: cmd/vaultctl/main.go
+
+[2026-09-29 05:55] Raw payload is escaped before it reaches any vaultctl table or hexdump.
+why: A log line is attacker-controlled. Printed unescaped into a table it could carry terminal escape sequences or newlines that fake up another row, which is log injection against the operator's own terminal. Non-printable bytes become '.'; `get --raw` is the only path that emits bytes untouched, and it emits nothing else. Covered by TestPreviewEscapesControlBytes.
+affects: cmd/vaultctl/main.go
+
+[2026-09-29 06:00] M2 COMPLETE. End-to-end proof checked against the fixture corpus.
+why: Ingested all 2000 cisco_asa.log records into a real vault (4 sealed segments), then confirmed three independently computed SHA-256s agree: the source file's first line, `vaultctl get 1 --raw`, and the manifest's precomputed expected_sha256. `verify --deep` exits 0 on the intact vault and 1 on a one-byte tamper, naming the segment. A proof taken from the vault verifies through `verify-proof` with no vault present.
+Verified: gofmt and go vet clean, go test -race green across all packages, make fixtures-check clean, CGO_ENABLED=0 build of vaultctl.
+Outstanding: M3 (framers, sources, Pipeline, ingestd), M4, M5. The 200-cycle kill -9 suite is still M5 and is what the "0 acknowledged records lost" metric is measured on; today's crash coverage is directory snapshots, which reproduce the same on-disk states but are not the same claim. No throughput number has been measured, and none can be reported from this machine (macOS full-drive flush, PRD 11.2).
+affects: cmd/vaultctl/, pkg/dataplane/vault/
+
+================================================================================
+CHECKPOINT [2026-09-29 06:20] — state of the world after M2
+--------------------------------------------------------------------------------
+This block is a bookmark, not a decision. Everything above it is the reasoning
+trail; this is what that reasoning has produced, so that a reader who has only
+this file can pick the work up. The log stays append-only: later checkpoints are
+appended below, never edited into this one.
+
+WORKSTREAM
+  Ingestion & Vault ("Codex #1"). PRDs in prd/ (gitignored). Branch
+  feature/ingest-vault. Owned paths: tools/gen, testdata, pkg/dataplane/ingest,
+  pkg/dataplane/vault, cmd/ingestd, cmd/vaultctl, configs/ingest.dev.yaml,
+  scripts/send_samples.sh, docs/vault-format.md. Nothing else.
+
+DONE
+  M0 scaffold + ASA/Fortinet/Suricata fixtures + manifest schema v1 (frozen)
+  M1 remaining 10 fixtures, identity scenario + answer key, local contract copy,
+     merkle package + merkle_vectors.json, memvault, vaulttest conformance suite
+  M2 on-disk vault: segment codec, WAL + group commit, seal + chain ledger,
+     crash recovery, read path, tamper detection, vaultctl
+
+NOT DONE
+  M3 ingest (frame decoders, file/TCP/UDP/HTTP sources, Pipeline, ingestd, the
+     e2e byte-exact round-trip gate)
+  M4 TLS, multiline, sniff, checkpoints, peer map, metrics
+  M5 compaction, .meta/.hix, the 200-cycle kill -9 suite, fuzzers, benchmarks,
+     docs/vault-format.md
+
+VERIFICATION
+  `make check` is the single gate: gofmt, go vet, go test -race ./..., fixture
+  determinism on both profiles, and a CGO_ENABLED=0 build. It prints ALL GREEN.
+  Currently: 80 test/fuzz functions, 2583 passing subtests, zero third-party
+  dependencies.
+
+WHAT IS PROVEN
+  - Byte-exact storage incl. invalid UTF-8, NULs, CR/LF, empty and 1.5 MiB records
+  - Tamper matrix: 10 rows, 0 undetected, each naming the offending segment
+  - Torn tails cut at EVERY byte offset; exactly the whole records survive
+  - memvault and the on-disk vault produce identical leaf hashes, roots, chain
+    heads and interchangeable proofs (TestAgreesWithMemvault)
+  - End to end: 2000 cisco_asa.log records, three independent SHA-256s agree
+    (source file, `vaultctl get --raw`, manifest expected_sha256)
+
+WHAT IS NOT PROVEN — and must not drift in the submission
+  - Power-loss durability. Crash tests kill the process; they say nothing about
+    the disk's own write cache.
+  - "0 acknowledged records lost" is measured on the 200-cycle kill -9 suite,
+    which is M5 and does not exist yet. Current crash coverage is directory
+    snapshots taken mid-run: the same on-disk states, NOT the same claim.
+  - No throughput number has been measured. None can be from this machine
+    (macOS full-drive flush, PRD 11.2). Benchmarks are Linux-only.
+  - Tamper-EVIDENT, not tamper-proof: a consistent rewrite of the whole
+    directory is only detectable against an externally held chain head.
+
+INVARIANTS (breaking one is a bug, not a refactor)
+  1. Raw bytes are never modified.
+  2. Nothing goes downstream before the vault reports durable.
+  3. Every queue bounded, every wire-read length capped.
+  4. A failed fsync is never retried; the vault goes terminal.
+  5. A writer refuses damaged storage; a reader must not (vaultctl verify).
+  6. Seal order: footer, fsync, ledger, fsync.
+  7. "Sealed" is a valid footer on disk and nothing else.
+  8. All timestamps go through record.TimeToNanos.
+  9. No time.Now(), map order or goroutines in the generator.
+ 10. Raw payload is never logged or printed unescaped.
+ 11. Only measured numbers, with hardware and sync mode.
+
+OPEN FOR THE ARBITER
+  - pkg/types does not exist; working against a verbatim local copy at
+    pkg/dataplane/ingest/testutil/types. No mismatch today. When the real one
+    lands the contract wins; rewrite the import path and delete the copy.
+  - D1-D7 unanswered, so every PRD default ships.
+  - testdata/identity_firewall.log is an additive file the PRD's table does not
+    list (see entry 03:40).
+
+NEXT ACTION
+  M3.1: frame decoders in pkg/dataplane/ingest/frame. Key property is chunking
+  invariance (identical output under iotest.OneByteReader and random chunk
+  sizes). A record of exactly max_frame_bytes is ONE record — one byte of
+  lookahead; testdata/oversize.log already pins expected_fragments at 1/1/2.
+================================================================================
+
+[2026-09-29 06:20] Added `make check` as the single verification gate.
+why: The chunk rule says nothing is done until it is verified, but verification was five
+commands I had to remember in order, and a forgotten one is an unverified chunk. One target that
+runs gofmt, vet, race, fixture determinism and a CGO_ENABLED=0 build removes that failure mode
+and gives any later session one thing to run.
+affects: Makefile
+
+[2026-09-29 06:20] AGENTS.md rewritten as a full session-restore document rather than a status note.
+why: It was a progress summary, which is the least useful thing to find at the start of a
+session - the expensive knowledge is the environment quirks, the invariants, and the findings
+that cost a debugging cycle to learn. It now opens with a ninety-second restore, and carries the
+invariants, the hand-off state, the next chunk's sub-steps and the hard-won findings. Because it
+is gitignored it can be lost, so the same material is duplicated into this log's CHECKPOINT
+blocks, which are committed.
+affects: AGENTS.md, DECISIONS.log
+
+[2026-09-29 07:10] M3.1 started: frame decoders. ModeLines added alongside lf and crlf.
+why: PRD 5.1 gives TCP the modes lf/crlf/octet/nul/auto, but HTTP's `?framing=lines` is "LF/CRLF" - a third behaviour where \n terminates and a preceding \r is dropped and recorded as CRLF. lf and crlf are strict: in lf mode a lone \r is CONTENT, which is exactly what makes malformed.log's bare-CR records a meaningful test. All four are one delimiter decoder with a policy flag rather than four implementations.
+affects: pkg/dataplane/ingest/frame/frame.go
+
+[2026-09-29 07:10] Frame.Raw is a fresh allocation the caller owns, not a view into the read buffer.
+why: An aliased buffer would be cheaper, but the stream batcher holds up to 256 frames before calling PutBatch, so views into a reusing buffer are a use-after-free waiting to happen. Framing is not the hot loop - the fsync is - so the copy is not where throughput is won or lost.
+affects: pkg/dataplane/ingest/frame/frame.go
+
+[2026-09-29 07:10] Fragmentation happens inside the scan, not as a wrapper around a completed record.
+why: Fragmentation exists to bound memory. A decorator that fragments an already-assembled record would have buffered the whole thing first, so a single gigabyte-long line would still take the process down. The delimiter decoder emits a fragment as soon as its window covers max_frame_bytes and it can see that no delimiter starts within it, and the octet decoder streams a long message through without ever holding it whole. TestFragmentsAreBoundedInMemory writes 100 KiB through a 64-byte buffer.
+affects: pkg/dataplane/ingest/frame/frame.go
+
+[2026-09-29 07:10] The multiline timeout is the source's job, not the decoder's.
+why: PRD 5.2 lists a timeout among the multiline flush triggers, but Next() blocks on the reader, so a decoder physically cannot notice time passing while it waits. Multiline exposes Flush() and the source drives a timer. Putting a timer inside the decoder would have meant a goroutine per connection and a mutex around the accumulator, for a trigger the source already has the clock for.
+affects: pkg/dataplane/ingest/frame/multiline.go, pkg/dataplane/ingest/source (M3.2+)
+
+[2026-09-29 07:10] A multiline continuation line with no record in progress is emitted, not discarded.
+why: It means the stream did not begin at a record boundary, or the pattern does not match this source. Both are real situations (a tail resuming mid-event, a misconfigured start pattern). Dropping the line would be ingest deciding that data is worthless, which is the one judgement this workstream must never make. Emitting it keeps the round-trip lossless, which TestMultilineIsLossless checks by reconstructing the input from the records plus their terminators.
+affects: pkg/dataplane/ingest/frame/multiline.go
+
+[2026-09-29 07:10] A truncated octet message keeps the bytes that arrived, then reports the violation on the next call.
+why: The sender declared 20 bytes and delivered 5. Discarding them loses data the vault could have stored. The partial frame is marked FragMore so nothing downstream mistakes it for complete, and the following Next() returns io.ErrUnexpectedEOF so the source can close the connection and count it rather than treating a cut message as a clean end. Standard Go convention: data first, error on the next call.
+affects: pkg/dataplane/ingest/frame/frame.go
+
+[2026-09-29 07:12] The framer is checked against the corpus now, not only at the M3.6 e2e gate.
+why: testdata/oversize.log and testdata/multiline.log were generated against rules this package has to implement - expected_fragments at max_frame_bytes=1MiB, and one manifest record per multiline event with the internal newlines inside byte_start..byte_end. Asserting that here means a generator/framer disagreement fails with a message naming the rule, rather than surfacing at M3.6 as a mysterious round-trip mismatch in a test that ingests thirteen files at once. Both pass: 3 oversize records, 40 multiline events, byte-exact.
+affects: pkg/dataplane/ingest/frame/{fragment_test.go,multiline_test.go}
+
+[2026-09-29 07:12] Detect() is asserted against every fixture, not just hand-written examples.
+why: Auto framing is a guess a syslog listener is forced to make, and a wrong guess reads a length out of log text and swallows the connection. No fixture is octet-counted, so Detect must choose line framing for all 13. Checked.
+affects: pkg/dataplane/ingest/frame/frame_test.go
+
+[2026-09-29 07:15] M3.1 verified: make check ALL GREEN. FuzzDelim 1.76M execs, FuzzOctet 6.4M execs, both clean.
+why: Chunk rule. Chunking invariance is tested for every mode against iotest.OneByteReader, ten fixed chunk sizes, 25 deterministic random chunkings and iotest.DataErrReader (which returns the final bytes together with io.EOF - naive decoders drop the last record on it). FuzzDelim asserts losslessness against arbitrary input rather than examples: Raw plus the recorded terminators must reconstruct the stream byte for byte.
+affects: pkg/dataplane/ingest/frame/
+
+[2026-09-29 07:40] Stream batching uses time.AfterFunc, not a goroutine per stream.
+why: A stream that goes quiet after one record would otherwise hold it in memory, undurable, until the next arrived - exactly the record a crash loses. A device sending one message a minute must not wait a minute for durability. max_conns is 1024, so a goroutine-per-stream ticker is a thousand goroutines doing nothing; the runtime timer heap already exists.
+affects: pkg/dataplane/ingest/ingest.go
+
+[2026-09-29 07:40] BUG FOUND BY THE RACE DETECTOR, worse than a race: concurrent flushes reordered a stream.
+why: The batch timer and a full-batch flush both detached the batch and then wrote, so two batches from ONE stream could reach the vault out of the order their records were appended. The visible damage was not subtle - an oversize record's fragment run was split across two out-of-order writes and reassembled into garbage ("record 4 is marked FragCont with nothing to continue"). The race detector separately caught Pipeline.Run closing the output channel while a timer flush was still sending to it.
+Fixed by taking the write lock BEFORE detaching the batch, so detach order is write order, and by having Close acquire the same lock so it blocks until any in-flight timer flush finishes. TestFlushesDoNotInterleave reproduces the exact interleaving with a one-nanosecond batch delay and asserts both offsets and vault-assigned RecordIDs are strictly ascending. Clean under -race -count=5.
+affects: pkg/dataplane/ingest/ingest.go
+
+[2026-09-29 07:40] A cancelled context during the downstream send reports which record was left unforwarded.
+why: The record is already durable and can be replayed from the vault by RecordID, so nothing is lost - but an operator restarting the data plane needs to know where the stream resumes. A bare context error would not say.
+affects: pkg/dataplane/ingest/ingest.go
+
+[2026-09-29 07:40] File source resolves every path to an absolute path.
+why: Origin.Addr is the de-duplication key for at-least-once tail replay, and a relative path stops meaning the same thing the moment the process changes directory. Globs are expanded at Run so a config can name a directory of logs.
+affects: pkg/dataplane/ingest/source/file.go
+
+[2026-09-29 07:40] File tail mode is accepted by NewFile but Run refuses it explicitly.
+why: Config can be written against `mode: tail` today, and the failure is a clear message rather than the source silently behaving like `once` - which would look like it worked and quietly stop following the file. Tail lands later in M3.
+affects: pkg/dataplane/ingest/source/file.go
+
+[2026-09-29 07:40] The e2e round-trip test picks framing from the manifest's terminator field, not a hard-coded list.
+why: crlf.log needs CRLF framing and multiline.log needs the multiline pattern. Hard-coding which files are special means a fixture added later gets ingested with the wrong framing by omission and the failure looks like a corpus bug. Reading the manifest makes the corpus itself the source of truth.
+affects: pkg/dataplane/ingest/e2e_test.go
+
+[2026-09-29 07:45] M3 GATE MET EARLY: 7598 records across all 13 fixtures round-trip byte-exact.
+why: TestRoundTripEveryFixture reads bytes[byte_start:byte_end] straight from each source file and compares against what the vault stored - bytes, SHA-256, terminator, fragment count and origin offset - then requires VerifyChain(deep) to pass. Nothing excluded: malformed.log's invalid UTF-8 and NULs, crlf.log's CRLF, multiline.log's internal newlines, oversize.log's fragments. Three independent computations agree (generator, source file, vault), not one value copied around.
+This is the PRD's "Fixture round-trip: 100% identical" success metric, met for the file source. It is NOT yet met end to end through the network sources, which are next.
+affects: pkg/dataplane/ingest/
+
+[2026-09-29 07:45] M3.2 verified: make check ALL GREEN, race clean at -count=3.
+why: Chunk rule. Pipeline behaviours covered: durability before visibility, batch timer on a quiet stream, backpressure with a 4-slot channel and 200 records, shutdown losing nothing that Submit accepted, vault failure propagating to the source, per-stream ordering across 8 concurrent streams, output channel closed on return.
+affects: pkg/dataplane/ingest/
+
+[2026-09-29 08:20] Listeners bind in their constructor, not in Run.
+why: A caller needs Addr() before accepting starts - tests bind to port 0 and must know where to dial. Binding in Run would force every test to poll for readiness, and PRD working rule 8 forbids sleep-based synchronisation in tests. The cost is that a bind failure surfaces at construction rather than at Run, which is if anything the better place for it.
+affects: pkg/dataplane/ingest/source/{tcp.go,udp.go,http.go}
+
+[2026-09-29 08:20] At MaxConns a TCP connection is refused immediately rather than queued.
+why: Accepting and then stalling looks to the sender like a working connection that is silently losing data. Refusing is the honest answer and the one a syslog sender can act on. Counted so it appears in metrics rather than only in a log.
+affects: pkg/dataplane/ingest/source/tcp.go
+
+[2026-09-29 08:20] UDP warns when the kernel clamps SO_RCVBUF.
+why: UDP has no backpressure; the receive buffer is the only thing between a burst and silent loss. Asking for 8 MiB and being given 256 KiB without saying so is exactly how UDP loss becomes an unexplained gap in the data weeks later. The effective size is read back with getsockopt and logged with a pointer at net.core.rmem_max. Linux reports double the requested value because it includes bookkeeping overhead; that is reported as-is rather than halved, so the logged number matches what `ss -m` shows.
+affects: pkg/dataplane/ingest/source/udp.go, sockopt_unix.go
+
+[2026-09-29 08:20] A trailing newline on a UDP datagram is content, not a terminator.
+why: Nothing framed a datagram - the datagram boundary is the record boundary. A sender that appends "\n" sent 34 bytes, not 33 plus a terminator, and stripping it would break byte-exactness for every such sender. Asserted by TestUDPTrailingNewlineIsContent.
+affects: pkg/dataplane/ingest/source/udp.go
+
+[2026-09-29 08:20] HTTP responds 202 only after every record in the body is durable.
+why: A 202 that meant "received" rather than "stored" would invite a client to delete its copy of data that is still only in memory. The stream is flushed before the response is written. TestHTTPResponseMeansDurable scans the vault immediately after the response arrives, with no waiting, and requires every record to be there.
+affects: pkg/dataplane/ingest/source/http.go
+
+[2026-09-29 08:20] A rejected HTTP source_id is never echoed back in the response or the log.
+why: It is attacker-controlled and would otherwise land in an operator's terminal and in log aggregation - the same log-injection problem the vaultctl preview escaping solves. The response says what the pattern is instead. Asserted by TestHTTPRejectsBadSourceID.
+affects: pkg/dataplane/ingest/source/http.go
+
+[2026-09-29 08:20] Unconfigured HTTP source ids are refused unless DynamicSources is set.
+why: PRD 5.1 makes dynamic_sources opt-in. An endpoint that mints a new source per request is an unbounded metric-label space and an easy way to pollute the corpus with a typo. An explicit AllowedSources list covers the middle ground.
+affects: pkg/dataplane/ingest/source/http.go
+
+[2026-09-29 08:20] Records already stored when an HTTP body fails part-way are NOT rolled back.
+why: The vault is append-only and a record that was stored is a record that was received. The failure response reports how many were stored so a client retrying knows it will create duplicates, which Origin.Offset lets a consumer collapse. Rolling back would mean deleting from the vault, which is the one operation it must never have.
+affects: pkg/dataplane/ingest/source/http.go
+
+[2026-09-29 08:25] BUG: shutdown hung when a connection arrived during the shutdown window.
+why: The accept loop registered a connection with track() after the shutdown watcher had already walked the connection map and closed everything. That connection was never closed, so its reader blocked until the idle timeout - five minutes by default - and Run never returned. It surfaced as an intermittent hang and only under -race, where the scheduling window is wide enough to hit; it passed at -count=1 and failed at -count=2.
+Fixed with a `closing` flag set under the same mutex: track() now refuses after shutdown has begun and the caller closes the connection instead. The accept loop also re-checks ctx. TestTCPShutdownWithConnectionsArriving dials continuously across the cancellation so the window is hit on purpose rather than by luck, with a five-minute idle timeout so a leak hangs the test rather than quietly waiting itself out. Clean at -race -count=4.
+affects: pkg/dataplane/ingest/source/tcp.go
+
+[2026-09-29 08:25] M3.3 verified: make check ALL GREEN, race clean at -count=4, 188 subtests in the ingest tree.
+why: Chunk rule. TCP (line, auto, octet framing; slow clients; 12 concurrent connections keeping per-connection order; max_conns; idle timeout; framing errors closing the connection), UDP (datagram boundaries, binary payloads, trailing newline as content), HTTP (lines/whole/octet framing, chunked bodies, 202-means-durable, source id validation, 413, 503 on an unhealthy vault, a fixture round-trip through curl-shaped requests).
+affects: pkg/dataplane/ingest/source/
+
+[2026-09-29 08:50] Config rejects keys for features that are not implemented yet.
+why: PRD section 8 lists vault.compact, compact_block_bytes, zstd_level, hash_index and peer_map. None of them exist yet. A config struct that accepted and ignored them would leave an operator certain compaction was running - the worst possible failure, because it looks like success. Each key arrives with its implementation, and until then `compact: true` is a startup error naming the unknown key.
+affects: pkg/dataplane/ingest/config.go
+
+[2026-09-29 08:50] Fields belonging to another source type are a config error, not ignored.
+why: `paths` on a UDP listener, `listen` on a file source, `framing` on HTTP (where it is chosen per request by ?framing=), `cert` on plain TCP. Silently ignoring any of them is how someone ends up certain a file is being read when nothing is reading it. Every mismatch is named.
+affects: pkg/dataplane/ingest/config.go
+
+[2026-09-29 08:50] sync: none requires ULPF_ALLOW_SYNC_NONE=1.
+why: In that mode an acknowledgement stops meaning the record is on disk, which silently voids the central durability claim. It is legitimate for benchmarks, so it is not removed - but it must never be reached by editing one word in a config. The error says "acknowledged records are NOT durable" rather than just refusing.
+affects: pkg/dataplane/ingest/config.go
+
+[2026-09-29 08:50] Config validation reports every error at once, via errors.Join.
+why: An operator fixing a config one restart at a time is an operator wasting an afternoon. TestAllErrorsAreReportedAtOnce asserts a config with three separate mistakes names all three.
+affects: pkg/dataplane/ingest/config.go
+
+[2026-09-29 08:55] `ingestd --emit` base64-encodes the payload.
+why: A raw log line is attacker-controlled. Printing it unescaped into a terminal or a JSON Lines file that a log aggregator will parse is log injection - the same problem vaultctl's preview escaping solves. The JSON carries raw_base64 and raw_bytes, so a consumer gets the exact bytes without anything interpreting them on the way.
+affects: cmd/ingestd/main.go
+
+[2026-09-29 08:55] A shutdown that times out exits 1, not 0.
+why: It may have left records accepted but not yet durable. A supervisor that treated a timed-out shutdown as a clean stop would hide exactly the condition the durability claim is about.
+affects: cmd/ingestd/main.go
+
+[2026-09-29 08:55] `type: tls` is refused with an explicit error rather than served as plaintext.
+why: TLS listeners land in M4. A config naming type tls that quietly served unencrypted traffic would be a security failure disguised as a working deployment. Asserted by TestTLSIsRefusedRatherThanIgnored.
+affects: cmd/ingestd/main.go
+
+[2026-09-29 08:55] `--once` cancels the context rather than having its own exit path.
+why: Network listeners never finish on their own, so --once has to stop them. Cancelling means shutdown runs through exactly the same code a SIGTERM takes, so the drain-and-seal path is exercised by every CI run rather than only in production. --once with no `mode: once` source is an error, because it would otherwise hang forever.
+affects: cmd/ingestd/main.go
+
+[2026-09-29 09:00] BUG: a glob matching no files was treated as a missing file and failed the source.
+why: expand() kept an unmatched pattern as a literal path so that a typo would be reported by name. That is right for a literal path - a typo must not look like a source that is healthily reading zero records - but wrong for a pattern: an empty log directory is normal, and in tail mode files appear later. Now a path containing *, ? or [ that matches nothing logs a warning and is skipped, while a literal path that does not exist still fails by name. Found by TestSecondDaemonOnOneVaultIsRefused, which used an intentionally-empty glob.
+affects: pkg/dataplane/ingest/source/file.go
+
+[2026-09-29 09:00] Test harness caches the pipeline's exit instead of exposing a bare channel.
+why: A test that read h.done directly consumed the value h.stop() was also waiting for, so cleanup blocked for ten seconds and reported "the pipeline did not shut down" - a confusing failure caused by the harness, not by the code under test. waitRun() is idempotent and both paths use it.
+affects: pkg/dataplane/ingest/source/net_test.go
+
+[2026-09-29 09:05] M3.4 and M3.5 verified end to end against a live daemon.
+why: Chunk rule, plus the smoke test from PRD 11.5 run for real. Started ingestd with the dev config and fed it all five paths: healthz 200, a UDP datagram, two TCP lines, one octet-counted TCP message (30 bytes, decoded back exactly), and the 50-line sample ASA file over HTTP (202 {"accepted":50}). SIGTERM exited 0. The resulting vault: 2 sealed segments, 2144 records, `verify --deep` exit 0, a proof verified standalone through verify-proof, and `get --raw | shasum` matching the manifest's expected_sha256 for that record.
+First third-party dependency added: gopkg.in/yaml.v3 (config), pinned at v3.0.1.
+affects: cmd/ingestd/, configs/ingest.dev.yaml, pkg/dataplane/ingest/config.go
+
+[2026-09-29 09:15] File tail is polling-based; fsnotify is deliberately NOT added.
+why: PRD 5.1 specifies fsnotify with a 500ms polling fallback, and fsnotify is pre-approved in PRD section 10. Implementing polling only is a deviation, taken for three reasons. First, the fallback has to exist and be correct regardless - PRD 11.4 says bind mounts break fsnotify, so containers run `poll: true` anyway, which is where this will actually be deployed. Second, the benefit is latency, and 500ms is far below anything that matters here: the vault's seal interval is 5-30s and nothing downstream is waiting on a single line. Third, it keeps the dependency count at one, which is worth something for the air-gap build. The polling loop is isolated behind one function, so adding fsnotify later as an accelerator is a contained change rather than a rewrite. Revisit if a measured requirement appears.
+affects: pkg/dataplane/ingest/source/tail.go, go.mod
+
+[2026-09-29 09:15] Tail checkpoints pulled forward from M4 into M3, alongside tail itself.
+why: Same reasoning as the record codec at M1. Tail without resume is not a feature anyone would ship, and building it twice - once without checkpoints and once with - means the first version's rotation and truncation handling gets rewritten rather than reused. The two are one coherent piece.
+affects: pkg/dataplane/ingest/source/tail.go, M4 scope
+
+[2026-09-29 09:40] BUG: appending to a file changed its fingerprint, so checkpoints never matched on small files.
+why: The fingerprint was the SHA-256 of the first min(1024, size) bytes. For a file under 1024 bytes that covers the WHOLE file, so every append changed it and every resume decided it was looking at a different file and re-read from zero. A log file is append-only, so its first N bytes are immutable once it is N bytes long - the fix is to store fingerprint_len alongside the fingerprint and recompute over exactly that prefix rather than over however much is there now. Caught by TestTailResumesFromCheckpoint, which read "one" again instead of "four".
+affects: pkg/dataplane/ingest/source/checkpoint.go, tail.go
+
+[2026-09-29 09:40] Checkpoint file names are a SHA-256 of the log path, not the path itself.
+why: A log path can contain slashes, spaces, dots and anything else a filesystem allows. Building a checkpoint file name out of it is how directory traversal happens, and this is one of the few places in the workstream where an external string could reach a filesystem path. Asserted by TestCheckpointNamesAreHashed.
+affects: pkg/dataplane/ingest/source/checkpoint.go
+
+[2026-09-29 09:40] The tail reader never returns EOF; it waits.
+why: A framer that saw EOF at the end of a file would emit a half-written line as a complete record and the rest as a second one, splitting an event in two at exactly the moment a writer was mid-write. Handing the framer a stream that does not end means a partial line is held until its terminator arrives, which is what TestTailHoldsAPartialLine checks by writing "half a li", waiting several poll intervals, and requiring zero records.
+affects: pkg/dataplane/ingest/source/tail.go
+
+[2026-09-29 09:40] A tail waits for a file that does not exist rather than failing.
+why: A file named explicitly may not be there yet, or may be momentarily absent between a rename and a create. Failing would make an ordinary log rotation take the source down. A literal path that never appears is visible as a source producing nothing, and the warning says so.
+affects: pkg/dataplane/ingest/source/tail.go
+
+[2026-09-29 09:40] checkpoint_dir, checkpoint_every and poll are config errors on a non-tail file source.
+why: Same rule as the rest of the config: accepting them on a one-shot read and ignoring them would suggest a restart resumes, when in fact it re-reads the whole file every time.
+affects: pkg/dataplane/ingest/config.go
+
+[2026-09-29 09:45] M3 COMPLETE. make check ALL GREEN, race clean at -count=2, 2812 passing subtests.
+why: Chunk rule. All six sub-chunks done: frame decoders, file source (once and tail), TCP/UDP/HTTP, Pipeline, config + ingestd, and the e2e byte-exact round-trip gate (7598 records across 13 fixtures). Tail covers appends, partial lines held until terminated, rename-and-create rotation, copy-truncate truncation, from: end, waiting for a file to appear, checkpoint resume, at-least-once ordering, stale and corrupt checkpoints, and multiple files concurrently.
+Still outstanding for M4: TLS listeners (currently refused explicitly), the format sniff hint (every RawEvent carries HintUnknown), peer-CIDR to source_id mapping, the multiline timeout being driven by the source, and the Prometheus registry. M5: compaction, the 200-cycle kill -9 suite, benchmarks, docs/vault-format.md.
+affects: pkg/dataplane/ingest/, cmd/ingestd/
+
+================================================================================
+CHECKPOINT [2026-09-29 09:50] — state of the world after M3
+--------------------------------------------------------------------------------
+DONE     M0 fixtures scaffold · M1 corpus + memvault + merkle · M2 on-disk vault
+         + vaultctl · M3 ingest (framers, file once+tail, TCP, UDP, HTTP,
+         Pipeline, config, ingestd, e2e round-trip gate)
+NOT DONE M4 sniff hint, TLS, peer map, multiline timeout, Prometheus,
+         scripts/send_samples.sh
+         M5 compaction, 200-cycle kill -9 suite, benchmarks, docs/vault-format.md
+
+GATE     `make check` -> ALL GREEN. 2812 passing subtests, race clean at
+         -count=2. One dependency: gopkg.in/yaml.v3.
+
+PROVEN   - 7598 records across all 13 fixtures round-trip byte-exact against the
+           manifest (bytes, SHA-256, terminator, fragment count, byte offset),
+           then VerifyChain(deep). This is PS requirement (a) with evidence.
+         - Tamper matrix: 10 rows, 0 undetected.
+         - Torn tails cut at every byte offset; exactly the whole records survive.
+         - memvault and the on-disk vault issue interchangeable proofs.
+         - A live ingestd exercised on all five source paths, SIGTERM exit 0,
+           resulting vault verifies deep and a proof verifies standalone.
+
+NOT PROVEN - Power-loss durability. Crash tests kill the process only.
+         - "0 acknowledged records lost" is measured on the 200-cycle kill -9
+           suite, which is M5 and does not exist. Current crash coverage is
+           directory snapshots: same on-disk states, NOT the same claim.
+         - No throughput number measured, and none can be from this machine.
+         - Tamper-EVIDENT, not tamper-proof.
+
+NEXT ACTION
+         M4.1: the format sniff hint in pkg/dataplane/ingest/sniff. Every
+         RawEvent carries HintUnknown today. PRD 5.3 gives the ordered rules.
+         It is advisory only and must never affect Raw or storage. Test it
+         against every fixture with an expected hint per file.
+================================================================================
+
+[2026-09-29 10:05] Sniff hint computed AFTER the vault write, never before.
+why: It is a heuristic run on attacker-controlled input. Computing it before storage would mean a crafted log line could influence how that line was kept, which is the one thing the byte-exactness claim cannot allow. It is attached to the RawEvent on the way out. TestHintsReachDownstream asserts both halves: every record of a vendor's file sniffs the same way, and the stored bytes equal the source bytes regardless of what the sniffer decided.
+affects: pkg/dataplane/ingest/ingest.go, pkg/dataplane/ingest/sniff/
+
+[2026-09-29 10:05] Sniffer is hand-rolled byte scanning, not regexp.
+why: PRD 5.3's rules are expressible as regexes, and Go's RE2 is linear-time so it would be safe. But this runs on every record on the hot path, and the rules reduce to one pass over at most 256 bytes with no allocation. Measured: 132 ns/op, 0 allocs, ~1 GB/s on this machine. A regex-based version would be paid for by every event whether or not anything used the answer.
+affects: pkg/dataplane/ingest/sniff/sniff.go
+
+[2026-09-29 10:05] A syslog-framed CEF or LEEF message is classified CEF or LEEF, not syslog.
+why: PRD 5.3 rule 1 says so, and the reason is that the transport is incidental - the payload is the part a parser has to understand. Checked within 200 bytes of the PRI header.
+affects: pkg/dataplane/ingest/sniff/sniff.go
+
+[2026-09-29 10:05] Expected hint per fixture is asserted, and three fixtures are deliberately "unknown".
+why: multiline.log (ISO-dated stack traces), dhcp.log (ISC dhcpd prose) and openvpn.log have no machine-readable shape at a glance. Returning unknown is the honest answer; inventing a classification for them would mislead the parser registry into trying an extractor that cannot work. All 7810 fixture lines were also checked to return a valid hint and never panic.
+affects: pkg/dataplane/ingest/sniff/sniff_test.go
+
+[2026-09-29 10:10] client_ca means RequireAndVerifyClientCert, never VerifyClientCertIfGiven.
+why: Optional client authentication is the worst of both worlds - it reads as mutual TLS in the configuration and authenticates nobody. If an operator sets client_ca they mean it.
+affects: pkg/dataplane/ingest/source/tls.go
+
+[2026-09-29 10:10] A client_ca file containing no parseable PEM is a startup error.
+why: Go's CertPool silently accepts an empty pool, and the listener would then reject every client. That surfaces as a network problem being chased for an afternoon rather than as the configuration error it is.
+affects: pkg/dataplane/ingest/source/tls.go
+
+[2026-09-29 10:10] FINDING: mutual TLS cannot be tested by checking whether the connection opened.
+why: Under TLS 1.3 the client completes its half of the handshake before the server has validated the client certificate, so a client with NO certificate sees Dial, Handshake and its first Write all succeed; the rejection arrives as an alert on a later read. Verified against a live daemon: a Go client with no certificate reported "ACCEPTED (TLS 1.3)" and its record never reached the vault, while the authenticated client's did. The security property holds - but a naive test would conclude mutual TLS is broken when it works, or worse that it works when it does not. The unit tests write AND read; documented at the top of TLSConfig so the next person does not have to rediscover it.
+affects: pkg/dataplane/ingest/source/tls.go, tls_test.go
+
+[2026-09-29 10:10] `ingestd certs` generates ECDSA P-256, not RSA.
+why: Far faster handshakes, universally supported by anything speaking TLS 1.2+, and small enough that the PEM files are readable. Serials are random 128-bit rather than sequential: sequential serials leak how many certificates have been issued and collide across independent runs. Private keys are written 0600 and the directory 0700. A generated README sits next to the files saying they are development-only, rather than that warning living somewhere an operator has to go looking.
+affects: cmd/ingestd/certs.go
+
+[2026-09-29 10:12] M4.1 and M4.2 verified: make check ALL GREEN.
+why: Chunk rule. Sniff: 30 rule cases, every fixture's expected hint, all 7810 fixture lines valid and panic-free, input-not-modified, window bound, 132 ns/op. TLS: records carried with OriginTLS, untrusted server refused, TLS 1.1 refused, mutual TLS accepting a valid client and refusing both no-certificate and wrong-CA clients, config validation. Verified end to end against a live daemon with certificates from `ingestd certs`.
+affects: pkg/dataplane/ingest/sniff/, pkg/dataplane/ingest/source/tls.go, cmd/ingestd/certs.go
+
+[2026-09-29 10:30] Peer map prefixes are masked at load; a peer matching nothing falls back rather than being dropped.
+why: Two things that both look like "the feature silently does not work". netip.Prefix.Contains returns false for an unmasked prefix like 10.1.4.7/24, so without Masked() a perfectly reasonable config line matches nothing at all. And a device that starts sending before anyone adds its CIDR keeps the listener's own source_id: refusing it would drop real data over a bookkeeping omission. IPv4-in-IPv6 peers are unmapped, or a dual-stack listener would miss every IPv4 rule.
+affects: pkg/dataplane/ingest/source/peermap.go
+
+[2026-09-29 10:30] Peer map is resolved once per TCP connection and per UDP datagram.
+why: A connection has one peer for its lifetime, so resolving per record would be wasted work. A UDP socket hears from every device, so there is nothing to resolve once. Different costs, same answer.
+affects: pkg/dataplane/ingest/source/{tcp.go,udp.go}
+
+[2026-09-29 10:35] BUG: Multiline.Next held the mutex across its blocking inner read, so the timeout could never fire.
+why: Making Multiline safe for the source's timer goroutine, the obvious `m.mu.Lock(); defer m.mu.Unlock()` on Next was wrong in the worst possible way: Next blocks until a line arrives, so the lock was held for exactly as long as the source stayed quiet - and a quiet source is the ONLY situation the timeout exists for. The feature would have looked implemented, passed a busy-source test, and done nothing in the case it was written for.
+Fixed by restructuring so the inner read happens outside the lock and the lock covers only the state mutation. Caught by TestMultilineTimeoutReleasesAHeldRecord, which writes an event and then nothing.
+affects: pkg/dataplane/ingest/frame/multiline.go
+
+[2026-09-29 10:35] The multiline timeout is checked inside FlushIfOlderThan, not by the source.
+why: The source could read an age and then decide to flush, but the record's age and the decision to flush have to be read under the same lock or a line arriving in between produces a record flushed mid-append. Passing the duration in and letting the decoder decide keeps both under one lock.
+affects: pkg/dataplane/ingest/frame/multiline.go, pkg/dataplane/ingest/source/file.go
+
+[2026-09-29 10:35] The tailer's position fields are mutex-guarded now that two goroutines advance them.
+why: The read loop and the multiline timeout goroutine both submit records, and both advance the offset the next checkpoint will record. Unguarded, a checkpoint could be written from a half-updated position - skipping or repeating a record on the next restart. The offset also only ever moves forward, so an out-of-order submit cannot rewind it.
+affects: pkg/dataplane/ingest/source/tail.go
+
+[2026-09-29 10:40] M4.3 and M4.4 verified: make check ALL GREEN, race clean at -count=2.
+why: Chunk rule. Peer map: longest prefix wins with deliberately unsorted config, unmasked prefixes, IPv4-in-IPv6, bare addresses, nonsense addresses, nil and empty maps, validation, and live TCP and UDP. Multiline timeout: a held record released when the source goes quiet, and an active record NOT cut while its continuations keep arriving.
+affects: pkg/dataplane/ingest/source/peermap.go, pkg/dataplane/ingest/frame/multiline.go
+
+[2026-09-29 11:10] Metric source labels are capped at 50, folding into "other".
+why: `source` is a metric label, and with dynamic_sources: true an HTTP client CHOOSES it. An unbounded label is an unbounded number of time series, which is how a Prometheus server is taken down by the thing it is monitoring. Past the cap everything folds into "other"; the records still carry their real source_id, so only the label collapses and nothing that matters is lost. Frame-error reasons come from a fixed set for the same reason - never from error text, which is network-influenced.
+affects: pkg/dataplane/ingest/metrics.go
+
+[2026-09-29 11:10] A nil Registerer gives a working Metrics rather than nil.
+why: Otherwise every recording site needs a nil check, and the one that gets forgotten is a nil dereference on the hot path. NewMetrics registers against a throwaway registry instead, so the write path is unconditional.
+affects: pkg/dataplane/ingest/metrics.go, pkg/dataplane/vault/metrics.go
+
+[2026-09-29 11:10] Latency histogram buckets span 50us to 5s, not the Prometheus defaults.
+why: The three regimes this system actually sees are sync=none writes in the low microseconds, an fsync to an SSD in the low milliseconds, and a struggling disk in the hundreds. The default buckets put all three in one bucket and say nothing about any of them.
+affects: pkg/dataplane/vault/metrics.go
+
+[2026-09-29 11:10] vault_failed is a gauge, not a counter.
+why: A counter makes "it failed once an hour ago" and "it is failing right now" the same number. vault_failed is the only signal that the vault has stopped accepting writes entirely, and it is what an alert fires on.
+affects: pkg/dataplane/vault/metrics.go
+
+[2026-09-29 11:10] vault_put_latency_seconds is observed once per batch, not per record.
+why: The latency a caller actually experiences is the batch's. Observing per record would make the histogram claim a thousand fast writes where there was one, which is the opposite of what a p99 is for.
+affects: pkg/dataplane/vault/vault.go
+
+[2026-09-29 11:12] ingest_udp_kernel_drops reports NaN where the platform cannot read it, not 0.
+why: Caught by running the daemon on macOS: the gauge read a reassuring flat 0, which means "no datagrams were dropped" - on a platform that has no way to tell. That is exactly the quiet false assurance the UDP documentation is at pains to avoid. Prometheus renders NaN as absent, so a dashboard shows "no data" instead. Linux reads Udp: RcvbufErrors from /proc/net/snmp.
+affects: pkg/dataplane/ingest/source/{udp.go,drops_linux.go,drops_other.go}
+
+[2026-09-29 11:12] The metric type label is derived from the record's Origin, not from configuration.
+why: A configured label can disagree with reality - a source declared `tcp` that is actually receiving over TLS would be mislabelled forever. Deriving it from Origin.Kind means the label cannot be wrong about where the bytes came from.
+affects: pkg/dataplane/ingest/ingest.go
+
+[2026-09-29 11:12] BUG: the new `kind` field raced between Submit and write.
+why: Submit set stream.kind under s.mu, but write() reads it outside the lock, which is where the batch is actually sent. Caught immediately by -race. The kind now travels with the batch out of detach(), under the same lock that takes the records - the same shape as the earlier ordering fix.
+affects: pkg/dataplane/ingest/ingest.go
+
+[2026-09-29 11:15] /metrics is served on the loopback metrics_addr, never on an ingest port.
+why: Scraping and ingesting have different exposure. Devices reach the syslog and HTTP ports; nothing that reaches those should be able to read internal counters and queue depths.
+affects: cmd/ingestd/main.go
+
+[2026-09-29 11:15] scripts/send_samples.sh is POSIX sh using only nc, curl and jq.
+why: It has to run inside the container, where there is no bash and no coreutils beyond the basics, and PRD 9.1 already assumes nc, curl and jq. sha256sum and shasum are both handled because GNU and BSD userlands differ. It exits non-zero on any failed check, so CI can run it as a gate rather than a human reading output.
+affects: scripts/send_samples.sh
+
+[2026-09-29 11:20] M4 COMPLETE. make check ALL GREEN, 2890 passing subtests, three direct dependencies.
+why: Chunk rule. Sniff hint (advisory, computed after storage, 132 ns/op), TLS listeners with mutual TLS and `ingestd certs`, peer map, the multiline timeout, the full Prometheus metric set from PRD section 13 on a loopback /metrics, and scripts/send_samples.sh. The script was run against a live daemon and passed every check: all five ingest paths, verify --deep exit 0, three independent SHA-256s agreeing, a proof verifying with no vault present, and vault_failed at 0.
+Remaining: M5 - compaction (.zst/.meta/.hix), the 200-cycle kill -9 suite, benchmarks, docs/vault-format.md. The kill -9 suite is what "0 acknowledged records lost" is measured on and still does not exist.
+affects: pkg/dataplane/ingest/, pkg/dataplane/vault/, cmd/ingestd/, scripts/
+
+[2026-09-29 11:45] 200-cycle kill -9 crash suite implemented. RESULT: 4417 acknowledged records, 0 lost.
+why: This is the test behind the project's central claim, and it did not exist until now. A child process writes with sync=always and appends each acknowledged record to a log; the parent SIGKILLs it at a random moment between 15 and 75 ms, reopens the vault, and requires every logged record to be present byte-exact with a verifying chain. The vault directory is reused across all 200 cycles, so recovery runs against a real accumulated history - 4417 records, roughly 110 seals - rather than a fresh directory each time. It also asserts the vault grows every cycle, or a suite where recovery quietly discarded everything would pass vacuously. Runs in 18 seconds.
+affects: pkg/dataplane/vault/crash_test.go
+
+[2026-09-29 11:50] FINDING: the crash suite does NOT prove fsync works. Established by mutation, not assumed.
+why: Two deliberate breakages were run against it. Reversing the seal order - appending the ledger line before fsyncing the footer - fails within 60 cycles with "segment 37 footer disagrees with its chain.log line", so the suite genuinely exercises the seal windows. But switching the child to sync=none, where an acknowledgement no longer means the record is on disk at all, PASSES.
+That is not a gap in the test; it is the boundary of what killing a process can show. SIGKILL does not discard the page cache, so a record written with no fsync at all is still readable by the next process to open the file. The suite proves the recovery logic is correct - torn tails, interrupted seals, missing ledger lines, sequence contiguity - and it does not prove fsync put anything on a platter. Proving that requires cutting power, which no test can do.
+This is recorded prominently because it is exactly the kind of thing a submission overclaims. "0 acknowledged records lost across 200 kill -9 cycles" is true and measured. "Durable" without qualification is not what it shows.
+affects: pkg/dataplane/vault/crash_test.go, README.md, docs/vault-format.md (M5), the submission's claims section
+
+[2026-09-29 11:50] The crash child does not fsync its receipt log.
+why: SIGKILL does not discard the page cache, so the parent sees every line the child wrote without it. Fsyncing would double the I/O of the whole suite and prove nothing extra - and the one failure mode it would guard against, power loss, is explicitly not claimed anyway.
+affects: pkg/dataplane/vault/crash_test.go
+
+[2026-09-29 12:05] Every benchmark reports durable_ack as a metric alongside its number.
+why: The three sync modes differ by orders of magnitude and only one means the acknowledgement was on disk. A records/s figure copied out of a terminal without its mode is worse than no figure, because it looks authoritative. durable_ack rides along with every throughput and latency result so the two cannot be separated in a spreadsheet.
+affects: pkg/dataplane/vault/bench_test.go, Makefile
+
+[2026-09-29 12:05] A TEST fails on non-Linux explaining that benchmark numbers are not reportable.
+why: A comment does not stop anyone. Go's File.Sync issues F_FULLFSYNC on Darwin, which flushes the drive's own write cache, while Linux fsync usually returns once the data reaches the drive - the two differ by more than an order of magnitude and the PRD's targets are Linux targets. Measured here: 79k records/s at 64 producers in sync=always, p50 6ms. Those numbers are real and must not appear in the submission.
+affects: pkg/dataplane/vault/bench_test.go
+
+[2026-09-29 12:05] BenchmarkPutBatch varies producers (1, 16, 64), not just sync mode.
+why: With one producer there is nothing for group commit to coalesce, so every batch pays its own fsync and the result is a latency measurement wearing a throughput costume. The 16- and 64-producer cases are the realistic ones and the reason group commit exists at all. On this machine the spread is 2.4k/s to 79k/s in sync=always - the same code, a 33x difference, purely from concurrency.
+affects: pkg/dataplane/vault/bench_test.go
+
+[2026-09-29 12:10] docs/vault-format.md written; section 10 is the one that matters.
+why: It is the source for slide 3 and the two-page architecture document, and the reference for anyone writing a verifier or a tamper test. Section 10 ("What is NOT claimed") is deliberately the most detailed: power-loss durability is not proven and the reason is stated with the mutation result that established it; tamper-evident is not tamper-proof and the coherent-rewrite case is spelled out; UDP, at-least-once tail delivery and single-node are all named. A format document that only lists guarantees is how a submission ends up overclaiming.
+affects: docs/vault-format.md
+
+[2026-09-29 12:25] BUG FOUND BY THE CRASH SUITE UNDER -race: a vault could become unopenable.
+why: openSegment creates the segment file, writes the 72-byte header and fsyncs. A crash inside those few microseconds leaves a file shorter than a header - a segment no record was ever acknowledged into. Recovery called that fatal corruption and refused to open the vault at all, so a kill landing in a microsecond-wide window of segment rollover produced a vault that could never be started again. That is strictly worse than losing the unacknowledged records: it loses everything.
+It is now treated as never having existed - the file is removed and the id is free for the next write. Only the LAST segment qualifies; an empty segment in the middle still means a segment was removed, which no crash does.
+Found at cycle 123, and only under -race, because the race detector slows the child enough to move where the kill lands. A 200-cycle suite that runs only without -race would not have found it. TestUninitialisedSegmentIsDiscarded now covers 0, 1 and 71 bytes directly rather than waiting for luck.
+affects: pkg/dataplane/vault/recover.go, recover_test.go
+
+[2026-09-29 12:30] The crash suite waits for the child to acknowledge something before killing it.
+why: A fixed pre-kill sleep is simpler and wrong. `make check` runs every package in parallel, and under that disk contention - with macOS issuing a full drive flush per fsync - the child can fail to complete a single batch inside a fixed window, and the suite fails with "killed before it acknowledged anything". That is a flake about how busy the machine is, not a finding about the vault, and an intermittently failing crash suite is worse than none because it trains people to re-run it. It now polls for the first receipt and then kills after a random extra delay, so the kill point stays random where it matters - inside the write path - without the test measuring disk load.
+affects: pkg/dataplane/vault/crash_test.go
+
+[2026-09-29 12:30] `make check` runs a 40-cycle crash pass; `make crash` runs the full 200.
+why: The crash suite found a real bug during an ordinary `make check`, so it earns its place in the main gate. 40 cycles adds about 25 seconds, which is acceptable for the gate that runs constantly; 200 stays behind `make crash` for a full pass.
+affects: Makefile
+
+================================================================================
+CHECKPOINT [2026-09-29 12:35] — state of the world, M4 done and most of M5
+--------------------------------------------------------------------------------
+DONE     M0 · M1 · M2 · M3 · M4 complete.
+         M5 partial: the 200-cycle kill -9 crash suite, benchmarks, and
+         docs/vault-format.md are done.
+NOT DONE M5 compaction only: .zst/.meta/.hix, the compacted read path, the two
+         vault_compaction_* metrics, and the four vault config keys that are
+         currently REJECTED as unimplemented (compact, compact_block_bytes,
+         zstd_level, hash_index).
+
+GATE     `make check` -> ALL GREEN, run three times consecutively. It now
+         includes a 40-cycle crash pass; `make crash` runs the full 200.
+         ~2900 passing subtests. Three direct dependencies.
+
+MEASURED - 7598 records across 13 fixtures round-trip byte-exact (PS req (a)).
+         - 200 kill -9 cycles, 5889 acknowledged records, 0 lost.
+         - Tamper matrix: 10 rows, 0 undetected.
+         - Torn tails cut at every byte offset.
+         - Sniff: 132 ns/op, 0 allocs. Framing: ~2 GB/s.
+         - Group commit coalescing ~195 records per fsync under light load.
+
+NOT PROVEN, AND MEASURED TO BE SO
+         The crash suite does NOT prove fsync works. Switching the child to
+         sync=none still passes it, because SIGKILL does not discard the page
+         cache. It proves the recovery logic; it does not prove data reached a
+         platter. Reversing the seal order DOES fail it within 60 cycles, so it
+         is not vacuous. Say "process crash", never "power loss".
+
+         No throughput number is reportable from this machine. macOS issues
+         F_FULLFSYNC per fsync; a test fails on non-Linux saying so.
+
+NEXT ACTION
+         M5 compaction. Start with compact.go writing .zst/.meta/.hix to *.tmp
+         and the verify-before-delete step, because that is the part that must
+         never be wrong: a compaction that dropped a record would be silent.
+         Dependency: github.com/klauspost/compress/zstd.
+================================================================================
+
+[2026-09-29 14:10] Compaction: a compacted segment is a "logical WAL"; records keep their WAL offsets.
+why: This is the decision the rest follows from. The in-memory index, Get, Proof, recovery's scan and deep verification all address records by WAL byte offset. By making the decompressed blocks concatenate to exactly the original record region, none of them needed a compacted-aware code path - one readSeg indirection turns an offset into bytes, whichever way the segment is stored. The consequence is testable and was tested: the shared vaulttest conformance suite passes UNMODIFIED against a vault compacting underneath it, so memvault and the real vault are still held to one definition of correct.
+affects: pkg/dataplane/vault/{compacted.go,compact.go,read.go,recover.go}
+
+[2026-09-29 14:10] DEVIATION: no .meta file. The block table lives inside the .zst as per-block length prefixes.
+why: PRD 6.7 lists .meta (header, footer, block table). A separate copy of information the file already contains is a second thing to keep consistent with it, and the PRD's own decision D5 says derived indexes must be rebuildable from segments. With the table inside the file it cannot disagree with the data and is rebuilt by walking the prefixes. Each block is `comp_len u32 | uncomp_len u32 | crc u32 | zstd frame`.
+affects: pkg/dataplane/vault/compacted.go, docs/vault-format.md
+
+[2026-09-29 14:10] Verify-before-delete reads the .zst back FROM DISK, not from the buffers just written.
+why: Verifying what is in memory proves the compressor works, not that the file on disk is right. verifyCompacted opens the temporary file fresh, walks its blocks, checksums and decompresses each, parses every record, recomputes the Merkle root and requires it to equal the footer's - exactly what recovery will do to it later. The .wal is deleted only after that passes.
+affects: pkg/dataplane/vault/compact.go
+
+[2026-09-29 14:10] Compaction guard checked by mutation, in both directions.
+why: A guard that cannot fail proves nothing. Mutation A - compaction drops one record per segment with verification DISABLED - is still caught by TestCompactedReadsEqualWALReads ("index says record 3 is at segment 1 offset 470, but that record is 4"), so the reads test is an independent guard. Mutation B - the same drop with verification ENABLED - is refused: "block 0 holds record 4 where 3 belongs", the .wal is kept, no .zst is left behind, and the segment is not flagged compacted.
+affects: pkg/dataplane/vault/compact_test.go, compact_internal_test.go
+
+[2026-09-29 14:10] When both a .wal and a .zst exist, the .zst is verified FIRST and a bad one never causes the .wal to be deleted.
+why: The interrupted-compaction window (between the final rename and deleting the .wal) leaves both. PRD 6.6 says "keep .zst, delete .wal". Followed literally that destroys the only good copy if the .zst is the damaged one. So the .zst must prove itself before the .wal goes; if it does not, both are left alone and the open fails as corruption. A read-only open never deletes anything. TestNeverDeleteTheOnlyGoodCopy.
+affects: pkg/dataplane/vault/recover.go
+
+[2026-09-29 14:10] A failed compaction is not a failed vault.
+why: The data is intact in the .wal, so putting the vault into the terminal ErrFailed state - refusing all writes and demanding a restart - over a space optimisation would be a wildly disproportionate response. It is logged, counted in vault_compaction_failures_total, and the segment is skipped (not retried in a tight loop) until the next Open. Asserted: after a failed compaction the vault is not failed and still accepts writes.
+affects: pkg/dataplane/vault/compact.go
+
+[2026-09-29 14:15] FINDING: zstd-3 in 256 KiB blocks does NOT beat gzip-6 on compression ratio on this corpus.
+why: Measured on the synthetic corpus, per file: cisco_asa 6.7x vs 6.6x, fortinet 8.6x vs 8.8x (gzip wins), suricata 7.1x vs 7.2x (gzip wins), palo_alto 5.6x vs 5.5x. Excluding oversize.log the corpus totals are 7.36x vs 7.37x. Whatever the argument for zstd is, ratio is not it, and the submission must not claim otherwise. Speed was not measured and nothing here claims it.
+The headline TOTAL of 12.9x is misleading: oversize.log is 2.6 MB of one repeated pattern (1724x) and dominates. Typical files are 5.0-8.6x. The corpus is synthetic and repetitive by construction; ratios on real device logs will differ in either direction. Ratios ARE machine-independent, so unlike throughput these are reportable from this machine.
+affects: docs/vault-format.md 9.2, the submission's compression claim
+
+[2026-09-29 14:15] FINDING: the .hix costs more than the data it indexes.
+why: 40 bytes per record of incompressible SHA-256. On records that compress ~6.5x that is more than the compressed record itself: 303,960 bytes of .hix against 487,435 bytes of compressed segments on the corpus (62% on top), and 56% of the directory in a focused test. So the segment ratio and the on-disk ratio are very different numbers and both must be reported. hash_index: false removes it entirely (GetByHash then returns ErrHashIndexDisabled). A 12-byte truncated-hash variant would cut it ~3x at the cost of verifying candidates on lookup; deliberately not built, recorded as a future optimisation.
+affects: docs/vault-format.md 3.5 and 9.2, cmd/ingestd/README.md, configs/ingest.dev.yaml
+
+[2026-09-29 14:20] KNOWN LIMIT, stated not fixed: the in-memory index is still O(records).
+why: PRD 6.4 intends the hash index to be in memory only for the active segment. Compaction moves hash LOOKUPS to disk (.hix) but every record still has a locator entry (segment, offset, raw hash; ~50 bytes) held for the life of the process, compacted or not. Fine at the scales tested; a vault of hundreds of millions of records would need the locator made per-segment and sparse. That is the documented scale path and is not built. The PRD's RSS target ("under 300 MiB at 100k records/s, excluding hash index") has NOT been measured and cannot be from this machine.
+affects: docs/vault-format.md 10.3
+
+[2026-09-29 14:25] Failure injection added (PRD 12.1), via an unexported openFile hook and a fileIO interface.
+why: The PRD's test plan lists "a file wrapper that fails the Nth Write/Sync" and it had not been written. The hook is UNEXPORTED so no caller outside the package can substitute storage under the durability guarantees; only in-package tests can set it. A crash test cannot check the fsync policy - the process dying is not the disk erroring - so these fail a chosen call: the Nth write, the Nth fsync, the footer write, the footer fsync, the ledger append and the ledger fsync. Each asserts the vault goes terminal, every later call (including reads) returns ErrFailed, vault_failed is 1, a failed fsync is NEVER retried, every concurrent caller in the coalesced group is told, a failed vault does not seal on Close, and reopening recovers everything acknowledged.
+Mutation-checked: making the vault retry a failed fsync fails TestFsyncFailureIsTerminalAndNeverRetried and TestFailureIsReportedToEveryWaitingCaller, because the retry "succeeds" and callers are told their data is durable - exactly the lie the policy exists to prevent.
+affects: pkg/dataplane/vault/{inject_test.go,vault.go}
+
+[2026-09-29 14:25] Crash suite now also runs with background compaction (TestCrashWithCompaction).
+why: Compaction is where a silent bug would do the most damage, so it gets the same treatment as the write path. With tiny segments the process is killed mid-write of the .zst, mid-verification, between the renames, and between the last rename and deleting the .wal. 200 cycles, 4206 acknowledged records, 0 lost - and 3924 with -race. `make check` runs 40 cycles of each; `make crash` runs 200 of each.
+affects: pkg/dataplane/vault/crash_test.go, Makefile
+
+[2026-09-29 14:30] Config: compact, compact_block_bytes, zstd_level, hash_index now exist; the four keys that were REJECTED as unimplemented are accepted.
+why: They were rejected at 08:50 precisely so that no operator could believe compaction was on when it was not. Now that it is real they parse, with pointers for the two booleans so an explicit false is distinguishable from absent (the default is on). compact_block_bytes is bounded 4KiB-16MiB and zstd_level 1-22; the config package cannot import the vault, so it mirrors the limit and TestConfigLimitsMatchVault keeps the copies from drifting.
+affects: pkg/dataplane/ingest/config.go, cmd/ingestd/main.go, configs/ingest.dev.yaml
+
+[2026-09-29 14:35] M5 COMPLETE. Live daemon verified with compaction on.
+why: Chunk rule. ingestd with the dev config compacted three segments (5.3-7.7x), verify --deep exit 0, the source line / the compacted vault's `get --raw` / the manifest's expected_sha256 all agree, a proof from a compacted segment verified with no vault present, and a flipped byte in a compressed block exits 1 naming the segment. Compaction metrics exported: seconds, ratio, bytes in and out, failures.
+Indicative only, macOS, NOT reportable: cold random read from a compacted segment 85.6us vs 244ns warm (~350x, the price of compaction on the read path); compaction 77 MB/s of WAL including read-back verification and fsyncs.
+affects: pkg/dataplane/vault/, cmd/ingestd/
+
+[2026-09-29 15:00] Gate 1 checked against the PRD's own list, which found three gaps I had not noticed.
+why: Working from "the milestones are done" rather than from PRD_INGESTION section 16 would have missed them. (1) Two packages had no README (sniff, gen/internal/gen) - PRD working rule 7. (2) One exported identifier had no doc comment (FooterSize) - same rule; checked with a throwaway go/ast walk over pkg, cmd and tools rather than by eye. (3) The "run with no network" requirement had never been tested: only asserted. All fixed.
+affects: pkg/dataplane/ingest/sniff/README.md, tools/gen/internal/gen/README.md, pkg/dataplane/vault/segment.go
+
+[2026-09-29 15:05] "Runs with no network" proven with the operating system, plus a permanent code-level guard.
+why: A claim about the air gap should not rest on having read the code. ingestd and vaultctl were built from a fresh `git clone` with CGO_ENABLED=0, then run under sandbox-exec with `(deny network*)`. A control run first confirmed the sandbox really blocks (curl: "Could not resolve host"). With the network denied ingestd ingested 4000 records, compacted both segments (6.9x and 7.2x) and stopped cleanly, and vaultctl verified deep and returned bytes whose SHA-256 matched the source.
+That is a point-in-time run. TestNothingDialsOut is the durable half: it parses every shipped non-test source file and rejects any call to net.Dial / tls.Dial / http.Get / http.Post and any import of net/smtp or net/rpc, allowing only the loopback --healthcheck probe. Proven able to fail by planting an http.Get in a scratch file, which it caught with file:line, then removing it.
+Note this is macOS sandbox-exec; the Packaging workstream owns the container-level proof (`docker run --network none`, verify_airgap.sh).
+affects: cmd/ingestd/egress_test.go
+
+[2026-09-29 15:10] TWO GATE 1 ITEMS CANNOT BE MET FROM THIS MACHINE, and are reported as unmet rather than papered over.
+why: (1) "Benchmarks recorded with hardware and sync mode": on macOS Go's File.Sync is F_FULLFSYNC, so every fsync-bound number is an order of magnitude off the Linux target; a test fails on non-Linux saying so. The benchmarks exist and run; the recorded Linux results do not. (2) "RSS at 100k records/s under 300 MiB, excluding hash index": needs Linux and a sustained load generator, and separately the in-memory per-record index is O(records), which is a documented limit rather than something this run can dismiss. Both are handed off, not claimed.
+The compression RATIOS are the exception: they do not depend on the machine, so they ARE measured and reported (docs/vault-format.md 9.2).
+affects: the submission's measured-numbers section, benchmarks/results/ (Packaging)
+
+================================================================================
+CHECKPOINT [2026-09-29 15:15] — state of the world after M5. Gate 1 met, minus two Linux-only items.
+--------------------------------------------------------------------------------
+DONE     M0 through M5. Every requirement in PRD_INGESTION section 16 Gate 1 is met
+         EXCEPT the two listed above, which need Linux.
+
+GATE     `make check` -> ALL GREEN, repeatedly. ~3000 passing subtests. Includes a
+         40-cycle crash pass of each variant; `make crash` runs 200 of each.
+         Four direct dependencies: yaml.v3, prometheus/client_golang + client_model,
+         klauspost/compress.
+
+MEASURED - 7598 records across 13 fixtures round-trip byte-exact, before AND after
+           compaction (PS requirement (a)).
+         - 200 kill -9 cycles, 0 acknowledged records lost: 5889 records WAL-only,
+           4206 with background compaction; 3924 under -race.
+         - Tamper matrix: 10 rows on WAL storage, +8 on compacted storage
+           (incl. a block forged with every checksum recomputed), 0 undetected.
+         - Failure injection: terminal on write/fsync/footer/ledger failure, fsync
+           never retried, mutation-checked.
+         - Compression, synthetic corpus, machine-independent: 5.0-8.6x per file,
+           ~7.4x excluding one outlier; zstd-3 ~= gzip-6; the .hix adds 62%.
+         - Runs with the OS denying all network; TestNothingDialsOut guards it.
+
+NOT PROVEN, AND MEASURED TO BE SO
+         - Power-loss durability. The crash suite does not prove fsync works:
+           sync=none still passes it. Say "process crash", never "power loss".
+         - Throughput. No fsync-bound number is reportable from macOS.
+         - RSS. Not measured; the per-record index is O(records).
+         - Tamper-EVIDENT, not tamper-proof: a coherent rewrite of the directory
+           is only detectable against an externally held chain head.
+
+NEXT ACTION
+         Phase 2 support. Nothing further is buildable here without other
+         workstreams: the real pkg/types, Parsing's cmd/dataplane consuming
+         Pipeline.Out, and a Linux box for the recorded benchmarks and RSS.
+================================================================================
