@@ -25,7 +25,11 @@ data/
 !DECISIONS.log
 
 # Working references, never committed
+.github/
+PRD_*.md
 prd/
+tasks/
+presentation/
 AGENTS.md
 
 # Editor scratch

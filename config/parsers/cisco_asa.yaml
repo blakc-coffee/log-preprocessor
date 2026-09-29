@@ -1,0 +1,49 @@
+id: "cisco_asa"
+version: "1.0.0"
+description: "Cisco ASA 5500 Series Adaptive Security Appliance Syslog"
+
+# detection_pattern is a fast pre-filter regex run against the first 256 bytes.
+# Only if this matches do we run the expensive full regex.
+# Must use Go stdlib regexp syntax only (no lookaheads, no backreferences).
+detection_pattern: "%ASA-[1-7]-[0-9]{6}:"
+
+# regex is the full named-capture regex applied to the entire raw log line.
+# All capture groups MUST use named syntax: (?P<name>...) not (...)
+# Only Go stdlib regexp features are permitted (DFA, linear O(n), no backtracking).
+regex: >-
+  ^%ASA-(?P<sev>\d)-(?P<msg_id>\d{6}):\s+
+  (?P<action_word>Built|Teardown|Denied|permit|deny)\s+
+  (?P<proto>TCP|UDP|ICMP|GRE)\s+
+  (?:connection\s+\d+\s+)?
+  for\s+(?P<src_iface>\w+):(?P<src_ip>[\d.]+)/(?P<src_port>\d+)\s+
+  \((?P<dst_ip>[\d.]+)/(?P<dst_port>\d+)\)
+
+# mappings translate named capture groups to OCSF NormalizedEvent fields.
+# Dot notation maps to nested struct fields (e.g. src_endpoint.ip → SrcEndpoint.IP).
+# Port fields are automatically converted from string to int by the normalizer.
+mappings:
+  severity: "sev"
+  action: "action_word"
+  protocol: "proto"
+  src_endpoint.ip: "src_ip"
+  src_endpoint.port: "src_port"
+  dst_endpoint.ip: "dst_ip"
+  dst_endpoint.port: "dst_port"
+
+# unmapped_captures lists capture groups that have no OCSF slot.
+# They are placed in NormalizedEvent.Unmapped{} — never dropped.
+unmapped_captures:
+  - "msg_id"
+  - "src_iface"
+  # action_word is mapped to action — not listed here
+
+# severity_map translates the ASA numeric severity digit (0-7) to OCSF severity strings.
+severity_map:
+  "0": "Critical"
+  "1": "Critical"
+  "2": "High"
+  "3": "High"
+  "4": "Medium"
+  "5": "Low"
+  "6": "Informational"
+  "7": "Informational"
