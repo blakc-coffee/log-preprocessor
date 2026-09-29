@@ -450,3 +450,44 @@ affects: pkg/dataplane/ingest/
 [2026-09-29 07:45] M3.2 verified: make check ALL GREEN, race clean at -count=3.
 why: Chunk rule. Pipeline behaviours covered: durability before visibility, batch timer on a quiet stream, backpressure with a 4-slot channel and 200 records, shutdown losing nothing that Submit accepted, vault failure propagating to the source, per-stream ordering across 8 concurrent streams, output channel closed on return.
 affects: pkg/dataplane/ingest/
+
+[2026-09-29 08:20] Listeners bind in their constructor, not in Run.
+why: A caller needs Addr() before accepting starts - tests bind to port 0 and must know where to dial. Binding in Run would force every test to poll for readiness, and PRD working rule 8 forbids sleep-based synchronisation in tests. The cost is that a bind failure surfaces at construction rather than at Run, which is if anything the better place for it.
+affects: pkg/dataplane/ingest/source/{tcp.go,udp.go,http.go}
+
+[2026-09-29 08:20] At MaxConns a TCP connection is refused immediately rather than queued.
+why: Accepting and then stalling looks to the sender like a working connection that is silently losing data. Refusing is the honest answer and the one a syslog sender can act on. Counted so it appears in metrics rather than only in a log.
+affects: pkg/dataplane/ingest/source/tcp.go
+
+[2026-09-29 08:20] UDP warns when the kernel clamps SO_RCVBUF.
+why: UDP has no backpressure; the receive buffer is the only thing between a burst and silent loss. Asking for 8 MiB and being given 256 KiB without saying so is exactly how UDP loss becomes an unexplained gap in the data weeks later. The effective size is read back with getsockopt and logged with a pointer at net.core.rmem_max. Linux reports double the requested value because it includes bookkeeping overhead; that is reported as-is rather than halved, so the logged number matches what `ss -m` shows.
+affects: pkg/dataplane/ingest/source/udp.go, sockopt_unix.go
+
+[2026-09-29 08:20] A trailing newline on a UDP datagram is content, not a terminator.
+why: Nothing framed a datagram - the datagram boundary is the record boundary. A sender that appends "\n" sent 34 bytes, not 33 plus a terminator, and stripping it would break byte-exactness for every such sender. Asserted by TestUDPTrailingNewlineIsContent.
+affects: pkg/dataplane/ingest/source/udp.go
+
+[2026-09-29 08:20] HTTP responds 202 only after every record in the body is durable.
+why: A 202 that meant "received" rather than "stored" would invite a client to delete its copy of data that is still only in memory. The stream is flushed before the response is written. TestHTTPResponseMeansDurable scans the vault immediately after the response arrives, with no waiting, and requires every record to be there.
+affects: pkg/dataplane/ingest/source/http.go
+
+[2026-09-29 08:20] A rejected HTTP source_id is never echoed back in the response or the log.
+why: It is attacker-controlled and would otherwise land in an operator's terminal and in log aggregation - the same log-injection problem the vaultctl preview escaping solves. The response says what the pattern is instead. Asserted by TestHTTPRejectsBadSourceID.
+affects: pkg/dataplane/ingest/source/http.go
+
+[2026-09-29 08:20] Unconfigured HTTP source ids are refused unless DynamicSources is set.
+why: PRD 5.1 makes dynamic_sources opt-in. An endpoint that mints a new source per request is an unbounded metric-label space and an easy way to pollute the corpus with a typo. An explicit AllowedSources list covers the middle ground.
+affects: pkg/dataplane/ingest/source/http.go
+
+[2026-09-29 08:20] Records already stored when an HTTP body fails part-way are NOT rolled back.
+why: The vault is append-only and a record that was stored is a record that was received. The failure response reports how many were stored so a client retrying knows it will create duplicates, which Origin.Offset lets a consumer collapse. Rolling back would mean deleting from the vault, which is the one operation it must never have.
+affects: pkg/dataplane/ingest/source/http.go
+
+[2026-09-29 08:25] BUG: shutdown hung when a connection arrived during the shutdown window.
+why: The accept loop registered a connection with track() after the shutdown watcher had already walked the connection map and closed everything. That connection was never closed, so its reader blocked until the idle timeout - five minutes by default - and Run never returned. It surfaced as an intermittent hang and only under -race, where the scheduling window is wide enough to hit; it passed at -count=1 and failed at -count=2.
+Fixed with a `closing` flag set under the same mutex: track() now refuses after shutdown has begun and the caller closes the connection instead. The accept loop also re-checks ctx. TestTCPShutdownWithConnectionsArriving dials continuously across the cancellation so the window is hit on purpose rather than by luck, with a five-minute idle timeout so a leak hangs the test rather than quietly waiting itself out. Clean at -race -count=4.
+affects: pkg/dataplane/ingest/source/tcp.go
+
+[2026-09-29 08:25] M3.3 verified: make check ALL GREEN, race clean at -count=4, 188 subtests in the ingest tree.
+why: Chunk rule. TCP (line, auto, octet framing; slow clients; 12 concurrent connections keeping per-connection order; max_conns; idle timeout; framing errors closing the connection), UDP (datagram boundaries, binary payloads, trailing newline as content), HTTP (lines/whole/octet framing, chunked bodies, 202-means-durable, source id validation, 413, 503 on an unhealthy vault, a fixture round-trip through curl-shaped requests).
+affects: pkg/dataplane/ingest/source/
