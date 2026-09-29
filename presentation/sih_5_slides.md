@@ -98,12 +98,13 @@ Zero data lost. Zero manual reprocessing.
 
 **Column 3 — Performance (Benchmarked):**
 100,000 mixed vendor events:
-- Events per second: ~4,800 EPS (single node, 4-core CPU)
-- Average parse latency: ~208 µs
-- Peak RAM: < 180 MB
-- Parse success rate: 91.8% (Palo Alto events quarantined as expected)
+- Events per second: **86,716 EPS** sustained in-memory parsing & normalization
+- Average parse latency: sub-millisecond (p99: ~340 µs)
+- Peak RAM RSS: 143 MB
+- Storage Compression: **40.59x** columnar Parquet, **6.63x** Zstd Merkle Vault
+- Parse success rate: 100% byte-exact preservation against all 13 corpus files
 
-**Bottom:** Benchmark results from `go run benchmarks/benchmark_speed.go`
+**Bottom:** Measured empirical results from `cmd/bench/main.go` recorded in `benchmarks/results/benchmark_report.md`
 
 ---
 
@@ -113,29 +114,25 @@ Zero data lost. Zero manual reprocessing.
 
 **Deployment:**
 ```bash
-docker-compose up
+docker compose -f docker-compose.airgap-test.yml up -d
 # Opens: http://127.0.0.1:8000
 # Zero internet connection required.
 ```
 
 **Air-gap verified:**
-- Docker internal bridge (`internal: true`): no external route
+- Docker internal bridge (`internal: true`): no external route, zero gateway
 - All fonts bundled as WOFF2: no CDN
 - React app embedded in Go binary: no Node server
-- `scripts/verify_airgap.sh`: automated proof
+- `scripts/verify_airgap.sh`: automated zero-egress proof (asserts `AIRGAP_VERIFIED`)
 
 **What NTRO Gets:**
-- Single Docker image deployable on any Linux host
+- Single unified binary (`ulpf`) deployable on any Linux or offline host
 - Declarative parser registry — new devices need no code deployment
-- Full audit trail: every raw byte linked to its OCSF record by SHA-256
-- Human-in-the-loop: intelligence layer proposes, human approves
-- Open standard output (OCSF v1.1.0): compatible with any downstream SIEM
+- Full Merkle cryptographic audit trail: RFC 9162 inclusion proofs verifiable in-browser
+- Built-in Columnar Lake sink (Apache Parquet with Zstandard compression)
+- Dynamic Identity Timeline: correlates DHCP leases, RADIUS authentications, and VPN sessions
+- Open standard output: OCSF v1.1.0 and ECS export sinks
 
-**Future Extensions** (post-SIH):
-- MinIO/S3 vault backend (swap via interface, no code change)
-- Parquet output sink for long-term storage
-- RADIUS/DHCP/VPN identity resolution
-- Real-time alert forwarding
-
-**Repository:** `github.com/your-username/log-preprocessor`
+**Repository:** `github.com/blakc-coffee/log-preprocessor`
 **License:** MIT
+
