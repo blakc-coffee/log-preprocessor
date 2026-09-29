@@ -725,3 +725,19 @@ affects: pkg/dataplane/vault/crash_test.go, README.md, docs/vault-format.md (M5)
 [2026-09-29 11:50] The crash child does not fsync its receipt log.
 why: SIGKILL does not discard the page cache, so the parent sees every line the child wrote without it. Fsyncing would double the I/O of the whole suite and prove nothing extra - and the one failure mode it would guard against, power loss, is explicitly not claimed anyway.
 affects: pkg/dataplane/vault/crash_test.go
+
+[2026-09-29 12:05] Every benchmark reports durable_ack as a metric alongside its number.
+why: The three sync modes differ by orders of magnitude and only one means the acknowledgement was on disk. A records/s figure copied out of a terminal without its mode is worse than no figure, because it looks authoritative. durable_ack rides along with every throughput and latency result so the two cannot be separated in a spreadsheet.
+affects: pkg/dataplane/vault/bench_test.go, Makefile
+
+[2026-09-29 12:05] A TEST fails on non-Linux explaining that benchmark numbers are not reportable.
+why: A comment does not stop anyone. Go's File.Sync issues F_FULLFSYNC on Darwin, which flushes the drive's own write cache, while Linux fsync usually returns once the data reaches the drive - the two differ by more than an order of magnitude and the PRD's targets are Linux targets. Measured here: 79k records/s at 64 producers in sync=always, p50 6ms. Those numbers are real and must not appear in the submission.
+affects: pkg/dataplane/vault/bench_test.go
+
+[2026-09-29 12:05] BenchmarkPutBatch varies producers (1, 16, 64), not just sync mode.
+why: With one producer there is nothing for group commit to coalesce, so every batch pays its own fsync and the result is a latency measurement wearing a throughput costume. The 16- and 64-producer cases are the realistic ones and the reason group commit exists at all. On this machine the spread is 2.4k/s to 79k/s in sync=always - the same code, a 33x difference, purely from concurrency.
+affects: pkg/dataplane/vault/bench_test.go
+
+[2026-09-29 12:10] docs/vault-format.md written; section 10 is the one that matters.
+why: It is the source for slide 3 and the two-page architecture document, and the reference for anyone writing a verifier or a tamper test. Section 10 ("What is NOT claimed") is deliberately the most detailed: power-loss durability is not proven and the reason is stated with the mutation result that established it; tamper-evident is not tamper-proof and the coherent-rewrite case is spelled out; UDP, at-least-once tail delivery and single-node are all named. A format document that only lists guarantees is how a submission ends up overclaiming.
+affects: docs/vault-format.md

@@ -53,15 +53,17 @@ test: ## Run the ingest/vault test suite
 race: ## Run the ingest/vault test suite under the race detector (needs cgo)
 	CGO_ENABLED=1 go test -race $(PKGS)
 
-crash: ## Run the vault kill -9 crash suite (slow)
-	go test -run TestCrash -count=1 -timeout 30m ./pkg/dataplane/vault/
+crash: ## Run the 200-cycle kill -9 crash suite (ULPF_CRASH_CYCLES=20 for a quick pass)
+	go test -run 'TestCrash$$' -v -count=1 -timeout 30m ./pkg/dataplane/vault/
 
 fuzz: ## Run the ingest/vault fuzz targets for 30s each
 	go test -run '^$$' -fuzz FuzzOctet -fuzztime 30s ./pkg/dataplane/ingest/frame
 	go test -run '^$$' -fuzz FuzzDelim -fuzztime 30s ./pkg/dataplane/ingest/frame
 	go test -run '^$$' -fuzz FuzzRecordDecode -fuzztime 30s ./pkg/dataplane/vault/record
 
-bench: ## Run the ingest/vault benchmarks (report hardware and sync mode with any number)
+bench: ## Run the benchmarks. LINUX ONLY for reportable numbers - see docs/vault-format.md
+	@echo "Every number must carry its sync mode. durable_ack=1 means the"
+	@echo "acknowledgement meant on-disk; 0 means it did not."
 	go test -run '^$$' -bench . -benchmem ./pkg/dataplane/vault/ ./pkg/dataplane/ingest/...
 
 .PHONY: help check fixtures fixtures-sample fixtures-check merkle-vectors build test race crash fuzz bench
