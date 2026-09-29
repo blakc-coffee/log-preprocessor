@@ -755,3 +755,42 @@ affects: pkg/dataplane/vault/crash_test.go
 [2026-09-29 12:30] `make check` runs a 40-cycle crash pass; `make crash` runs the full 200.
 why: The crash suite found a real bug during an ordinary `make check`, so it earns its place in the main gate. 40 cycles adds about 25 seconds, which is acceptable for the gate that runs constantly; 200 stays behind `make crash` for a full pass.
 affects: Makefile
+
+================================================================================
+CHECKPOINT [2026-09-29 12:35] — state of the world, M4 done and most of M5
+--------------------------------------------------------------------------------
+DONE     M0 · M1 · M2 · M3 · M4 complete.
+         M5 partial: the 200-cycle kill -9 crash suite, benchmarks, and
+         docs/vault-format.md are done.
+NOT DONE M5 compaction only: .zst/.meta/.hix, the compacted read path, the two
+         vault_compaction_* metrics, and the four vault config keys that are
+         currently REJECTED as unimplemented (compact, compact_block_bytes,
+         zstd_level, hash_index).
+
+GATE     `make check` -> ALL GREEN, run three times consecutively. It now
+         includes a 40-cycle crash pass; `make crash` runs the full 200.
+         ~2900 passing subtests. Three direct dependencies.
+
+MEASURED - 7598 records across 13 fixtures round-trip byte-exact (PS req (a)).
+         - 200 kill -9 cycles, 5889 acknowledged records, 0 lost.
+         - Tamper matrix: 10 rows, 0 undetected.
+         - Torn tails cut at every byte offset.
+         - Sniff: 132 ns/op, 0 allocs. Framing: ~2 GB/s.
+         - Group commit coalescing ~195 records per fsync under light load.
+
+NOT PROVEN, AND MEASURED TO BE SO
+         The crash suite does NOT prove fsync works. Switching the child to
+         sync=none still passes it, because SIGKILL does not discard the page
+         cache. It proves the recovery logic; it does not prove data reached a
+         platter. Reversing the seal order DOES fail it within 60 cycles, so it
+         is not vacuous. Say "process crash", never "power loss".
+
+         No throughput number is reportable from this machine. macOS issues
+         F_FULLFSYNC per fsync; a test fails on non-Linux saying so.
+
+NEXT ACTION
+         M5 compaction. Start with compact.go writing .zst/.meta/.hix to *.tmp
+         and the verify-before-delete step, because that is the part that must
+         never be wrong: a compaction that dropped a record would be silent.
+         Dependency: github.com/klauspost/compress/zstd.
+================================================================================
