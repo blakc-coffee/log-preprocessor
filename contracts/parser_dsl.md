@@ -80,6 +80,10 @@ before parsing (`from: [date, time]`).
 | `enum` | `enum: {captured text: value}`, `default: value` | keys are compared as strings. No `default` and no match is a normalize failure. |
 | `bool`, `bytes`, `duration` | | `duration` takes `unit: s|ms|ns` (default `s`) and stores milliseconds. |
 
+**Empty means absent.** An empty value (an empty csv field, `key=` in kv, an optional regex group that did not
+participate) is treated as not present: its map entries are skipped, no error, and it is not added to `unmapped`.
+Use this for optional columns such as a user name that is blank on some rows.
+
 **Unmapped.** Every capture, key, path or column that no `map` entry reads goes to `unmapped` under its own name
 (JSON: under its nested path). Nothing is discarded. `const` entries read nothing.
 
