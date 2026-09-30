@@ -1,2 +1,5 @@
 # TypeScript incremental build state
 *.tsbuildinfo
+# Playwright output
+test-results/
+playwright-report/

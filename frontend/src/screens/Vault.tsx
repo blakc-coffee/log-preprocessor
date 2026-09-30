@@ -107,7 +107,7 @@ export default function Vault() {
                   <Td dense className="hidden xl:table-cell">
                     {fmtInt(s.count)}
                   </Td>
-                  <Td dense className="font-mono text-code" title={s.root}>
+                  <Td dense className="font-mono text-label" title={s.root}>
                     {shortHash(s.root, 12)}
                   </Td>
                   <Td dense className="text-text-muted" title={s.recovered ? 'Sealed by crash recovery' : undefined}>
@@ -121,7 +121,9 @@ export default function Vault() {
           {seg.isPending && <Empty title="Loading segments…" />}
         </Card>
         <Card className="min-h-0 overflow-y-auto space-y-4">
-          <CodeBlock label="Chain head">{t?.vault.chain_head ?? '—'}</CodeBlock>
+          <CodeBlock label="Chain head" hash>
+            {t?.vault.chain_head ?? '—'}
+          </CodeBlock>
           <div className="flex gap-2">
             <Button onClick={() => verify.mutate(false)} disabled={verify.isPending}>
               Verify chain

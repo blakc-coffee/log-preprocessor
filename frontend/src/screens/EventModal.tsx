@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useEvent, useLineage, useRaw } from '../api/hooks';
 import type { Coverage, Entity, NormalizedEvent } from '../api/types';
 import { base64ToBytes, checkMerkle, checkSha, type Check, type LineageInput } from '../lib/merkle';
@@ -22,7 +22,9 @@ export function EventModal({ eventId, onClose }: { eventId: string; onClose: () 
   const box = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
+  // Layout effect: focus and the Escape handler are in place before the
+  // dialog is first painted, so an immediate keypress is never lost.
+  useLayoutEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     box.current?.focus();
     const onKey = (e: KeyboardEvent) => {
@@ -134,7 +136,9 @@ export function EventModal({ eventId, onClose }: { eventId: string; onClose: () 
           </div>
         )}
 
+        {/* role="group": a <footer> inside <main> is not a landmark, so it needs a role to be found by name. */}
         <footer
+          role="group"
           className="h-band shrink-0 grid grid-cols-3 border-t border-border"
           aria-label="Verification, computed in this browser"
         >
@@ -218,7 +222,7 @@ function EventDetail({ e, utc }: { e: NormalizedEvent; utc: boolean }) {
           {ids.map(([k, v]) => (
             <div key={k} className="contents">
               <dt className="text-text-muted">{k}</dt>
-              <dd className="truncate" title={v}>
+              <dd className={cx('truncate', k === 'raw_sha256' && 'text-label')} title={v}>
                 {v}
               </dd>
             </div>

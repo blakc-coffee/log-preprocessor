@@ -11,7 +11,7 @@ export function DriftDetail({ alert: a, proposals, utc }: { alert: DriftAlert; p
       <header className="space-y-1">
         <div className="flex items-center gap-3">
           <h2 className="text-heading font-semibold truncate">Format drift · {a.source_id}</h2>
-          <Pill tone={a.status === 'resolved' ? 'verified' : 'primary'}>{a.status}</Pill>
+          <Pill tone={a.status === 'resolved' ? 'verified' : 'muted'}>{a.status}</Pill>
         </div>
         <p className="text-body text-text-muted">
           Parser {a.parser_id} · first seen {fmtDateTime(a.first_seen, utc)} · {a.id}

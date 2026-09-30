@@ -97,5 +97,8 @@ control-test: ## Control API, registry and mock admin tests (race detector)
 control-build: ## Build cmd/control with CGO disabled (run `make ui` first to embed the UI)
 	CGO_ENABLED=0 go build -o bin/ ./cmd/control
 
+ui-e2e: ui control-build ## Playwright end-to-end checks in local Chrome (dev machine only; report: frontend/playwright-report)
+	cd frontend && npx playwright test
+
 control-demo: ui control-build ## Run the control plane on 127.0.0.1:8000 against the built-in mock admin
 	./bin/control --mock --registry-db :memory:

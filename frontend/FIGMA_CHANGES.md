@@ -38,6 +38,11 @@ repo's Go version.
 | All | 3 tabs | 5 tabs (+ Identity, Vault) | Required by the PRD; built only from existing components *(user)* |
 | All | Page padding about 24px | 16px | DESIGN.md `--space-page` |
 | All | Masthead fill looks black | `#050607` | DESIGN.md masthead spec |
+| All | Tab labels regular weight | 14px / **700** | DESIGN.md type scale: "tab labels" are 14/700. Figma and DESIGN.md disagree; DESIGN.md decides styling |
+| All | No time-zone control | "LOCAL TIME / UTC" toggle beside the status pill | PRD: times in the viewer's zone with an explicit UTC toggle |
+| All | Table header row looks card-coloured (`#050607`) | `#000000` | DESIGN.md table spec, and its anti-slop rule "only #000000" in table headers |
+| All | Stat values about 30px | 24px | The tallest value that fits DESIGN.md's 88px strip with its 24px card padding |
+| All | Status pills in white text | `#b3b3b3`, or mint when verified | DESIGN.md pill spec, including "QUARANTINED: #b3b3b3" |
 | All | "AIR-GAPPED" pill, no explanation | Same pill; clicking opens an About panel (no login, names not verified, nothing external loaded) | The PRD requires the limitations to be stated in the UI |
 | Explorer | EPS card taller than the other three | All four cards 88px; sparkline beside the value | DESIGN.md telemetry strip is 88px |
 | Explorer | Sparkline is one dim block | 8 lavender bars | DESIGN.md sparkline spec |
@@ -59,11 +64,32 @@ repo's Go version.
 | Parser Registry | "View fixtures" | "Versions & history" (diff, audit trail, rollback) | PRD parser-versions drawer |
 | Parser Registry | Lists Zeek, Windows XML and similar | Lists whatever the data plane reports | Data, not design |
 
-## 2. Inconsistencies found
+## 2. Design audit (automated)
+
+`e2e/design.spec.ts` measures the running UI against DESIGN.md at 1440×900 and 1024×768, on every
+screen, the modal, and the interactive states (drift, each proposal tab, approve and replay, the
+versions drawer, verification). Checked: page and card colours, masthead 56px, section header 64px,
+stat cards 88px / 16px radius / 24px padding, filter bar 52px, rows 48px striped, table headers
+`#000` 11px/500 uppercase 0.08em, fields 13px with 8px 12px padding, primary buttons (white, 6px,
+12px 24px, 14/700, no border), secondary buttons (8px 16px, 13px), pills, tab labels 14/700,
+SHA-256 strings 11px mono, one live dot per screen, mint only on verified states, lavender never as
+text, the 8-bar sparkline, fonts loaded, and the modal (1080×640, 52px bands, 0.7 black backdrop,
+no blur, equal columns). `e2e/screens.spec.ts` adds: no sideways scroll, no text spilling out of a
+cell, only `#333` borders, no shadows, gradients or blur, no console errors.
+
+Deviations this audit found and fixed: tab labels were regular weight; the typed-fields table header
+was transparent instead of `#000`; pending/quarantined pills were white; SHA-256 strings were 12px;
+the typed-fields select used a smaller off-spec size. It also caught two timing bugs (live tail
+stopping after a filter change, and keypresses lost right after the modal opens or closes), and six
+unformatted files, now enforced by `npm run lint`.
+
+## 3. Inconsistencies found
 
 **Figma vs DESIGN.md**
 - The primary button is 6px in both, but the PRD calls it a "white pill" → kept 6px (DESIGN.md also bans fully rounded CTAs).
 - DESIGN.md says a 1px `#333` border on every card and input; the Figma's filter selects and ghost buttons have none → bordered.
+- DESIGN.md says tab labels are 14/700; the Figma draws them regular weight → 700.
+- DESIGN.md's table header is `#000000`; the Figma's looks card-coloured → `#000000`.
 - DESIGN.md makes the OCSF badge mint; the Figma shows it grey → grey. Mint is kept for verified states, so every row does not light up.
 - DESIGN.md's Screen 1 layout has no page title; the Figma has one on every screen → kept the title (34px, DESIGN.md's section size).
 - DESIGN.md describes the Review Queue as "cards, one per vendor cluster", which matches neither the Figma nor the PRD *(user)*.
