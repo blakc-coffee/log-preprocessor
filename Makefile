@@ -114,10 +114,11 @@ PYIMG   := python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bce
 vendor: ## Refresh vendor/ from go.mod (commit the result)
 	go mod vendor
 
-wheels: ## Download the sidecar's Python wheels (+ build backend) into intel/wheels/ for the host's architecture. Needs network.
+wheels: ## Download the sidecar's Python wheels (+ build backend) into intel/wheels/{amd64,arm64}/. Needs network; the non-host arch runs under emulation.
 	rm -rf intel/wheels && mkdir -p intel/wheels
-	docker run --rm -v "$(CURDIR)/intel:/src:ro" -v "$(CURDIR)/intel/wheels:/w" $(PYIMG) \
-	  sh -c 'cp -r /src /tmp/s && pip wheel -q -w /w /tmp/s setuptools wheel && rm -f /w/ulpf_intel-*.whl'
+	@for a in amd64 arm64; do mkdir -p intel/wheels/$$a; \
+	  docker run --rm --platform linux/$$a -v "$(CURDIR)/intel:/src:ro" -v "$(CURDIR)/intel/wheels/$$a:/w" $(PYIMG) \
+	    sh -c 'cp -r /src /tmp/s && pip wheel -q -w /w /tmp/s setuptools wheel && rm -f /w/sluice_intel-*.whl /w/ulpf_intel-*.whl' || exit 1; done
 
 bundle: vendor wheels ## Build both images and write the carry-across package into offline/ (see offline/README.md)
 	docker build --target sluice  -t sluice:$(VERSION)       --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILT_AT=$$(date -u +%Y-%m-%dT%H:%M:%SZ) .

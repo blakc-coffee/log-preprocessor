@@ -5,4 +5,4 @@ echo "# Base images (pinned by digest)"
 echo
 grep -E '^FROM ' Dockerfile | awk '{print "- `" $2 "`  (stage " $4 ")"}'
 echo
-echo "Wheels: $(ls intel/wheels | wc -l | tr -d ' ') files in intel/wheels/ (arch: $(docker info --format '{{.Architecture}}'))"
+echo "Wheels: $(find intel/wheels -name "*.whl" | wc -l | tr -d ' ') files in intel/wheels/ (arch: $(docker info --format '{{.Architecture}}'))"
