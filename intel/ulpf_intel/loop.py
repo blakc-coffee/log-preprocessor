@@ -86,7 +86,8 @@ class Sidecar:
         for src in self.sources():
             try:
                 out.append(self._source(src, alerts, proposals))
-            except AdminError as e:
+            except (AdminError, ValueError) as e:
+                # ValueError: a source with nothing proposable (for example binary noise) must not stop the loop
                 log.warning("source %s: %s", src, e)
                 out.append(Outcome(src, "skipped", str(e)))
         return out
@@ -114,7 +115,10 @@ class Sidecar:
         parser_id = Counter(s["parser_id"] for s in parsed).most_common(1)[0][0] if parsed else ""
 
         if st.baseline:
-            drift = drift_score(fingerprint(st.baseline_lines()), fingerprint([_raw(s) for s in samples]), qrate)
+            # What drifted is what was quarantined. Fingerprinting the whole window would average a drifted
+            # minority into the healthy majority and hide the renamed keys.
+            current = quar if len(quar) >= c.min_cluster else samples
+            drift = drift_score(fingerprint(st.baseline_lines()), fingerprint([_raw(s) for s in current]), qrate)
         else:
             drift = Drift(round(qrate, 4), ["no baseline: this source has never parsed", f"quarantine rate {qrate:.2f}"], {})
 

@@ -68,11 +68,11 @@ func (m *Manager) run(ctx context.Context, id, source string) {
 			m.update(id, func(j *Job) { j.Failed++ })
 			return nil
 		}
-		if _, ok := m.app.Events.CurrentByRecord(receipt.ID); !ok {
-			m.update(id, func(j *Job) { j.Failed++ })
-			return nil
+		// A record no parser claims stays quarantined: processed, but neither
+		// succeeded nor failed. Failed means the pipeline itself errored.
+		if _, ok := m.app.Events.CurrentByRecord(receipt.ID); ok {
+			m.update(id, func(j *Job) { j.Succeeded++ })
 		}
-		m.update(id, func(j *Job) { j.Succeeded++ })
 		return nil
 	})
 	finished := time.Now().UTC()

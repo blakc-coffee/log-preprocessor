@@ -164,7 +164,8 @@ func (s *Server) samples(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 		event, parsed := s.app.Events.CurrentByRecord(receipt.ID)
-		_, quarantined := s.app.Quarantine.Get(receipt.ID)
+		held, inQuarantine := s.app.Quarantine.Get(receipt.ID)
+		quarantined := inQuarantine && held.Status == "open" // a resolved record is no longer quarantined
 		if status == "parsed" && !parsed || status == "quarantined" && !quarantined {
 			return nil
 		}
@@ -225,9 +226,10 @@ func (s *Server) dryRun(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 		result.Parsed++
-		den := parsed.Coverage.MappedBytes + parsed.Coverage.UnmappedBytes
-		if den > 0 {
-			coverage += float64(parsed.Coverage.MappedBytes) / float64(den)
+		// contract: (mapped+constant+unmapped)/raw bytes, i.e. how much of the record was accounted for
+		c := parsed.Coverage
+		if total := c.MappedBytes + c.UnmappedBytes + c.ConstantBytes + c.UncoveredBytes; total > 0 {
+			coverage += float64(total-c.UncoveredBytes) / float64(total)
 		}
 		if parsed.RenderBackOK != nil {
 			renderN++
@@ -417,7 +419,10 @@ func (s *Server) verify(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, report)
 }
 func (s *Server) telemetry(w http.ResponseWriter, r *http.Request) {
-	eps, peak, events, quarantined, sources := s.app.Metrics.Snapshot()
+	eps, peak, _, _, sources := s.app.Metrics.Snapshot()
+	// Totals come from the stores, not process-lifetime counters: after a restart the
+	// stores still hold everything and the counters would read zero.
+	events, quarantined := s.app.Events.Count(), s.app.Quarantine.Total()
 	chain, _ := s.vault.VerifyChain(r.Context(), false)
 	write(w, 200, map[string]any{"eps_1m": eps, "eps_peak": peak, "events_total": events, "quarantined_total": quarantined, "quarantine_open": s.app.Quarantine.OpenCount(), "sources": sources, "sinks": []any{}, "vault": map[string]any{"records": chain.Records, "segments": chain.Segments, "chain_head": hex.EncodeToString(chain.Head[:]), "sealed_through": chain.Records, "bytes_raw": 0, "bytes_compressed": 0, "ratio": 0, "failed": !chain.OK}, "lossless": map[string]any{"last_verify_at": time.Now().UTC(), "last_verify_ok": chain.OK}})
 }
@@ -426,7 +431,11 @@ func (s *Server) drift(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r.Method == "GET" {
-		write(w, 200, map[string]any{"alerts": s.alerts})
+		alerts := s.alerts
+		if alerts == nil {
+			alerts = []types.DriftAlert{} // the contract says array, never null
+		}
+		write(w, 200, map[string]any{"alerts": alerts})
 		return
 	}
 	var alert types.DriftAlert
