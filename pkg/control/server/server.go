@@ -6,8 +6,8 @@
 // error codes the UI can render, and combined views such as a proposal with
 // the YAML of the version it patches.
 //
-// There is no authentication in v1. Bind to loopback; the UI's About panel
-// and the README say so.
+// Authentication is optional (Config.Users). Without it, bind to loopback; the
+// UI's About panel and the README say so.
 package server
 
 import (
@@ -38,6 +38,11 @@ type Config struct {
 	// and deep verification. Defaults 5s and 30s.
 	Timeout, LongTimeout time.Duration
 	Logger               *slog.Logger
+	// Users turns on HTTP Basic sign-in for everything except /healthz. Nil
+	// means no authentication: only safe on loopback.
+	Users Users
+	// Metrics, when set, is served at GET /metrics (behind sign-in when on).
+	Metrics http.Handler
 }
 
 // Server is an http.Handler. Close releases a registry the server opened.
@@ -78,6 +83,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	s.routes()
 	s.handler = securityHeaders(gzipMiddleware(s.mux))
+	if cfg.Users != nil {
+		s.handler = authMiddleware(cfg.Users, s.handler)
+	}
 	return s, nil
 }
 
@@ -126,6 +134,9 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/parsers/{id}/verify", s.verifyParser)
 	m.HandleFunc("GET /api/history", s.history)
 	m.HandleFunc("GET /healthz", s.healthz)
+	if s.cfg.Metrics != nil {
+		m.Handle("GET /metrics", s.cfg.Metrics)
+	}
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not_found", "no control API route "+r.Method+" "+r.URL.Path)
 	})

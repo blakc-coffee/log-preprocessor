@@ -128,6 +128,7 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, 8<<20, &body) {
 		return
 	}
+	body.ApprovedBy = s.actor(r, body.ApprovedBy)
 	if body.ApprovedBy == "" {
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, "approved_by is required: enter the name to record")
 		return
@@ -194,6 +195,7 @@ func (s *Server) reject(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, 1<<20, &body) {
 		return
 	}
+	body.By = s.actor(r, body.By)
 	if body.By == "" {
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, "by is required: enter the name to record")
 		return
@@ -225,6 +227,7 @@ func (s *Server) rollback(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, 1<<20, &body) {
 		return
 	}
+	body.By = s.actor(r, body.By)
 	if body.By == "" || body.ToVersion == "" {
 		writeErr(w, http.StatusBadRequest, CodeBadRequest, "to_version and by are required")
 		return
