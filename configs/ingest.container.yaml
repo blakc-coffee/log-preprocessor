@@ -1,0 +1,7 @@
+# Sources for the container image. Inside the container they bind 0.0.0.0; the
+# compose files publish them on the host's loopback only.
+# The vault section of an ingestd config is ignored here: cmd/ulpf owns the vault.
+sources:
+  - {id: syslog-udp, type: udp, listen: "0.0.0.0:5514", readers: 1}
+  - {id: syslog-tcp, type: tcp, listen: "0.0.0.0:5514", framing: auto}
+  - {id: http, type: http, listen: "0.0.0.0:8080", dynamic_sources: true}

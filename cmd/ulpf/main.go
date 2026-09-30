@@ -2,8 +2,10 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,6 +20,7 @@ import (
 	"time"
 
 	controlregistry "github.com/blakc-coffee/log-preprocessor/pkg/control/registry"
+	controlserver "github.com/blakc-coffee/log-preprocessor/pkg/control/server"
 	controlui "github.com/blakc-coffee/log-preprocessor/pkg/control/ui"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
 	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
@@ -50,6 +53,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runVerify(args[1:], stdout, stderr)
 	case "selftest":
 		return runSelftest(args[1:], stdout, stderr)
+	case "passwd":
+		return runPasswd(args[1:], os.Stdin, stdout, stderr)
 	case "healthcheck":
 		return runHealthcheck(stderr)
 	case "all", "start":
@@ -62,23 +67,39 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func runHealthcheck(stderr io.Writer) int {
-	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 3 * time.Second}
-	for _, endpoint := range []string{"http://127.0.0.1:9000/healthz", "http://127.0.0.1:8000/healthz"} {
-		resp, err := client.Get(endpoint)
-		if err != nil {
-			fmt.Fprintln(stderr, "ulpf healthcheck:", err)
-			return exitFailure
+	plain := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 3 * time.Second}
+	// The control plane may serve TLS; this probes our own loopback listener, so it is not verified.
+	secure := &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, Timeout: 3 * time.Second} //nolint:gosec
+	for _, endpoint := range []string{"127.0.0.1:9000/healthz", "127.0.0.1:8000/healthz"} {
+		var last error
+		ok := false
+		for _, try := range []struct {
+			c      *http.Client
+			scheme string
+		}{{plain, "http://"}, {secure, "https://"}} {
+			resp, err := try.c.Get(try.scheme + endpoint)
+			if err != nil {
+				last = err
+				continue
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				ok = true
+				break
+			}
+			last = fmt.Errorf("%s%s returned %s", try.scheme, endpoint, resp.Status)
 		}
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			fmt.Fprintf(stderr, "ulpf healthcheck: %s returned %s\n", endpoint, resp.Status)
+		if !ok {
+			fmt.Fprintln(stderr, "ulpf healthcheck:", last)
 			return exitFailure
 		}
 	}
 	return exitOK
 }
 
-func usage(w io.Writer) { fmt.Fprintln(w, "usage: ulpf <all|start|selftest|verify|version> [options]") }
+func usage(w io.Writer) {
+	fmt.Fprintln(w, "usage: ulpf <all|start|passwd|selftest|verify|version> [options]")
+}
 
 type check struct {
 	name string
@@ -280,4 +301,30 @@ func insideBlockComment(content []byte, offset int) bool {
 	}
 	htmlOpen, htmlClose := bytes.LastIndex(prefix, []byte("<!--")), bytes.LastIndex(prefix, []byte("-->"))
 	return htmlOpen > htmlClose
+}
+
+// runPasswd prints a users-file line: ulpf passwd <name> <approver|viewer> < password-on-stdin.
+// The password comes from stdin so it never appears in argv or shell history.
+func runPasswd(args []string, in io.Reader, stdout, stderr io.Writer) int {
+	if len(args) != 2 {
+		fmt.Fprintln(stderr, "usage: ulpf passwd <name> <approver|viewer>   (password on stdin)")
+		return exitUsage
+	}
+	pw, err := bufio.NewReader(in).ReadString('\n')
+	pw = strings.TrimRight(pw, "\r\n")
+	if (err != nil && err != io.EOF) || len(pw) < 12 {
+		fmt.Fprintln(stderr, "ulpf passwd: read a password of at least 12 characters from stdin")
+		return exitUsage
+	}
+	if strings.ContainsAny(args[0], ":\n ") || (args[1] != "approver" && args[1] != "viewer") {
+		fmt.Fprintln(stderr, "ulpf passwd: name has no ':' or spaces; role is approver or viewer")
+		return exitUsage
+	}
+	h, err := controlserver.HashPassword(pw)
+	if err != nil {
+		fmt.Fprintln(stderr, "ulpf passwd:", err)
+		return exitFailure
+	}
+	fmt.Fprintf(stdout, "%s:%s:%s\n", args[0], args[1], h)
+	return exitOK
 }

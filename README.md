@@ -84,8 +84,8 @@ All benchmarks measured against realistic, mixed-vendor multi-gigabyte corpora (
 
 ULPF is designed from the ground up for classified, disconnected, and sovereign infrastructure environments:
 
-1. **Docker Network Isolation:** Docker Compose stacks define `driver: bridge` with `internal: true`. The default gateway is disabled, completely blocking outbound traffic.
-2. **Loopback Port Binding:** All network services bind exclusively to `127.0.0.1` (`:8000` for the Control UI, `:9000` for the Data Plane internal API).
+1. **Docker Network Isolation:** `docker-compose.airgap-test.yml` defines `driver: bridge` with `internal: true`, which disables the default gateway and blocks all outbound traffic; `scripts/verify_airgap.sh` runs against it. `docker-compose.yml` uses a normal bridge because Docker cannot publish ports from an internal network; there the guarantee is that the binary has no outbound code, proven under `--network none`.
+2. **Loopback Port Binding:** Natively, services bind to `127.0.0.1` (`:8000` Control UI, `:9000` Data Plane API). In the container only the Control UI binds `0.0.0.0` (inside its namespace) and Compose publishes it on the host's `127.0.0.1`; the Data Plane API, which has no sign-in, never leaves the container's loopback. Enable sign-in and TLS with `configs/production.yaml` (`ulpf passwd`).
 3. **Zero External Assets:** All typography (Inter, JetBrains Mono, Cormorant Garamond) is bundled as local WOFF2 files. No external CDN calls, telemetry, or remote dependencies exist.
 4. **Automated Egress Verification:** [`scripts/verify_airgap.sh`](scripts/verify_airgap.sh) executes `ulpf selftest --egress` inside the running container, asserting that public DNS lookups and TCP connections to `1.1.1.1:443` and `8.8.8.8:53` fail with non-zero exit codes.
 

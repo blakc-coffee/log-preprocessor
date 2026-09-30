@@ -29,3 +29,18 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 CMD ["/us
 ENTRYPOINT ["/usr/local/bin/ulpf"]
 CMD ["all", "--config", "/etc/ulpf/config.yaml"]
 
+
+# The intelligence sidecar. Propose-only: it reads samples and quarantine from
+# the admin API and posts drift alerts and parser proposals. It shares the ulpf
+# container's network namespace (compose: network_mode service:ulpf) because
+# the admin API listens on that container's loopback and nowhere else.
+FROM python:3.13-slim AS intel
+WORKDIR /app
+COPY intel/pyproject.toml ./
+COPY intel/ulpf_intel ./ulpf_intel
+RUN pip install --no-cache-dir . && mkdir /state && chown nobody /state
+USER nobody
+VOLUME ["/state"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["python", "-m", "ulpf_intel", "--healthcheck"]
+ENTRYPOINT ["python", "-m", "ulpf_intel"]
+CMD ["--admin", "http://127.0.0.1:9000", "--state-dir", "/state"]

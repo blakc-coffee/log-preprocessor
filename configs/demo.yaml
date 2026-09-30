@@ -1,9 +1,12 @@
 data_dir: /data
 dataplane_listen: 127.0.0.1:9000
-control_listen: 127.0.0.1:8000
+control_listen: 0.0.0.0:8000
 include_raw_exports: false
 sinks:
   - parquet
   - ocsfjson
   - ecs
 
+ingest_config: /etc/ulpf/ingest.yaml
+# Demo: the UI has no sign-in. See configs/production.yaml for a deployment.
+allow_insecure: true

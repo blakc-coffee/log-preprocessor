@@ -14,13 +14,36 @@ services:
     volumes:
       - ulpf-airgap-data:/data
       - ./configs/airgap-test.yaml:/etc/ulpf/config.yaml:ro
+      - ./configs/ingest.container.yaml:/etc/ulpf/ingest.yaml:ro
     ports:
       - "127.0.0.1:8000:8000"
-      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:5514:5514/tcp"
+      - "127.0.0.1:5514:5514/udp"
+      - "127.0.0.1:8080:8080"
     networks: [ulpf_airgap]
+
+  intel:
+    build:
+      context: .
+      target: intel
+    image: ulpf-intel:dev
+    depends_on:
+      ulpf:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    volumes:
+      - ulpf-airgap-data-intel:/state
+    # Same network namespace as ulpf: the admin API is on that loopback only.
+    network_mode: "service:ulpf"
 
 volumes:
   ulpf-airgap-data: {}
+  ulpf-airgap-data-intel: {}
 
 networks:
   ulpf_airgap:

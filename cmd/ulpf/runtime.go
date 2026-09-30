@@ -14,12 +14,15 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts"
 	"github.com/blakc-coffee/log-preprocessor/pkg/control/adminclient"
 	controlregistry "github.com/blakc-coffee/log-preprocessor/pkg/control/registry"
 	controlserver "github.com/blakc-coffee/log-preprocessor/pkg/control/server"
@@ -28,6 +31,7 @@ import (
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/app"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/enrich"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/identity"
+	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/parsers"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/quarantine"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/registry"
@@ -52,6 +56,16 @@ type runtimeConfig struct {
 	ControlListen     string   `yaml:"control_listen"`
 	IncludeRawExports bool     `yaml:"include_raw_exports"`
 	Sinks             []string `yaml:"sinks"`
+	// IngestConfig is an ingestd-format YAML whose sources and limits feed the
+	// pipeline. Empty means no listeners: the vault is only replayed.
+	IngestConfig string `yaml:"ingest_config"`
+	// AuthUsersFile turns on sign-in for the control plane (see `ulpf passwd`).
+	AuthUsersFile string `yaml:"auth_users_file"`
+	// TLSCert and TLSKey serve the control plane over HTTPS.
+	TLSCert string `yaml:"tls_cert"`
+	TLSKey  string `yaml:"tls_key"`
+	// AllowInsecure permits the control plane on 0.0.0.0 with no sign-in. For demos.
+	AllowInsecure bool `yaml:"allow_insecure"`
 }
 
 func loadRuntimeConfig(path string) (runtimeConfig, error) {
@@ -71,8 +85,22 @@ func loadRuntimeConfig(path string) (runtimeConfig, error) {
 	if cfg.DataDir == "" {
 		return runtimeConfig{}, errors.New("config: data_dir is required")
 	}
-	if cfg.DataPlaneListen != dataPlaneAddress || cfg.ControlListen != controlAddress {
-		return runtimeConfig{}, fmt.Errorf("config: fixed listeners are %s and %s", dataPlaneAddress, controlAddress)
+	// The ports are fixed. The host is 127.0.0.1 natively; inside a container it must be
+	// 0.0.0.0 or the published port cannot reach it (the compose files publish on the
+	// host's loopback only).
+	// The admin API can approve parsers and has no sign-in of its own, so it never leaves
+	// loopback; the control plane is the only door, and it may bind 0.0.0.0.
+	if cfg.DataPlaneListen != dataPlaneAddress {
+		return runtimeConfig{}, fmt.Errorf("config: dataplane_listen is fixed at %s", dataPlaneAddress)
+	}
+	if cfg.ControlListen != controlAddress && cfg.ControlListen != "0.0.0.0:8000" {
+		return runtimeConfig{}, fmt.Errorf("config: control_listen is %s or 0.0.0.0:8000", controlAddress)
+	}
+	if strings.HasPrefix(cfg.ControlListen, "0.0.0.0:") && cfg.AuthUsersFile == "" && !cfg.AllowInsecure {
+		return runtimeConfig{}, errors.New("config: control_listen 0.0.0.0 without auth_users_file exposes the UI to anyone who can reach it; set auth_users_file, or allow_insecure: true for a demo")
+	}
+	if (cfg.TLSCert == "") != (cfg.TLSKey == "") {
+		return runtimeConfig{}, errors.New("config: tls_cert and tls_key go together")
 	}
 	if len(cfg.Sinks) == 0 {
 		cfg.Sinks = []string{"parquet", "ocsfjson", "ecs"}
@@ -84,6 +112,11 @@ type unifiedRuntime struct {
 	cfg         runtimeConfig
 	vault       *vault.Vault
 	pipeline    *app.App
+	live        *app.Live
+	events      *store.Store
+	metrics     *prometheus.Registry
+	users       controlserver.Users
+	ingestCfg   *ingest.FileConfig
 	control     *controlserver.Server
 	controlReg  *controlregistry.Registry
 	adminHTTP   *http.Server
@@ -94,11 +127,13 @@ func newUnifiedRuntime(cfg runtimeConfig, stderr io.Writer) (_ *unifiedRuntime, 
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return nil, err
 	}
-	v, err := vault.Open(vault.Options{Dir: filepath.Join(cfg.DataDir, "vault"), Sync: vault.SyncAlways, Compact: true})
+	reg0 := prometheus.NewRegistry()
+	reg0.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	v, err := vault.Open(vault.Options{Dir: filepath.Join(cfg.DataDir, "vault"), Sync: vault.SyncAlways, Compact: true, SealInterval: 5 * time.Second, Registerer: reg0})
 	if err != nil {
 		return nil, err
 	}
-	rt := &unifiedRuntime{cfg: cfg, vault: v}
+	rt := &unifiedRuntime{cfg: cfg, vault: v, metrics: reg0}
 	defer func() {
 		if err != nil {
 			_ = rt.close()
@@ -110,10 +145,14 @@ func newUnifiedRuntime(cfg runtimeConfig, stderr io.Writer) (_ *unifiedRuntime, 
 	if err = reg.LoadDir(); err != nil {
 		return nil, err
 	}
-	if err = loadBuiltinParsers(engine, reg); err != nil {
+	if err = app.LoadBuiltins(engine, reg); err != nil {
 		return nil, err
 	}
-	events := store.New()
+	events, err := store.Open(filepath.Join(cfg.DataDir, "store.db"))
+	if err != nil {
+		return nil, err
+	}
+	rt.events = events
 	quarantined := quarantine.New()
 	resolver := identity.New(identity.Config{})
 	targets, sinkErr := configuredSinks(cfg, v)
@@ -133,6 +172,11 @@ func newUnifiedRuntime(cfg runtimeConfig, stderr io.Writer) (_ *unifiedRuntime, 
 	}); err != nil {
 		return nil, err
 	}
+	if cfg.IngestConfig != "" {
+		if rt.ingestCfg, err = ingest.LoadFile(cfg.IngestConfig); err != nil {
+			return nil, err
+		}
+	}
 	replays := replay.New(v, rt.pipeline)
 	adminHandler := admin.New(v, rt.pipeline, reg, replays, resolver)
 	rt.adminHTTP = &http.Server{Addr: cfg.DataPlaneListen, Handler: adminHandler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second}
@@ -145,40 +189,23 @@ func newUnifiedRuntime(cfg runtimeConfig, stderr io.Writer) (_ *unifiedRuntime, 
 	if err != nil {
 		return nil, err
 	}
-	client, err := adminclient.New("http://" + cfg.DataPlaneListen)
+	client, err := adminclient.New("http://" + dataPlaneAddress)
 	if err != nil {
 		return nil, err
 	}
 	log := slog.New(slog.NewTextHandler(stderr, nil))
-	rt.control, err = controlserver.New(controlserver.Config{Admin: client, Registry: rt.controlReg, UI: ui.Dist(), Logger: log})
+	if cfg.AuthUsersFile != "" {
+		if rt.users, err = controlserver.LoadUsers(cfg.AuthUsersFile); err != nil {
+			return nil, err
+		}
+	}
+	rt.control, err = controlserver.New(controlserver.Config{Admin: client, Registry: rt.controlReg, UI: ui.Dist(), Logger: log,
+		Users: rt.users, Metrics: promhttp.HandlerFor(rt.metrics, promhttp.HandlerOpts{})})
 	if err != nil {
 		return nil, err
 	}
 	rt.controlHTTP = &http.Server{Addr: cfg.ControlListen, Handler: rt.control, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second}
 	return rt, nil
-}
-
-func loadBuiltinParsers(engine *parsers.Engine, reg *registry.Registry) error {
-	entries, err := contracts.DSLExamples.ReadDir("dsl/examples")
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		src, err := contracts.DSLExamples.ReadFile("dsl/examples/" + entry.Name())
-		if err != nil {
-			return err
-		}
-		p, err := engine.Load(src)
-		if err != nil {
-			return err
-		}
-		if !reg.Has(p.ID()) {
-			if _, err := reg.Add(src, true); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func configuredSinks(cfg runtimeConfig, v types.Vault) ([]types.Sink, error) {
@@ -240,15 +267,35 @@ func (rt *unifiedRuntime) serve(ctx context.Context, stdout io.Writer) error {
 		adminLn.Close()
 		return fmt.Errorf("control plane listen: %w", err)
 	}
+	ctx, stopIngest := context.WithCancel(ctx)
+	defer stopIngest()
+	if rt.ingestCfg != nil {
+		if rt.live, err = rt.pipeline.StartIngest(ctx, stopIngest, rt.vault, rt.ingestCfg, os.Stderr, rt.metrics); err != nil {
+			adminLn.Close()
+			controlLn.Close()
+			return fmt.Errorf("ingest: %w", err)
+		}
+		fmt.Fprintf(stdout, "ULPF ingest: %d sources\n", rt.live.Sources)
+	}
 	fmt.Fprintf(stdout, "ULPF data plane on http://%s\n", adminLn.Addr())
-	fmt.Fprintf(stdout, "ULPF control plane on http://%s\n", controlLn.Addr())
+	scheme := "http"
+	if rt.cfg.TLSCert != "" {
+		scheme = "https"
+	}
+	fmt.Fprintf(stdout, "ULPF control plane on %s://%s (sign-in %s)\n", scheme, controlLn.Addr(), map[bool]string{true: "on", false: "OFF"}[rt.users != nil])
 	type serveResult struct {
 		name string
 		err  error
 	}
 	errCh := make(chan serveResult, 2)
 	go func() { errCh <- serveResult{"data plane", rt.adminHTTP.Serve(adminLn)} }()
-	go func() { errCh <- serveResult{"control plane", rt.controlHTTP.Serve(controlLn)} }()
+	go func() {
+		if rt.cfg.TLSCert != "" {
+			errCh <- serveResult{"control plane", rt.controlHTTP.ServeTLS(controlLn, rt.cfg.TLSCert, rt.cfg.TLSKey)}
+			return
+		}
+		errCh <- serveResult{"control plane", rt.controlHTTP.Serve(controlLn)}
+	}()
 
 	var serveErr error
 	select {
@@ -260,6 +307,10 @@ func (rt *unifiedRuntime) serve(ctx context.Context, stdout io.Writer) error {
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	stopIngest()
+	if rt.live != nil {
+		rt.live.Wait() // drain before the pipeline and vault close
+	}
 	return errors.Join(serveErr, rt.adminHTTP.Shutdown(shutdownCtx), rt.controlHTTP.Shutdown(shutdownCtx))
 }
 
@@ -273,6 +324,9 @@ func (rt *unifiedRuntime) close() error {
 	}
 	if rt.pipeline != nil {
 		errs = append(errs, rt.pipeline.Close())
+	}
+	if rt.events != nil {
+		errs = append(errs, rt.events.Close())
 	}
 	if rt.vault != nil {
 		errs = append(errs, rt.vault.Close())

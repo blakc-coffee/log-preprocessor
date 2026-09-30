@@ -36,10 +36,13 @@ func TestComposeFilesEnforceInternalLoopbackNetwork(t *testing.T) {
 			if !ok {
 				t.Fatal("ulpf service is missing")
 			}
-			if len(ulpf.Networks) != 1 || !cfg.Networks[ulpf.Networks[0]].Internal {
-				t.Fatalf("ulpf network is not internal: %+v", cfg.Networks)
+			// Docker cannot publish a port from an internal network, so only the air-gap
+			// proof compose is internal; the demo relies on the image having no egress code.
+			if len(ulpf.Networks) != 1 || (name == "docker-compose.airgap-test.yml" && !cfg.Networks[ulpf.Networks[0]].Internal) {
+				t.Fatalf("ulpf network wrong for %s: %+v", name, cfg.Networks)
 			}
-			wantPorts := map[string]bool{"127.0.0.1:8000:8000": false, "127.0.0.1:9000:9000": false}
+			wantPorts := map[string]bool{"127.0.0.1:8000:8000": false,
+				"127.0.0.1:5514:5514/tcp": false, "127.0.0.1:5514:5514/udp": false, "127.0.0.1:8080:8080": false}
 			for _, port := range ulpf.Ports {
 				if _, expected := wantPorts[port]; !expected {
 					t.Fatalf("unexpected port publication %q", port)
