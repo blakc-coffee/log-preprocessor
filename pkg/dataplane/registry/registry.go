@@ -13,7 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/parsers"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
 )
 
 var (

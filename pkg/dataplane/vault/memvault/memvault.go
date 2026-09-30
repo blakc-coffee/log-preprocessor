@@ -24,9 +24,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/merkle"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/record"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/merkle"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/record"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // DefaultSealEvery is how many records fill a segment by default.

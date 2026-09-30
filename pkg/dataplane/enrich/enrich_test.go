@@ -3,7 +3,7 @@ package enrich
 import (
 	"testing"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // A VPN exit line names only the peer. It must release the address that same

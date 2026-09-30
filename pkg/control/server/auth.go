@@ -21,7 +21,7 @@ import (
 //	name:role:pbkdf2-sha256$iterations$salt$hash
 //
 // with role "approver" (may change parsers) or "viewer" (GET only). Make lines
-// with `ulpf passwd`. PBKDF2 keeps the binary free of a bcrypt dependency; the
+// with `sluice passwd`. PBKDF2 keeps the binary free of a bcrypt dependency; the
 // iteration count is stored per line so it can be raised later.
 type Users map[string]user
 

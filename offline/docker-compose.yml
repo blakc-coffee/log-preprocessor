@@ -1,9 +1,9 @@
+# Offline install: images come from `docker load`, nothing is built or pulled.
+# ULPF_TAG is read from ./.env (written by `make bundle`).
 services:
   sluice:
-    build:
-      context: .
-      target: sluice
-    image: sluice:${ULPF_TAG:-dev}
+    image: sluice:${ULPF_TAG}
+    pull_policy: never
     command: ["all", "--config", "/etc/sluice/config.yaml"]
     restart: unless-stopped
     read_only: true
@@ -12,21 +12,18 @@ services:
     tmpfs:
       - /tmp:size=64m,noexec,nosuid,nodev
     volumes:
-      - sluice-airgap-data:/data
-      - ./configs/airgap-test.yaml:/etc/sluice/config.yaml:ro
+      - sluice-data:/data
+      - ./configs/demo.yaml:/etc/sluice/config.yaml:ro
       - ./configs/ingest.container.yaml:/etc/sluice/ingest.yaml:ro
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:5514:5514/tcp"
       - "127.0.0.1:5514:5514/udp"
       - "127.0.0.1:8080:8080"
-    networks: [sluice_airgap]
 
   intel:
-    build:
-      context: .
-      target: intel
-    image: sluice-intel:${ULPF_TAG:-dev}
+    image: sluice-intel:${ULPF_TAG}
+    pull_policy: never
     depends_on:
       sluice:
         condition: service_healthy
@@ -37,16 +34,9 @@ services:
     tmpfs:
       - /tmp:size=16m,noexec,nosuid,nodev
     volumes:
-      - sluice-airgap-data-intel:/state
-    # Same network namespace as sluice: the admin API is on that loopback only.
+      - sluice-data-intel:/state
     network_mode: "service:sluice"
 
 volumes:
-  sluice-airgap-data: {}
-  sluice-airgap-data-intel: {}
-
-networks:
-  sluice_airgap:
-    driver: bridge
-    internal: true
-
+  sluice-data: {}
+  sluice-data-intel: {}

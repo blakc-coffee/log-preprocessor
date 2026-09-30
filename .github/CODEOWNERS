@@ -50,7 +50,7 @@ PRD_FRONTEND_control_plane.md           @claude-2
 pkg/sinks/                              @codex-2
 tests/                                  @codex-2
 cmd/bench/                              @codex-2
-cmd/ulpf/                               @codex-2
+cmd/sluice/                               @codex-2
 benchmarks/results/                     @codex-2
 Dockerfile                              @codex-2
 docker-compose*.yml                     @codex-2

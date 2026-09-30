@@ -15,11 +15,11 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/merkle"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/contracts"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/merkle"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 func compile(t *testing.T) *jsonschema.Schema {

@@ -1,5 +1,5 @@
 [project]
-name = "ulpf-intel"
+name = "sluice-intel"
 version = "0.1.0"
 description = "ULPF intelligence sidecar: drift detection, semantic typing, parser proposals. Propose-only, off the hot path."
 requires-python = ">=3.11"

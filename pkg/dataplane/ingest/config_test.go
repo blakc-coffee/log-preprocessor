@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
 )
 
 const minimalConfig = `

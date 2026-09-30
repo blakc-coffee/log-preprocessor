@@ -5,7 +5,7 @@ package sinks
 import (
 	"errors"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // Sink aliases the frozen cross-workstream sink contract.

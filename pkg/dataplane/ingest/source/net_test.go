@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/frame"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/source"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/frame"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/source"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // harness runs one source against an in-memory vault and collects the events.

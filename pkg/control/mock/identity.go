@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // claim is one time-bounded binding of an IP, the same model the identity

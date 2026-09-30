@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts/integration"
+	"github.com/blakc-coffee/sluice/contracts/integration"
 )
 
 func main() {

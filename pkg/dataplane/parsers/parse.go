@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 func (p *Parser) Parse(raw []byte, receivedAt time.Time) (*Result, error) {

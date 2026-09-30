@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/source"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/source"
 )
 
 func mustPeerMap(t *testing.T, entries ...source.PeerMapEntry) *source.PeerMap {

@@ -16,10 +16,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks"
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks/internal/mapping"
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks/spool"
-	"github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/sinks"
+	"github.com/blakc-coffee/sluice/pkg/sinks/internal/mapping"
+	"github.com/blakc-coffee/sluice/pkg/sinks/spool"
+	"github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // Config contains HEC settings. TokenFile is required; inline secrets are not accepted.

@@ -8,6 +8,6 @@ import (
 )
 
 func runVerify(_ []string, _ io.Writer, stderr io.Writer) int {
-	fmt.Fprintln(stderr, "ulpf verify: the current vault implementation requires Unix flock; run verification in the Linux container")
+	fmt.Fprintln(stderr, "sluice verify: the current vault implementation requires Unix flock; run verification in the Linux container")
 	return exitFailure
 }

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 func ev(rec uint64, parser string, ip string, at time.Time) types.NormalizedEvent {

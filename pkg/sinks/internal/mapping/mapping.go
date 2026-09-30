@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // Fields is the exporter-neutral projection of a normalized event.

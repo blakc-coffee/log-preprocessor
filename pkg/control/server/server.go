@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/adminclient"
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/registry"
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/ui"
+	"github.com/blakc-coffee/sluice/pkg/control/adminclient"
+	"github.com/blakc-coffee/sluice/pkg/control/registry"
+	"github.com/blakc-coffee/sluice/pkg/control/ui"
 )
 
 // Config wires the server. Admin is required; everything else has a default.
@@ -55,7 +55,7 @@ type Server struct {
 }
 
 // New builds the handler. The returned value is an http.Handler (the
-// integration surface cmd/ulpf uses) and also has Close.
+// integration surface cmd/sluice uses) and also has Close.
 func New(cfg Config) (*Server, error) {
 	if cfg.Admin == nil {
 		return nil, errors.New("server: Config.Admin is required")

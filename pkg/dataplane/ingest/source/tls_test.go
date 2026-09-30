@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/frame"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/source"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/frame"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/source"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // pki is a throwaway certificate authority for one test.

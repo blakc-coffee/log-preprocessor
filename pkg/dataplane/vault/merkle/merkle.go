@@ -20,7 +20,7 @@ import (
 	"encoding/binary"
 	"math/bits"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // Domain separation prefixes, per RFC 6962. The chain prefix is ours.

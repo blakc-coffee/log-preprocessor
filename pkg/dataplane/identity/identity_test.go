@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 var t0 = time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)

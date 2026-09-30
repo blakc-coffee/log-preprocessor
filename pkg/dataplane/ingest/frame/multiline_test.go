@@ -12,7 +12,7 @@ import (
 	"testing"
 	"testing/iotest"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // isoStart is the pattern gen.MultilineStart exports and that

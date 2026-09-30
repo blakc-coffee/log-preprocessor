@@ -17,8 +17,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks"
-	"github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/sinks"
+	"github.com/blakc-coffee/sluice/pkg/types"
 )
 
 const (

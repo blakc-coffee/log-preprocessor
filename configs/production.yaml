@@ -1,15 +1,15 @@
-# A deployment. Copy to /etc/ulpf/, then:
-#   printf '%s' 'a-long-passphrase' | ulpf passwd alice approver >> /etc/ulpf/users
-#   printf '%s' 'another-passphrase' | ulpf passwd bob viewer    >> /etc/ulpf/users
+# A deployment. Copy to /etc/sluice/, then:
+#   printf '%s' 'a-long-passphrase' | sluice passwd alice approver >> /etc/sluice/users
+#   printf '%s' 'another-passphrase' | sluice passwd bob viewer    >> /etc/sluice/users
 # The admin API (:9000) never leaves the container's loopback; only the control
 # plane is exposed, and only with sign-in.
 data_dir: /data
 dataplane_listen: 127.0.0.1:9000
 control_listen: 0.0.0.0:8000
-auth_users_file: /etc/ulpf/users
-tls_cert: /etc/ulpf/tls.crt
-tls_key: /etc/ulpf/tls.key
-ingest_config: /etc/ulpf/ingest.yaml
+auth_users_file: /etc/sluice/users
+tls_cert: /etc/sluice/tls.crt
+tls_key: /etc/sluice/tls.key
+ingest_config: /etc/sluice/ingest.yaml
 include_raw_exports: false
 sinks:
   - parquet

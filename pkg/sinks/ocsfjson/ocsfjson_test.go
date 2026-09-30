@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/types"
 )
 
 func TestWriteIsIdempotentAndDoesNotMutateOCSF(t *testing.T) {

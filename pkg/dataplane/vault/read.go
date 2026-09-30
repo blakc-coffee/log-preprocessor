@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/merkle"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/record"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/merkle"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/record"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // The read path. Every read verifies the record's CRC, so a bit that rotted on

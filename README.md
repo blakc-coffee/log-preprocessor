@@ -1,4 +1,6 @@
-# Universal Log Pre-processing Framework (ULPF)
+# Sluice
+
+> Formerly ULPF: Universal Log Pre-processing Framework.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](go.mod)
@@ -85,9 +87,9 @@ All benchmarks measured against realistic, mixed-vendor multi-gigabyte corpora (
 ULPF is designed from the ground up for classified, disconnected, and sovereign infrastructure environments:
 
 1. **Docker Network Isolation:** `docker-compose.airgap-test.yml` defines `driver: bridge` with `internal: true`, which disables the default gateway and blocks all outbound traffic; `scripts/verify_airgap.sh` runs against it. `docker-compose.yml` uses a normal bridge because Docker cannot publish ports from an internal network; there the guarantee is that the binary has no outbound code, proven under `--network none`.
-2. **Loopback Port Binding:** Natively, services bind to `127.0.0.1` (`:8000` Control UI, `:9000` Data Plane API). In the container only the Control UI binds `0.0.0.0` (inside its namespace) and Compose publishes it on the host's `127.0.0.1`; the Data Plane API, which has no sign-in, never leaves the container's loopback. Enable sign-in and TLS with `configs/production.yaml` (`ulpf passwd`).
+2. **Loopback Port Binding:** Natively, services bind to `127.0.0.1` (`:8000` Control UI, `:9000` Data Plane API). In the container only the Control UI binds `0.0.0.0` (inside its namespace) and Compose publishes it on the host's `127.0.0.1`; the Data Plane API, which has no sign-in, never leaves the container's loopback. Enable sign-in and TLS with `configs/production.yaml` (`sluice passwd`).
 3. **Zero External Assets:** All typography (Inter, JetBrains Mono, Cormorant Garamond) is bundled as local WOFF2 files. No external CDN calls, telemetry, or remote dependencies exist.
-4. **Automated Egress Verification:** [`scripts/verify_airgap.sh`](scripts/verify_airgap.sh) executes `ulpf selftest --egress` inside the running container, asserting that public DNS lookups and TCP connections to `1.1.1.1:443` and `8.8.8.8:53` fail with non-zero exit codes.
+4. **Automated Egress Verification:** [`scripts/verify_airgap.sh`](scripts/verify_airgap.sh) executes `sluice selftest --egress` inside the running container, asserting that public DNS lookups and TCP connections to `1.1.1.1:443` and `8.8.8.8:53` fail with non-zero exit codes.
 
 ---
 
@@ -110,16 +112,16 @@ open http://127.0.0.1:8000
 bash scripts/verify_airgap.sh
 ```
 
-### Option B: Run Natively via Unified Operator CLI (`ulpf`)
+### Option B: Run Natively via Unified Operator CLI (`sluice`)
 ```bash
 # 1. Compile the unified binary (zero CGO)
-CGO_ENABLED=0 go build -o bin/ulpf ./cmd/ulpf
+CGO_ENABLED=0 go build -o bin/sluice ./cmd/sluice
 
 # 2. Run the offline self-test (validates vault, SQLite, and network egress)
-./bin/ulpf selftest
+./bin/sluice selftest
 
 # 3. Start the entire pipeline (Data Plane :9000 + Control Plane :8000)
-./bin/ulpf all --config configs/demo.yaml
+./bin/sluice all --config configs/demo.yaml
 ```
 
 ### Option C: Run the Automated 2-Minute Live Demo
@@ -171,7 +173,7 @@ python intel/proposer.py --admin http://127.0.0.1:9000 --once
 
 ```text
 ├── cmd/
-│   ├── ulpf/                 # Unified operator CLI (start, selftest, verify, version)
+│   ├── sluice/                 # Unified operator CLI (start, selftest, verify, version)
 │   ├── bench/                # Empirical benchmark harness
 │   ├── dataplane/            # Standalone Data Plane daemon (:9000)
 │   └── control/              # Standalone Control Plane server (:8000)
@@ -206,7 +208,7 @@ python intel/proposer.py --admin http://127.0.0.1:9000 --once
 | **Lead Architecture & Governance** | Antigravity Pro | `go.mod`, `pkg/types/`, `docs/`, `presentation/`, `README.md`, `intel/proposer.py` |
 | **Data Plane Engineering** | Claude Code #1 | `pkg/dataplane/`, `cmd/dataplane/`, `config/parsers/` |
 | **Control Plane & Frontend** | Claude Code #2 | `frontend/`, `pkg/control/`, `cmd/control/` |
-| **Systems Packaging, Sinks & QA**| Codex #2 | `pkg/sinks/`, `cmd/ulpf/`, `cmd/bench/`, `tests/`, `Dockerfile`, `scripts/` |
+| **Systems Packaging, Sinks & QA**| Codex #2 | `pkg/sinks/`, `cmd/sluice/`, `cmd/bench/`, `tests/`, `Dockerfile`, `scripts/` |
 | **Test Corpus & Cryptographic Fixtures** | Codex #1 | `testdata/`, `tools/gen/` |
 
 ---

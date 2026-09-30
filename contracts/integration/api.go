@@ -12,7 +12,7 @@ package integration
 import (
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // API is the slice of the admin API the steps use.

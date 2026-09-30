@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/app"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/app"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 type Job struct {

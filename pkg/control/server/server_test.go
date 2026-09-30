@@ -13,11 +13,11 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/adminclient"
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/internal/apitest"
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/mock"
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/registry"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/control/adminclient"
+	"github.com/blakc-coffee/sluice/pkg/control/internal/apitest"
+	"github.com/blakc-coffee/sluice/pkg/control/mock"
+	"github.com/blakc-coffee/sluice/pkg/control/registry"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 type env struct {

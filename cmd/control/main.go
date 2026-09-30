@@ -21,10 +21,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/adminclient"
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/mock"
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/registry"
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/server"
+	"github.com/blakc-coffee/sluice/pkg/control/adminclient"
+	"github.com/blakc-coffee/sluice/pkg/control/mock"
+	"github.com/blakc-coffee/sluice/pkg/control/registry"
+	"github.com/blakc-coffee/sluice/pkg/control/server"
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	builtin "github.com/blakc-coffee/log-preprocessor/parsers"
+	builtin "github.com/blakc-coffee/sluice/parsers"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts/conformance"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/parsers"
+	"github.com/blakc-coffee/sluice/contracts/conformance"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
 )
 
 type rec struct {

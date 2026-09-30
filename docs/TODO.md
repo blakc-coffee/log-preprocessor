@@ -9,7 +9,7 @@ egress). What does not exist is the way to **get it onto** an offline machine: P
 it, and none of it is built. Today `docker build` pulls Go, Node and Python images and packages from the network, so
 an offline machine cannot build, and there is no single file to carry across.
 
-- [ ] `make bundle`: `docker save ulpf:<tag> ulpf-intel:<tag> | zstd -19 > offline/ulpf-images-<tag>.tar.zst`, plus the
+- [ ] `make bundle`: `docker save sluice:<tag> sluice-intel:<tag> | zstd -19 > offline/sluice-images-<tag>.tar.zst`, plus the
       compose file, `configs/`, `offline/SHA256SUMS`, and `offline/README.md` (verify checksums, `zstd -d | docker load`,
       edit config, `docker compose up -d`). Install must be those steps and nothing else.
 - [ ] `vendor/` via `go mod vendor`, committed; the Dockerfile builds with `-mod=vendor`.
@@ -21,7 +21,7 @@ an offline machine cannot build, and there is no single file to carry across.
       `SHA256SUMS` (PRD 4.7). Today it only checks images built locally. Save its log to `benchmarks/results/`.
 - [ ] SBOM (P2): `syft` on both images to `offline/sbom-*.spdx.json`.
 - [ ] Be honest in the README: **runtime** needs no network; the **build** is offline only from the vendored inputs.
-- [ ] Decide the image tag scheme (`ulpf:dev` today) and stamp `version`/`commit`/`builtAt` (the Dockerfile has the args).
+- [ ] Decide the image tag scheme (`sluice:dev` today) and stamp `version`/`commit`/`builtAt` (the Dockerfile has the args).
 
 ## 2. Measurements deferred
 
@@ -38,8 +38,8 @@ an offline machine cannot build, and there is no single file to carry across.
 - [ ] Login rate limiting / lockout on the control plane.
 - [ ] Encryption at rest (use an encrypted volume for now).
 - [ ] High availability (one node, one writer).
-- [ ] Forwarding sinks in the container: Splunk HEC and CEF-syslog exist in `pkg/sinks` but `cmd/ulpf` only wires
+- [ ] Forwarding sinks in the container: Splunk HEC and CEF-syslog exist in `pkg/sinks` but `cmd/sluice` only wires
       `parquet`, `ocsfjson`, `ecs`. Forwarding needs one explicitly allowed egress route.
 - [ ] Vault-record to event-store consistency on restart: startup replays the whole vault (about 30 s per million records).
 - [ ] Integration step 3 (sinks) and step 6 (UI walk-through) have no executable gate in `contracts/integration`.
-- [ ] `tests/` has no gate that runs `make integrate` against `cmd/ulpf`; the steps were run by hand against `cmd/dataplane`.
+- [ ] `tests/` has no gate that runs `make integrate` against `cmd/sluice`; the steps were run by hand against `cmd/dataplane`.

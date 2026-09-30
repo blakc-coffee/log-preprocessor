@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/app"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/parsers"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/quarantine"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/registry"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/replay"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/store"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/app"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/quarantine"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/registry"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/replay"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/store"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 func parserYAML(version, signature, key string) []byte {

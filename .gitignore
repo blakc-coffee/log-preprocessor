@@ -34,3 +34,12 @@ AGENTS.md
 *.swp
 *.swo
 *~
+
+# Offline bundle outputs (make bundle) and generated wheels (make wheels)
+/offline/*.tar.zst
+/offline/SHA256SUMS
+/offline/IMAGES.md
+intel/wheels/
+/offline/.env
+/offline/configs/
+/vendor/

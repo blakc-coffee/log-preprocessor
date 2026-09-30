@@ -21,7 +21,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	_ "modernc.org/sqlite" // pure-Go driver, registered as "sqlite"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 var ErrNotFound = errors.New("store: event not found")

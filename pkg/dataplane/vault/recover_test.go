@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // snapshot copies a vault directory as it currently stands on disk, skipping

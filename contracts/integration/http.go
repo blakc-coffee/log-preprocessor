@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts/conformance"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/contracts/conformance"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // HTTP is an API backed by a running data plane. Every request body it sends and every response it receives is

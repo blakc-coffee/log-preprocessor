@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/store"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/store"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 type Enricher struct {

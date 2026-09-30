@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 type field struct {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // A draft is a raw line together with the normalized event a parser would

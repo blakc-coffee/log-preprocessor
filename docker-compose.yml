@@ -1,10 +1,10 @@
 services:
-  ulpf:
+  sluice:
     build:
       context: .
-      target: ulpf
-    image: ulpf:dev
-    command: ["all", "--config", "/etc/ulpf/config.yaml"]
+      target: sluice
+    image: sluice:${ULPF_TAG:-dev}
+    command: ["all", "--config", "/etc/sluice/config.yaml"]
     restart: unless-stopped
     read_only: true
     cap_drop: ["ALL"]
@@ -12,23 +12,23 @@ services:
     tmpfs:
       - /tmp:size=64m,noexec,nosuid,nodev
     volumes:
-      - ulpf-data:/data
-      - ./configs/demo.yaml:/etc/ulpf/config.yaml:ro
-      - ./configs/ingest.container.yaml:/etc/ulpf/ingest.yaml:ro
+      - sluice-data:/data
+      - ./configs/demo.yaml:/etc/sluice/config.yaml:ro
+      - ./configs/ingest.container.yaml:/etc/sluice/ingest.yaml:ro
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:5514:5514/tcp"
       - "127.0.0.1:5514:5514/udp"
       - "127.0.0.1:8080:8080"
-    networks: [ulpf_internal]
+    networks: [sluice_internal]
 
   intel:
     build:
       context: .
       target: intel
-    image: ulpf-intel:dev
+    image: sluice-intel:${ULPF_TAG:-dev}
     depends_on:
-      ulpf:
+      sluice:
         condition: service_healthy
     restart: unless-stopped
     read_only: true
@@ -37,16 +37,16 @@ services:
     tmpfs:
       - /tmp:size=16m,noexec,nosuid,nodev
     volumes:
-      - ulpf-data-intel:/state
-    # Same network namespace as ulpf: the admin API is on that loopback only.
-    network_mode: "service:ulpf"
+      - sluice-data-intel:/state
+    # Same network namespace as sluice: the admin API is on that loopback only.
+    network_mode: "service:sluice"
 
 volumes:
-  ulpf-data: {}
-  ulpf-data-intel: {}
+  sluice-data: {}
+  sluice-data-intel: {}
 
 networks:
-  ulpf_internal:
+  sluice_internal:
     driver: bridge
     # Not internal: Docker cannot publish a port from an internal network, so the
     # UI would be unreachable. Ports are published on the host's loopback only,

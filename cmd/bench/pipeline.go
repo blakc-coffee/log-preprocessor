@@ -15,11 +15,11 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/normalizer"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/parsers"
-	parquetsink "github.com/blakc-coffee/log-preprocessor/pkg/sinks/parquet"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/contracts"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/normalizer"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
+	parquetsink "github.com/blakc-coffee/sluice/pkg/sinks/parquet"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 const compressionSampleLimit = 10000

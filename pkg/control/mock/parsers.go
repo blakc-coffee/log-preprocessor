@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/contracts"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // radiusYAML is the one built-in the contract's DSL examples do not cover.

@@ -1,6 +1,6 @@
 #!/bin/sh
 # e2e_container.sh — prove the shipped image ingests, parses and serves.
-#   docker build --target ulpf -t ulpf:dev . && sh scripts/e2e_container.sh
+#   docker build --target sluice -t sluice:dev . && sh scripts/e2e_container.sh
 # Posts the ASA sample over HTTP and one line over TCP, then checks that every
 # record became an event, the vault holds them, and the UI answers on the host.
 set -eu

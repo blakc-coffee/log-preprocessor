@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/parsers"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 const SchemaVersion = "ulpf-uef/1"

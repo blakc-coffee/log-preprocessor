@@ -47,7 +47,7 @@
 /pkg/sinks/                          @blakc-coffee
 /tests/                              @blakc-coffee
 /cmd/bench/                          @blakc-coffee
-/cmd/ulpf/                           @blakc-coffee
+/cmd/sluice/                           @blakc-coffee
 /benchmarks/                         @blakc-coffee
 /Dockerfile                          @blakc-coffee
 /docker-compose*.yml                 @blakc-coffee

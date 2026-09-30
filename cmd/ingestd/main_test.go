@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
 )
 
 // exec runs ingestd in-process and returns its exit code and output.

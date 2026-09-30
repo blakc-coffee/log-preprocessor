@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/internal/apitest"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/merkle"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/control/internal/apitest"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/merkle"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 type client struct {

@@ -4,16 +4,16 @@ What it takes to run ULPF as a service. Everything here was exercised except whe
 
 ## Shape
 
-One host, one `ulpf` container (data plane + control plane + UI) and one `ulpf-intel` sidecar that shares its
+One host, one `sluice` container (data plane + control plane + UI) and one `sluice-intel` sidecar that shares its
 network namespace. Devices send syslog to 5514 (UDP/TCP) or HTTP to 8080. People use the UI on 8000. The admin API
 on 9000 stays on the container's loopback: it can approve parsers and has no sign-in, so only the control plane
 (and the sidecar, in the same namespace) can reach it.
 
 ```
-docker build --target ulpf  -t ulpf:dev .
-docker build --target intel -t ulpf-intel:dev .
-docker save ulpf:dev ulpf-intel:dev | gzip > ulpf.tar.gz        # carry across the air gap
-docker load < ulpf.tar.gz
+docker build --target sluice  -t sluice:dev .
+docker build --target intel -t sluice-intel:dev .
+docker save sluice:dev sluice-intel:dev | gzip > sluice.tar.gz        # carry across the air gap
+docker load < sluice.tar.gz
 ```
 
 ## Turn on sign-in and TLS
@@ -22,8 +22,8 @@ docker load < ulpf.tar.gz
 `configs/production.yaml`: a control plane on `0.0.0.0` **refuses to start without `auth_users_file`**.
 
 ```sh
-printf '%s' 'a-long-passphrase' | docker run --rm -i ulpf:dev passwd alice approver >> users
-printf '%s' 'another-passphrase' | docker run --rm -i ulpf:dev passwd bob viewer    >> users
+printf '%s' 'a-long-passphrase' | docker run --rm -i sluice:dev passwd alice approver >> users
+printf '%s' 'another-passphrase' | docker run --rm -i sluice:dev passwd bob viewer    >> users
 ```
 
 - `approver` can approve, reject and roll back parsers; `viewer` is read-only (403 on any write).
@@ -32,7 +32,7 @@ printf '%s' 'another-passphrase' | docker run --rm -i ulpf:dev passwd bob viewer
   put a reverse proxy in front if the port is reachable by anyone you do not trust.
 - `tls_cert` / `tls_key` serve HTTPS directly. Without them, terminate TLS in front of it: Basic auth over plain
   HTTP is a password in the clear.
-- Mount the files read-only under `/etc/ulpf/`. `/healthz` needs no credentials (the container probe has none).
+- Mount the files read-only under `/etc/sluice/`. `/healthz` needs no credentials (the container probe has none).
 
 ## Monitoring
 
@@ -108,7 +108,7 @@ Encryption at rest is also not provided: use an encrypted volume.
 
 Images are immutable; `/data` is the state. Stop, load the new image, start. Parser versions are files and stay
 put. `store.db` is derived, so a schema change means delete it and let it rebuild. Keep the previous image until
-the new one has verified (`ulpf verify` / `/api/vault/verify?deep=true`).
+the new one has verified (`sluice verify` / `/api/vault/verify?deep=true`).
 
 ## Not covered
 

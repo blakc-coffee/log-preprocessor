@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // ocsfVersion is contracts/ocsf/VERSION.

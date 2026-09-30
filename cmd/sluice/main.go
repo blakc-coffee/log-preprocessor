@@ -1,4 +1,4 @@
-// Command ulpf is the unified offline operator entry point.
+// Command sluice is the unified offline operator entry point.
 package main
 
 import (
@@ -19,11 +19,11 @@ import (
 	"strings"
 	"time"
 
-	controlregistry "github.com/blakc-coffee/log-preprocessor/pkg/control/registry"
-	controlserver "github.com/blakc-coffee/log-preprocessor/pkg/control/server"
-	controlui "github.com/blakc-coffee/log-preprocessor/pkg/control/ui"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	controlregistry "github.com/blakc-coffee/sluice/pkg/control/registry"
+	controlserver "github.com/blakc-coffee/sluice/pkg/control/server"
+	controlui "github.com/blakc-coffee/sluice/pkg/control/ui"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 var (
@@ -47,7 +47,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	switch args[0] {
 	case "version":
-		fmt.Fprintf(stdout, "ulpf %s commit=%s built=%s\n", version, commit, builtAt)
+		fmt.Fprintf(stdout, "sluice %s commit=%s built=%s\n", version, commit, builtAt)
 		return exitOK
 	case "verify":
 		return runVerify(args[1:], stdout, stderr)
@@ -60,7 +60,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "all", "start":
 		return runStart(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "ulpf: unknown command %q\n", args[0])
+		fmt.Fprintf(stderr, "sluice: unknown command %q\n", args[0])
 		usage(stderr)
 		return exitUsage
 	}
@@ -90,7 +90,7 @@ func runHealthcheck(stderr io.Writer) int {
 			last = fmt.Errorf("%s%s returned %s", try.scheme, endpoint, resp.Status)
 		}
 		if !ok {
-			fmt.Fprintln(stderr, "ulpf healthcheck:", last)
+			fmt.Fprintln(stderr, "sluice healthcheck:", last)
 			return exitFailure
 		}
 	}
@@ -98,7 +98,7 @@ func runHealthcheck(stderr io.Writer) int {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, "usage: ulpf <all|start|passwd|selftest|verify|version> [options]")
+	fmt.Fprintln(w, "usage: sluice <all|start|passwd|selftest|verify|version> [options]")
 }
 
 type check struct {
@@ -303,26 +303,26 @@ func insideBlockComment(content []byte, offset int) bool {
 	return htmlOpen > htmlClose
 }
 
-// runPasswd prints a users-file line: ulpf passwd <name> <approver|viewer> < password-on-stdin.
+// runPasswd prints a users-file line: sluice passwd <name> <approver|viewer> < password-on-stdin.
 // The password comes from stdin so it never appears in argv or shell history.
 func runPasswd(args []string, in io.Reader, stdout, stderr io.Writer) int {
 	if len(args) != 2 {
-		fmt.Fprintln(stderr, "usage: ulpf passwd <name> <approver|viewer>   (password on stdin)")
+		fmt.Fprintln(stderr, "usage: sluice passwd <name> <approver|viewer>   (password on stdin)")
 		return exitUsage
 	}
 	pw, err := bufio.NewReader(in).ReadString('\n')
 	pw = strings.TrimRight(pw, "\r\n")
 	if (err != nil && err != io.EOF) || len(pw) < 12 {
-		fmt.Fprintln(stderr, "ulpf passwd: read a password of at least 12 characters from stdin")
+		fmt.Fprintln(stderr, "sluice passwd: read a password of at least 12 characters from stdin")
 		return exitUsage
 	}
 	if strings.ContainsAny(args[0], ":\n ") || (args[1] != "approver" && args[1] != "viewer") {
-		fmt.Fprintln(stderr, "ulpf passwd: name has no ':' or spaces; role is approver or viewer")
+		fmt.Fprintln(stderr, "sluice passwd: name has no ':' or spaces; role is approver or viewer")
 		return exitUsage
 	}
 	h, err := controlserver.HashPassword(pw)
 	if err != nil {
-		fmt.Fprintln(stderr, "ulpf passwd:", err)
+		fmt.Fprintln(stderr, "sluice passwd:", err)
 		return exitFailure
 	}
 	fmt.Fprintf(stdout, "%s:%s:%s\n", args[0], args[1], h)

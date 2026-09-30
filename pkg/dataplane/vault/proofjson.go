@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/merkle"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/merkle"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // The JSON shape of an inclusion proof.

@@ -25,8 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/memvault"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // Scenario names, in the order Advance walks them.

@@ -23,26 +23,26 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/adminclient"
-	controlregistry "github.com/blakc-coffee/log-preprocessor/pkg/control/registry"
-	controlserver "github.com/blakc-coffee/log-preprocessor/pkg/control/server"
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/ui"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/admin"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/app"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/enrich"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/identity"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/parsers"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/quarantine"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/registry"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/replay"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/store"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks/ecs"
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks/fanout"
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks/ocsfjson"
-	parquetsink "github.com/blakc-coffee/log-preprocessor/pkg/sinks/parquet"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/control/adminclient"
+	controlregistry "github.com/blakc-coffee/sluice/pkg/control/registry"
+	controlserver "github.com/blakc-coffee/sluice/pkg/control/server"
+	"github.com/blakc-coffee/sluice/pkg/control/ui"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/admin"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/app"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/enrich"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/identity"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/quarantine"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/registry"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/replay"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/store"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
+	"github.com/blakc-coffee/sluice/pkg/sinks/ecs"
+	"github.com/blakc-coffee/sluice/pkg/sinks/fanout"
+	"github.com/blakc-coffee/sluice/pkg/sinks/ocsfjson"
+	parquetsink "github.com/blakc-coffee/sluice/pkg/sinks/parquet"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 const (
@@ -59,7 +59,7 @@ type runtimeConfig struct {
 	// IngestConfig is an ingestd-format YAML whose sources and limits feed the
 	// pipeline. Empty means no listeners: the vault is only replayed.
 	IngestConfig string `yaml:"ingest_config"`
-	// AuthUsersFile turns on sign-in for the control plane (see `ulpf passwd`).
+	// AuthUsersFile turns on sign-in for the control plane (see `sluice passwd`).
 	AuthUsersFile string `yaml:"auth_users_file"`
 	// TLSCert and TLSKey serve the control plane over HTTPS.
 	TLSCert string `yaml:"tls_cert"`
@@ -343,12 +343,12 @@ func runStart(args []string, stdout, stderr io.Writer) int {
 	}
 	cfg, err := loadRuntimeConfig(*configPath)
 	if err != nil {
-		fmt.Fprintln(stderr, "ulpf:", err)
+		fmt.Fprintln(stderr, "sluice:", err)
 		return exitFailure
 	}
 	rt, err := newUnifiedRuntime(cfg, stderr)
 	if err != nil {
-		fmt.Fprintln(stderr, "ulpf:", err)
+		fmt.Fprintln(stderr, "sluice:", err)
 		return exitFailure
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -356,7 +356,7 @@ func runStart(args []string, stdout, stderr io.Writer) int {
 	serveErr := rt.serve(ctx, stdout)
 	closeErr := rt.close()
 	if err := errors.Join(serveErr, closeErr); err != nil {
-		fmt.Fprintln(stderr, "ulpf:", err)
+		fmt.Fprintln(stderr, "sluice:", err)
 		return exitFailure
 	}
 	return exitOK

@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks"
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks/spool"
-	"github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/sinks"
+	"github.com/blakc-coffee/sluice/pkg/sinks/spool"
+	"github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // Config controls bounded delivery and retry behavior.

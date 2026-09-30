@@ -7,6 +7,6 @@ sinks:
   - ocsfjson
   - ecs
 
-ingest_config: /etc/ulpf/ingest.yaml
+ingest_config: /etc/sluice/ingest.yaml
 # Demo: the UI has no sign-in. See configs/production.yaml for a deployment.
 allow_insecure: true

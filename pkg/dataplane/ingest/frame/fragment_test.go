@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // reassemble concatenates a fragment run and checks the flags are coherent.

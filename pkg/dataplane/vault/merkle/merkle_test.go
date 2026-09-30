@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 func leaves(n int) [][32]byte {

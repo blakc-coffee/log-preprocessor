@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // Multiline groups consecutive lines into one record.

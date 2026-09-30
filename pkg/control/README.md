@@ -12,7 +12,7 @@ browser ──► :8000  server   /           embedded SPA (ui), SPA fallback, C
 
 | Package | What it is |
 |---|---|
-| `server` | `server.New(Config)`: the `http.Handler` `cmd/ulpf` embeds. Pass-through routes plus the combined views below. |
+| `server` | `server.New(Config)`: the `http.Handler` `cmd/sluice` embeds. Pass-through routes plus the combined views below. |
 | `adminclient` | Thin client for the admin API over HTTP, or in process against an `http.Handler` (`NewInProcess`). Classifies failures as `ErrUnreachable` / `ErrTimeout`. |
 | `registry` | Approval history in SQLite (`modernc.org/sqlite`, pure Go). The row is written *before* the admin call and finished after it, so a crash leaves a `pending` row. |
 | `mock` | The admin API in process, for `--mock`, UI development and tests. Raw lines go into a real `memvault`, so hashes and Merkle proofs are real and the browser verifier checks them for real. |

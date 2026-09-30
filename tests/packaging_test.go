@@ -32,18 +32,18 @@ func TestComposeFilesEnforceInternalLoopbackNetwork(t *testing.T) {
 			if err := yaml.Unmarshal(b, &cfg); err != nil {
 				t.Fatal(err)
 			}
-			ulpf, ok := cfg.Services["ulpf"]
+			sluice, ok := cfg.Services["sluice"]
 			if !ok {
-				t.Fatal("ulpf service is missing")
+				t.Fatal("sluice service is missing")
 			}
 			// Docker cannot publish a port from an internal network, so only the air-gap
 			// proof compose is internal; the demo relies on the image having no egress code.
-			if len(ulpf.Networks) != 1 || (name == "docker-compose.airgap-test.yml" && !cfg.Networks[ulpf.Networks[0]].Internal) {
-				t.Fatalf("ulpf network wrong for %s: %+v", name, cfg.Networks)
+			if len(sluice.Networks) != 1 || (name == "docker-compose.airgap-test.yml" && !cfg.Networks[sluice.Networks[0]].Internal) {
+				t.Fatalf("sluice network wrong for %s: %+v", name, cfg.Networks)
 			}
 			wantPorts := map[string]bool{"127.0.0.1:8000:8000": false,
 				"127.0.0.1:5514:5514/tcp": false, "127.0.0.1:5514:5514/udp": false, "127.0.0.1:8080:8080": false}
-			for _, port := range ulpf.Ports {
+			for _, port := range sluice.Ports {
 				if _, expected := wantPorts[port]; !expected {
 					t.Fatalf("unexpected port publication %q", port)
 				}
@@ -60,13 +60,13 @@ func TestComposeFilesEnforceInternalLoopbackNetwork(t *testing.T) {
 
 func TestContainerAndAirgapProofContracts(t *testing.T) {
 	dockerfile := mustReadPackagingFile(t, "Dockerfile")
-	for _, required := range []string{"CGO_ENABLED=0 GOOS=linux", "USER nonroot:nonroot", "HEALTHCHECK", `ENTRYPOINT ["/usr/local/bin/ulpf"]`} {
+	for _, required := range []string{"CGO_ENABLED=0 GOOS=linux", "USER nonroot:nonroot", "HEALTHCHECK", `ENTRYPOINT ["/usr/local/bin/sluice"]`} {
 		if !strings.Contains(dockerfile, required) {
 			t.Fatalf("Dockerfile missing %q", required)
 		}
 	}
 	script := mustReadPackagingFile(t, filepath.Join("scripts", "verify_airgap.sh"))
-	for _, required := range []string{"--network none", "selftest --pipeline --egress --ui", "internal: true", "compose exec -T ulpf ulpf healthcheck", "AIRGAP_VERIFIED"} {
+	for _, required := range []string{"--network none", "selftest --pipeline --egress --ui", "internal: true", "compose exec -T sluice sluice healthcheck", "AIRGAP_VERIFIED"} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("verify_airgap.sh missing %q", required)
 		}

@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/enrich"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/normalizer"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/quarantine"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/registry"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/store"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/telemetry"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/enrich"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/normalizer"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/quarantine"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/registry"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/store"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/telemetry"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 type App struct {

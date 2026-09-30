@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/adminclient"
-	"github.com/blakc-coffee/log-preprocessor/pkg/control/registry"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/control/adminclient"
+	"github.com/blakc-coffee/sluice/pkg/control/registry"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 func escapePath(s string) string { return url.PathEscape(s) }

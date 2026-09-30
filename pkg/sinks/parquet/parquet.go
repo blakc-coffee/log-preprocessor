@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks"
-	"github.com/blakc-coffee/log-preprocessor/pkg/sinks/internal/mapping"
-	"github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/sinks"
+	"github.com/blakc-coffee/sluice/pkg/sinks/internal/mapping"
+	"github.com/blakc-coffee/sluice/pkg/types"
 	parquetgo "github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress/zstd"
 )

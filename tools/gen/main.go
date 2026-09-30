@@ -15,7 +15,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blakc-coffee/log-preprocessor/tools/gen/internal/gen"
+	"github.com/blakc-coffee/sluice/tools/gen/internal/gen"
 )
 
 func main() {

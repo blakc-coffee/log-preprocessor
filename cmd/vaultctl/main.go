@@ -37,8 +37,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // Exit codes.

@@ -13,9 +13,9 @@ contract-golden: ## Regenerate contracts/golden/*.json (real fixtures, real merk
 
 contract-test: ## Goldens vs schema, OpenAPI integrity, DSL examples vs fixtures; fails if goldens drifted
 	go test -count=1 ./contracts/... ./pkg/types/...
-	rm -rf /tmp/ulpf-golden && mkdir -p /tmp/ulpf-golden
-	go run ./contracts/gen --out /tmp/ulpf-golden
-	diff -r contracts/golden /tmp/ulpf-golden
+	rm -rf /tmp/sluice-golden && mkdir -p /tmp/sluice-golden
+	go run ./contracts/gen --out /tmp/sluice-golden
+	diff -r contracts/golden /tmp/sluice-golden
 	@if [ -x intel/.venv/bin/pytest ]; then cd intel && .venv/bin/pytest -q tests/test_contract.py; else echo "SKIPPED: python conformance (create intel/.venv: see intel/README.md)"; fi
 
 integrate: ## Run a linking step against a running data plane: make integrate STEP=1 (see docs/integration.md)
@@ -35,15 +35,15 @@ fixtures-sample: ## Generate the ~50-line-per-source sample corpus into testdata
 	go run ./tools/gen --seed $(SEED) --profile sample --out testdata/sample
 
 fixtures-check: ## Prove the generator is deterministic (regenerate into a temp dir and diff)
-	rm -rf /tmp/ulpf-fx /tmp/ulpf-fx-sample
-	go run ./tools/gen --seed $(SEED) --out /tmp/ulpf-fx
-	go run ./tools/gen --seed $(SEED) --profile sample --out /tmp/ulpf-fx-sample
+	rm -rf /tmp/sluice-fx /tmp/sluice-fx-sample
+	go run ./tools/gen --seed $(SEED) --out /tmp/sluice-fx
+	go run ./tools/gen --seed $(SEED) --profile sample --out /tmp/sluice-fx-sample
 	# testdata/ also holds two artifacts this generator does not write:
 	# sample/ (the other profile) and merkle_vectors.json (written by
 	# `go test ./pkg/dataplane/vault/merkle -run TestWriteVectors -update`,
 	# which has its own drift check).
-	diff -r -x sample -x merkle_vectors.json testdata /tmp/ulpf-fx
-	diff -r testdata/sample /tmp/ulpf-fx-sample
+	diff -r -x sample -x merkle_vectors.json testdata /tmp/sluice-fx
+	diff -r testdata/sample /tmp/sluice-fx-sample
 
 merkle-vectors: ## Regenerate testdata/merkle_vectors.json (tell Frontend and Contracts when it changes)
 	go test ./pkg/dataplane/vault/merkle -run TestWriteVectors -update
@@ -103,3 +103,39 @@ control-build: ## Build cmd/control with CGO disabled (run `make ui` first to em
 control-demo: ui control-build ## Run the control plane on 127.0.0.1:8000 against the built-in mock admin
 	./bin/control --mock --registry-db :memory:
 
+
+# --- offline package (make bundle) ---
+# VERSION is the image tag and is stamped into the binary. Override: make bundle VERSION=1.0.0
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+PYIMG   := python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b
+
+vendor: ## Refresh vendor/ from go.mod (commit the result)
+	go mod vendor
+
+wheels: ## Download the sidecar's Python wheels (+ build backend) into intel/wheels/ for the host's architecture. Needs network.
+	rm -rf intel/wheels && mkdir -p intel/wheels
+	docker run --rm -v "$(CURDIR)/intel:/src:ro" -v "$(CURDIR)/intel/wheels:/w" $(PYIMG) \
+	  sh -c 'cp -r /src /tmp/s && pip wheel -q -w /w /tmp/s setuptools wheel && rm -f /w/ulpf_intel-*.whl'
+
+bundle: vendor wheels ## Build both images and write the carry-across package into offline/ (see offline/README.md)
+	docker build --target sluice  -t sluice:$(VERSION)       --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILT_AT=$$(date -u +%Y-%m-%dT%H:%M:%SZ) .
+	docker build --target intel -t sluice-intel:$(VERSION) .
+	docker save sluice:$(VERSION) sluice-intel:$(VERSION) | zstd -19 -T0 -f -o offline/sluice-images-$(VERSION).tar.zst
+	rm -rf offline/configs && cp -r configs offline/configs
+	printf 'ULPF_TAG=$(VERSION)\n' > offline/.env
+	sh scripts/write_images_md.sh > offline/IMAGES.md
+	cd offline && shasum -a 256 sluice-images-$(VERSION).tar.zst docker-compose.yml .env IMAGES.md README.md $$(find configs -type f | sort) > SHA256SUMS
+	@echo "bundle: offline/ (tag $(VERSION)) - carry that directory across"
+
+dist: vendor ## Cross-compile sluice, vaultctl, ingestd (linux+darwin, amd64+arm64) into dist/ with checksums
+	rm -rf dist && mkdir -p dist
+	@for os in linux darwin; do for arch in amd64 arm64; do \
+	  d=dist/sluice_$(VERSION)_$${os}_$${arch}; mkdir -p $$d; \
+	  for c in sluice vaultctl ingestd; do \
+	    CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -mod=vendor -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o $$d/$$c ./cmd/$$c || exit 1; done; \
+	  cp LICENSE README.md $$d/ 2>/dev/null; \
+	  tar -C dist -czf $$d.tar.gz $$(basename $$d) && rm -rf $$d; \
+	done; done
+	cd dist && shasum -a 256 *.tar.gz > checksums.txt
+	tar -C . -cf - vendor | zstd -19 -T0 -f -o dist/sluice_$(VERSION)_vendor.tar.zst

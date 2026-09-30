@@ -7,8 +7,8 @@ import (
 	"hash/crc32"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/record"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/record"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // On-disk segment framing. A segment file is:

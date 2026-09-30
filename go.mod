@@ -1,4 +1,4 @@
-module github.com/blakc-coffee/log-preprocessor
+module github.com/blakc-coffee/sluice
 
 go 1.25.0
 

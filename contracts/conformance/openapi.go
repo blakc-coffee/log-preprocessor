@@ -13,7 +13,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts"
+	"github.com/blakc-coffee/sluice/contracts"
 )
 
 // The admin API contract as an executable check. Parsing's handler tests call ValidateResponse on real

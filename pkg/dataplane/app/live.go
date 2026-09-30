@@ -8,12 +8,12 @@ import (
 	"io"
 	"log/slog"
 
-	builtin "github.com/blakc-coffee/log-preprocessor/parsers"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/source"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/parsers"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/registry"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	builtin "github.com/blakc-coffee/sluice/parsers"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/source"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/registry"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // LoadBuiltins activates the embedded parsers that are not already in the

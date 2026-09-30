@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 // Step2Options describes the unknown-format source of step 2.

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts"
-	"github.com/blakc-coffee/log-preprocessor/contracts/conformance"
+	"github.com/blakc-coffee/sluice/contracts"
+	"github.com/blakc-coffee/sluice/contracts/conformance"
 )
 
 func golden(t *testing.T, name string) []byte {

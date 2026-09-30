@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts/conformance"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/merkle"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault/record"
-	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
+	"github.com/blakc-coffee/sluice/contracts/conformance"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/merkle"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/record"
+	types "github.com/blakc-coffee/sluice/pkg/types"
 )
 
 func sha(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }

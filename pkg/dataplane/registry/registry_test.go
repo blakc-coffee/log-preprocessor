@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/parsers"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/registry"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
+	"github.com/blakc-coffee/sluice/pkg/dataplane/registry"
 )
 
 const parserV1 = `id: registry_test
