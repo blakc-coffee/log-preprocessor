@@ -48,14 +48,21 @@ func (a *App) Process(ctx context.Context, raw types.RawEvent) error {
 				return a.quarantine(raw, "normalize", err.Error())
 			}
 		}
-		inserted := a.Events.Put(event)
-		if inserted {
+		// Sinks are written before the store: a crash or sink failure between the two
+		// then replays into a duplicate export (at-least-once), never a missing one.
+		_, getErr := a.Events.Get(event.EventID)
+		if getErr != nil && !errors.Is(getErr, store.ErrNotFound) {
+			return fmt.Errorf("event store: %w", getErr)
+		}
+		if getErr != nil { // not stored yet
 			for _, sink := range a.Sinks {
 				if err := sink.Write(ctx, []types.NormalizedEvent{event}); err != nil {
 					return fmt.Errorf("sink %s: %w", sink.Name(), err)
 				}
 			}
-			a.Metrics.Event(raw.SourceID)
+			if a.Events.Put(event) {
+				a.Metrics.Event(raw.SourceID)
+			}
 		}
 		a.Quarantine.Resolve(raw.ID, event.EventID)
 		return nil

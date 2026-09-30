@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"context"
+	"crypto/hmac"
 	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
@@ -11,9 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Users is the login table. A line of the users file is
@@ -119,22 +123,112 @@ func (s *Server) actor(r *http.Request, claimed string) string {
 	return claimed
 }
 
+// verified remembers logins that already passed PBKDF2, so the UI's polling and
+// /metrics scrapes do not each cost a 600k-iteration hash. Only successes are
+// stored, so a client without a valid password cannot grow it. The key is an HMAC
+// under a per-process secret; nothing here outlives the process.
+type verified struct {
+	mu  sync.Mutex
+	key []byte
+	m   map[[32]byte]time.Time
+}
+
+const (
+	verifiedTTL = 5 * time.Minute
+	verifiedMax = 1024
+)
+
+func newVerified() *verified {
+	k := make([]byte, 32)
+	if _, err := rand.Read(k); err != nil {
+		panic(err) // no entropy: nothing safe to do
+	}
+	return &verified{key: k, m: map[[32]byte]time.Time{}}
+}
+
+func (v *verified) id(name, pass string) (id [32]byte) {
+	h := hmac.New(sha256.New, v.key)
+	h.Write([]byte(name))
+	h.Write([]byte{0})
+	h.Write([]byte(pass))
+	copy(id[:], h.Sum(nil))
+	return id
+}
+
+func (v *verified) has(id [32]byte) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	exp, ok := v.m[id]
+	if ok && time.Now().After(exp) {
+		delete(v.m, id)
+		return false
+	}
+	return ok
+}
+
+func (v *verified) add(id [32]byte) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if len(v.m) >= verifiedMax {
+		clear(v.m)
+	}
+	v.m[id] = time.Now().Add(verifiedTTL)
+}
+
+// sameOrigin rejects cross-site state changes. Browsers re-send cached Basic
+// credentials on cross-site requests, so a form on another site could otherwise
+// post JSON to the approve endpoints as the signed-in approver.
+func sameOrigin(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "", "same-origin", "none":
+	default:
+		return false
+	}
+	if o := r.Header.Get("Origin"); o != "" {
+		u, err := url.Parse(o)
+		return err == nil && u.Host == r.Host
+	}
+	return true
+}
+
 func authMiddleware(users Users, next http.Handler) http.Handler {
+	cache := newVerified()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" { // the container health probe carries no credentials
 			next.ServeHTTP(w, r)
 			return
 		}
-		name, pass, ok := r.BasicAuth()
-		rec, valid := Users(users).check(name, pass)
-		if !ok || !valid {
-			w.Header().Set("WWW-Authenticate", `Basic realm="ULPF", charset="UTF-8"`)
+		unauthorized := func() {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Sluice", charset="UTF-8"`)
 			writeErr(w, http.StatusUnauthorized, "unauthorized", "sign in")
+		}
+		name, pass, ok := r.BasicAuth()
+		if !ok { // no credentials: nothing to hash
+			unauthorized()
 			return
 		}
-		if rec.role == "viewer" && r.Method != http.MethodGet && r.Method != http.MethodHead {
-			writeErr(w, http.StatusForbidden, "forbidden", "this account is read-only")
+		id := cache.id(name, pass)
+		rec, known := users[name]
+		if !cache.has(id) {
+			if _, valid := users.check(name, pass); !valid {
+				unauthorized()
+				return
+			}
+			cache.add(id)
+		}
+		if !known { // unreachable: only a valid login is ever cached
+			unauthorized()
 			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			if rec.role == "viewer" {
+				writeErr(w, http.StatusForbidden, "forbidden", "this account is read-only")
+				return
+			}
+			if !sameOrigin(r) {
+				writeErr(w, http.StatusForbidden, "forbidden", "cross-site request refused")
+				return
+			}
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), actorKey{}, name)))
 	})

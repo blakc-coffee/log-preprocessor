@@ -8,6 +8,46 @@ import (
 	"testing"
 )
 
+func TestCrossSiteWritesRefusedAndLoginCached(t *testing.T) {
+	hash, err := HashPassword("alice-passphrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "users")
+	if err := os.WriteFile(path, []byte("alice:approver:"+hash+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	users, err := LoadUsers(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := authMiddleware(users, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	do := func(hdr map[string]string) int {
+		r := httptest.NewRequest("POST", "http://ui.example/api/proposals/x/approve", nil)
+		r.SetBasicAuth("alice", "alice-passphrase")
+		for k, v := range hdr {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for name, c := range map[string]struct {
+		hdr  map[string]string
+		code int
+	}{
+		"no browser headers":    {nil, 200},
+		"same origin":           {map[string]string{"Origin": "http://ui.example", "Sec-Fetch-Site": "same-origin"}, 200},
+		"cross-site fetch":      {map[string]string{"Sec-Fetch-Site": "cross-site"}, 403},
+		"foreign origin":        {map[string]string{"Origin": "http://evil.example"}, 403},
+		"repeat (cached login)": {nil, 200},
+	} {
+		if got := do(c.hdr); got != c.code {
+			t.Errorf("%s: status %d, want %d", name, got, c.code)
+		}
+	}
+}
+
 func TestAuth(t *testing.T) {
 	hash := func(pw string) string {
 		h, err := HashPassword(pw)

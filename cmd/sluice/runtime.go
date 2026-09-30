@@ -99,6 +99,9 @@ func loadRuntimeConfig(path string) (runtimeConfig, error) {
 	if strings.HasPrefix(cfg.ControlListen, "0.0.0.0:") && cfg.AuthUsersFile == "" && !cfg.AllowInsecure {
 		return runtimeConfig{}, errors.New("config: control_listen 0.0.0.0 without auth_users_file exposes the UI to anyone who can reach it; set auth_users_file, or allow_insecure: true for a demo")
 	}
+	if strings.HasPrefix(cfg.ControlListen, "0.0.0.0:") && cfg.AuthUsersFile != "" && cfg.TLSCert == "" && !cfg.AllowInsecure {
+		return runtimeConfig{}, errors.New("config: sign-in on 0.0.0.0 without tls_cert sends passwords in cleartext; set tls_cert and tls_key, or allow_insecure: true behind a TLS-terminating proxy")
+	}
 	if (cfg.TLSCert == "") != (cfg.TLSKey == "") {
 		return runtimeConfig{}, errors.New("config: tls_cert and tls_key go together")
 	}
@@ -305,12 +308,14 @@ func (rt *unifiedRuntime) serve(ctx context.Context, stdout io.Writer) error {
 			serveErr = fmt.Errorf("%s: %w", result.name, result.err)
 		}
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 	stopIngest()
 	if rt.live != nil {
 		rt.live.Wait() // drain before the pipeline and vault close
+		serveErr = errors.Join(serveErr, rt.live.Err())
 	}
+	// Created after the drain, or a slow drain would leave Shutdown an expired context.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	return errors.Join(serveErr, rt.adminHTTP.Shutdown(shutdownCtx), rt.controlHTTP.Shutdown(shutdownCtx))
 }
 

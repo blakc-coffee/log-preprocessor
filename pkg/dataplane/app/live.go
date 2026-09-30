@@ -7,6 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"log/slog"
+	"sync"
 
 	builtin "github.com/blakc-coffee/sluice/parsers"
 	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
@@ -46,12 +47,31 @@ type Live struct {
 	Sources int
 	done    chan struct{}
 	closeFn func()
+
+	mu  sync.Mutex
+	err error
+}
+
+// fail latches the first fatal error so the caller can exit non-zero.
+func (l *Live) fail(err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.err == nil {
+		l.err = err
+	}
+}
+
+// Err is the first fatal error of either goroutine, or nil. Read it after Wait.
+func (l *Live) Err() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.err
 }
 
 // StartIngest feeds the App from the sources in cfg. Records reach Process only
 // after the vault has made them durable (ingest.Pipeline's guarantee). Both
 // goroutines end when ctx is cancelled; a failure of either calls stop so the
-// caller shuts down instead of running half a pipeline.
+// caller shuts down instead of running half a pipeline, and is reported by Err.
 func (a *App) StartIngest(ctx context.Context, stop context.CancelFunc, v types.Vault, cfg *ingest.FileConfig, errOut io.Writer, reg prometheus.Registerer) (*Live, error) {
 	log := slog.New(slog.NewJSONHandler(errOut, nil))
 	out := make(chan types.RawEvent, cfg.OutBuffer)
@@ -73,6 +93,7 @@ func (a *App) StartIngest(ctx context.Context, stop context.CancelFunc, v types.
 		defer func() { pending <- struct{}{} }()
 		if err := ing.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintln(errOut, "ingest:", err)
+			l.fail(fmt.Errorf("ingest: %w", err))
 			stop()
 		}
 	}()
@@ -80,7 +101,12 @@ func (a *App) StartIngest(ctx context.Context, stop context.CancelFunc, v types.
 		defer func() { pending <- struct{}{} }()
 		if err := a.Run(context.Background(), out); err != nil {
 			fmt.Fprintln(errOut, "pipeline:", err)
+			l.fail(fmt.Errorf("pipeline: %w", err))
 			stop()
+			// Nobody reads out any more. Drain it so ingest's closing flush cannot block
+			// forever on a full channel; these records are durable and replay on restart.
+			for range out {
+			}
 		}
 	}()
 	go func() { <-pending; <-pending; close(l.done) }()
