@@ -138,7 +138,7 @@ dist: vendor ## Cross-compile sluice, vaultctl, ingestd (linux+darwin, amd64+arm
 	@for os in linux darwin; do for arch in amd64 arm64; do \
 	  d=dist/sluice_$(VERSION)_$${os}_$${arch}; mkdir -p $$d; \
 	  for c in sluice vaultctl ingestd; do \
-	    CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -mod=vendor -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o $$d/$$c ./cmd/$$c || exit 1; done; \
+	    CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -mod=vendor -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.builtAt=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o $$d/$$c ./cmd/$$c || exit 1; done; \
 	  cp LICENSE README.md $$d/ 2>/dev/null; \
 	  tar -C dist -czf $$d.tar.gz $$(basename $$d) && rm -rf $$d; \
 	done; done

@@ -129,7 +129,7 @@ func newCA() (*ecdsa.PrivateKey, []byte, *x509.Certificate, error) {
 
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "ULPF development CA", Organization: []string{"ULPF (development)"}},
+		Subject:               pkix.Name{CommonName: "Sluice development CA", Organization: []string{"Sluice (development)"}},
 		NotBefore:             time.Now().Add(-time.Hour), // tolerate a little clock skew
 		NotAfter:              time.Now().Add(certValidity),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
@@ -165,7 +165,7 @@ func newLeaf(ca *x509.Certificate, caKey *ecdsa.PrivateKey, cn string, client bo
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: cn, Organization: []string{"ULPF (development)"}},
+		Subject:               pkix.Name{CommonName: cn, Organization: []string{"Sluice (development)"}},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(certValidity),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,

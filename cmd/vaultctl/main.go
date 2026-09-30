@@ -1,4 +1,4 @@
-// Command vaultctl inspects and verifies a ULPF vault.
+// Command vaultctl inspects and verifies a Sluice vault.
 //
 //	vaultctl --dir ./data/vault stats
 //	vaultctl --dir ./data/vault ls
@@ -130,7 +130,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-const usage = `vaultctl inspects and verifies a ULPF vault.
+const usage = `vaultctl inspects and verifies a Sluice vault.
 
   vaultctl --dir DIR stats                  segment and record counts
   vaultctl --dir DIR ls                     one line per sealed segment

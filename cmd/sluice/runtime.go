@@ -278,14 +278,14 @@ func (rt *unifiedRuntime) serve(ctx context.Context, stdout io.Writer) error {
 			controlLn.Close()
 			return fmt.Errorf("ingest: %w", err)
 		}
-		fmt.Fprintf(stdout, "ULPF ingest: %d sources\n", rt.live.Sources)
+		fmt.Fprintf(stdout, "Sluice ingest: %d sources\n", rt.live.Sources)
 	}
-	fmt.Fprintf(stdout, "ULPF data plane on http://%s\n", adminLn.Addr())
+	fmt.Fprintf(stdout, "Sluice data plane on http://%s\n", adminLn.Addr())
 	scheme := "http"
 	if rt.cfg.TLSCert != "" {
 		scheme = "https"
 	}
-	fmt.Fprintf(stdout, "ULPF control plane on %s://%s (sign-in %s)\n", scheme, controlLn.Addr(), map[bool]string{true: "on", false: "OFF"}[rt.users != nil])
+	fmt.Fprintf(stdout, "Sluice control plane on %s://%s (sign-in %s)\n", scheme, controlLn.Addr(), map[bool]string{true: "on", false: "OFF"}[rt.users != nil])
 	type serveResult struct {
 		name string
 		err  error
@@ -342,7 +342,7 @@ func (rt *unifiedRuntime) close() error {
 func runStart(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	configPath := fs.String("config", "configs/demo.yaml", "shared ULPF YAML configuration")
+	configPath := fs.String("config", "configs/demo.yaml", "shared Sluice YAML configuration")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
