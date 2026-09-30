@@ -3,6 +3,7 @@ package gen
 import (
 	"fmt"
 	"math/rand/v2"
+	"strings"
 	"time"
 )
 
@@ -83,9 +84,11 @@ func emitDHCP(w *Writer, rng *rand.Rand, n int) {
 		host := fmt.Sprintf("host-%03d", rng.IntN(400))
 		mac := macFor(host)
 		var line string
+		known := ip // the address the record itself carries; a DISCOVER carries none
 		switch rng.IntN(5) {
 		case 0:
 			line = fmt.Sprintf("DHCPDISCOVER from %s via eth1", mac)
+			known = ""
 		case 1:
 			line = fmt.Sprintf("DHCPOFFER on %s to %s (%s) via eth1", ip, mac, host)
 		case 2:
@@ -96,7 +99,7 @@ func emitDHCP(w *Writer, rng *rand.Rand, n int) {
 			line = fmt.Sprintf("DHCPRELEASE of %s from %s (%s) via eth1 (found)", ip, mac, host)
 		}
 		add(at, syslogHead(at, "dhcp01", "dhcpd", 1123)+line,
-			Expect{Expect: "parse", Vendor: "isc_dhcpd", SrcIP: ip, Time: at})
+			Expect{Expect: "parse", Vendor: "isc_dhcpd", SrcIP: known, Time: at})
 	}
 	writeMerged(w, evs, n)
 }
@@ -172,13 +175,13 @@ func emitOpenVPN(w *Writer, rng *rand.Rand, n int) {
 		e := Expect{Expect: "parse", Vendor: "openvpn", SrcIP: t.IP, User: t.User}
 		add(start, syslogHead(start, "vpn01", "openvpn", 3301)+
 			fmt.Sprintf("%s [%s] Peer Connection Initiated with [AF_INET]%s", peer, t.User, t.VPNPeer),
-			withTime(e, start))
+			withTime(noIP(e), start))
 		add(start.Add(time.Second), syslogHead(start.Add(time.Second), "vpn01", "openvpn", 3301)+
 			fmt.Sprintf("%s MULTI: Learn: %s -> %s", peer, t.IP, peer),
 			withTime(e, start.Add(time.Second)))
 		add(end, syslogHead(end, "vpn01", "openvpn", 3301)+
 			fmt.Sprintf("%s SIGTERM[soft,remote-exit] received, client-instance exiting", peer),
-			withTime(e, end))
+			withTime(noIP(e), end))
 	}
 
 	// Background VPN users live on the 10.8.0.0/24 tunnel subnet, which is
@@ -197,6 +200,9 @@ func emitOpenVPN(w *Writer, rng *rand.Rand, n int) {
 			line = fmt.Sprintf("%s MULTI: Learn: %s -> %s", peer, tun, peer)
 		default:
 			line = fmt.Sprintf("%s SIGTERM[soft,remote-exit] received, client-instance exiting", peer)
+		}
+		if !strings.Contains(line, "MULTI: Learn") {
+			e = noIP(e)
 		}
 		add(at, syslogHead(at, "vpn01", "openvpn", 3301)+line, e)
 	}
@@ -248,5 +254,14 @@ func emitIdentityFirewall(w *Writer, rng *rand.Rand, n int) {
 // can be reused across lines that happen at different instants.
 func withTime(e Expect, at time.Time) Expect {
 	e.Time = at
+	return e
+}
+
+// noIP drops the expected address of a record whose line does not carry one.
+// The manifest's contract is "null when unknown": an address that could only
+// be recovered by correlating with another record is not something a parser
+// reading one line can be held to.
+func noIP(e Expect) Expect {
+	e.SrcIP = ""
 	return e
 }

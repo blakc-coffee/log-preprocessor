@@ -1,0 +1,47 @@
+id: isc_dhcpd
+version: 1.0.0
+vendor: isc
+product: dhcpd
+timezone: "+05:30"
+match:
+  signature: 'dhcpd\[\d+\]: DHCP[A-Z]+'
+ocsf_defaults: {class_uid: 4004, category_uid: 4}
+extractors:
+  - id: dhcp_lease
+    kind: regex
+    pattern: '^(?P<ts>[A-Z][a-z]{2} +\d+ [\d:]+) (?P<host>\S+) dhcpd\[(?P<pid>\d+)\]: (?P<msgtype>DHCPOFFER|DHCPACK|DHCPREQUEST|DHCPRELEASE) (?P<of>on|for|of) (?P<ip>[\d.]+) (?P<prep>to|from) (?P<mac>[0-9a-f:]{17}) \((?P<hostname>[^)]*)\) via (?P<iface>\S+)(?P<note>(?: \([^)]*\))?)$'
+    render: '{ts} {host} dhcpd[{pid}]: {msgtype} {of} {ip} {prep} {mac} ({hostname}) via {iface}{note}'
+    map:
+      - {from: ts, to: time, type: time, layout: "Jan _2 15:04:05"}
+      - {from: ip, to: src_endpoint.ip, type: ip}
+      - {from: mac, to: src_endpoint.mac, type: mac}
+      - {from: hostname, to: src_endpoint.hostname, type: string}
+      - {const: 1, to: severity_id}
+      - {from: msgtype, to: activity_id, type: enum, enum: {DHCPOFFER: 2, DHCPREQUEST: 3, DHCPACK: 5, DHCPRELEASE: 7}, default: 99}
+    tests:
+      - raw: 'Sep 28 09:01:14 dhcp01 dhcpd[1123]: DHCPACK on 10.1.4.9 to aa:bb:cc:8a:06:2d (laptop-carol) via eth1'
+        expect: {src_endpoint.ip: 10.1.4.9, src_endpoint.mac: 'aa:bb:cc:8a:06:2d', src_endpoint.hostname: laptop-carol, activity_id: 5}
+      - raw: 'Sep 28 08:59:59 dhcp01 dhcpd[1123]: DHCPREQUEST for 10.1.4.7 from aa:bb:cc:cd:79:68 (laptop-alice) via eth1'
+        expect: {src_endpoint.ip: 10.1.4.7, activity_id: 3}
+      - raw: 'Sep 28 09:39:14 dhcp01 dhcpd[1123]: DHCPRELEASE of 10.1.4.9 from aa:bb:cc:8a:06:2d (laptop-carol) via eth1 (found)'
+        expect: {src_endpoint.ip: 10.1.4.9, activity_id: 7}
+  - id: dhcp_discover
+    kind: regex
+    pattern: '^(?P<ts>[A-Z][a-z]{2} +\d+ [\d:]+) (?P<host>\S+) dhcpd\[(?P<pid>\d+)\]: DHCPDISCOVER from (?P<mac>[0-9a-f:]{17}) via (?P<iface>\S+)$'
+    render: '{ts} {host} dhcpd[{pid}]: DHCPDISCOVER from {mac} via {iface}'
+    map:
+      - {from: ts, to: time, type: time, layout: "Jan _2 15:04:05"}
+      - {from: mac, to: src_endpoint.mac, type: mac}
+      - {const: 1, to: severity_id}
+      - {const: 1, to: activity_id}
+    tests:
+      - raw: 'Sep 28 09:01:49 dhcp01 dhcpd[1123]: DHCPDISCOVER from aa:bb:cc:11:29:e7 via eth1'
+        expect: {src_endpoint.mac: 'aa:bb:cc:11:29:e7', activity_id: 1}
+identity:
+  kind: dhcp
+  when: {field: msgtype, in: [DHCPACK, DHCPRELEASE]}
+  action: {field: msgtype, enum: {DHCPACK: bind, DHCPRELEASE: release}}
+  ip: ip
+  mac: mac
+  host: hostname
+  at: ts

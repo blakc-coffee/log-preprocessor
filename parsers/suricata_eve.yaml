@@ -1,0 +1,83 @@
+id: suricata_eve
+version: 1.0.0
+vendor: oisf
+product: suricata
+timezone: "+00:00"
+match:
+  signature: '^\{"timestamp":'
+ocsf_defaults: {class_uid: 4001, category_uid: 4}
+extractors:
+  - id: eve_alert
+    kind: json
+    when: {path: event_type, equals: alert}
+    map:
+      - {from: timestamp, to: time, type: time, layout: "2006-01-02T15:04:05.999999-0700"}
+      - {from: src_ip, to: src_endpoint.ip, type: ip}
+      - {from: src_port, to: src_endpoint.port, type: port}
+      - {from: dest_ip, to: dst_endpoint.ip, type: ip}
+      - {from: dest_port, to: dst_endpoint.port, type: port}
+      - {from: proto, to: connection_info.protocol_name, type: string, lower: true}
+      - {from: proto, to: connection_info.protocol_num, type: enum, enum: {TCP: 6, UDP: 17, ICMP: 1}, default: 0}
+      - {from: alert.signature, to: message, type: string}
+      - {from: alert.severity, to: severity_id, type: enum, enum: {"1": 4, "2": 3, "3": 2}, default: 99}
+      - {from: alert.action, to: action_id, type: enum, enum: {allowed: 1, blocked: 2}, default: 99}
+      - {from: alert.action, to: disposition_id, type: enum, enum: {allowed: 15, blocked: 2}, default: 99}
+      - {const: 6, to: activity_id}
+    tests:
+      - raw: '{"timestamp":"2026-09-28T09:00:00.693000+0530","flow_id":4325588156657430,"in_iface":"eth0","event_type":"alert","src_ip":"198.51.100.236","src_port":55929,"dest_ip":"10.1.4.50","dest_port":5432,"proto":"TCP","alert":{"action":"allowed","gid":1,"signature_id":2001219,"rev":20,"signature":"ET SCAN Potential SSH Scan","category":"Attempted Information Leak","severity":2}}'
+        expect: {src_endpoint.ip: 198.51.100.236, dst_endpoint.port: 5432, connection_info.protocol_num: 6, severity_id: 3, action_id: 1, message: ET SCAN Potential SSH Scan}
+  - id: eve_flow
+    kind: json
+    when: {path: event_type, equals: flow}
+    map:
+      - {from: timestamp, to: time, type: time, layout: "2006-01-02T15:04:05.999999-0700"}
+      - {from: src_ip, to: src_endpoint.ip, type: ip}
+      - {from: src_port, to: src_endpoint.port, type: port}
+      - {from: dest_ip, to: dst_endpoint.ip, type: ip}
+      - {from: dest_port, to: dst_endpoint.port, type: port}
+      - {from: proto, to: connection_info.protocol_name, type: string, lower: true}
+      - {from: proto, to: connection_info.protocol_num, type: enum, enum: {TCP: 6, UDP: 17, ICMP: 1}, default: 0}
+      - {from: flow.bytes_toserver, to: traffic.bytes_out, type: int}
+      - {from: flow.bytes_toclient, to: traffic.bytes_in, type: int}
+      - {from: flow.pkts_toserver, to: traffic.packets_out, type: int}
+      - {from: flow.pkts_toclient, to: traffic.packets_in, type: int}
+      - {const: 1, to: severity_id}
+      - {const: 0, to: action_id}
+      - {const: 6, to: activity_id}
+    tests:
+      - raw: '{"timestamp":"2026-09-28T09:00:02.566000+0530","flow_id":1560145878678130,"in_iface":"eth0","event_type":"flow","src_ip":"192.0.2.50","src_port":33702,"dest_ip":"10.1.4.10","dest_port":22,"proto":"TCP","flow":{"pkts_toserver":237,"pkts_toclient":239,"bytes_toserver":67548,"bytes_toclient":596198,"start":"2026-09-28T09:00:02.566000+0530","end":"2026-09-28T09:02:54.566000+0530","age":172,"state":"established","reason":"shutdown","alerted":false}}'
+        expect: {src_endpoint.ip: 192.0.2.50, dst_endpoint.port: 22, traffic.bytes_out: 67548, traffic.bytes_in: 596198}
+  - id: eve_dns
+    kind: json
+    when: {path: event_type, equals: dns}
+    map:
+      - {from: timestamp, to: time, type: time, layout: "2006-01-02T15:04:05.999999-0700"}
+      - {from: src_ip, to: src_endpoint.ip, type: ip}
+      - {from: src_port, to: src_endpoint.port, type: port}
+      - {from: dest_ip, to: dst_endpoint.ip, type: ip}
+      - {from: dest_port, to: dst_endpoint.port, type: port}
+      - {from: proto, to: connection_info.protocol_name, type: string, lower: true}
+      - {from: proto, to: connection_info.protocol_num, type: enum, enum: {TCP: 6, UDP: 17, ICMP: 1}, default: 0}
+      - {const: 1, to: severity_id}
+      - {const: 0, to: action_id}
+      - {const: 6, to: activity_id}
+    tests:
+      - raw: '{"timestamp":"2026-09-28T09:00:01.349000+0530","flow_id":1431652713001819,"in_iface":"eth0","event_type":"dns","src_ip":"203.0.113.213","src_port":45352,"dest_ip":"10.1.7.195","dest_port":53,"proto":"UDP","dns":{"type":"query","id":39089,"rrname":"mail.example.net","rrtype":"A","tx_id":0}}'
+        expect: {src_endpoint.ip: 203.0.113.213, dst_endpoint.port: 53, connection_info.protocol_num: 17}
+  - id: eve_http
+    kind: json
+    when: {path: event_type, equals: http}
+    map:
+      - {from: timestamp, to: time, type: time, layout: "2006-01-02T15:04:05.999999-0700"}
+      - {from: src_ip, to: src_endpoint.ip, type: ip}
+      - {from: src_port, to: src_endpoint.port, type: port}
+      - {from: dest_ip, to: dst_endpoint.ip, type: ip}
+      - {from: dest_port, to: dst_endpoint.port, type: port}
+      - {from: proto, to: connection_info.protocol_name, type: string, lower: true}
+      - {from: proto, to: connection_info.protocol_num, type: enum, enum: {TCP: 6, UDP: 17, ICMP: 1}, default: 0}
+      - {const: 1, to: severity_id}
+      - {const: 0, to: action_id}
+      - {const: 6, to: activity_id}
+    tests:
+      - raw: '{"timestamp":"2026-09-28T09:00:07.435000+0530","flow_id":3341760608405459,"in_iface":"eth0","event_type":"http","src_ip":"192.0.2.14","src_port":35478,"dest_ip":"10.1.4.237","dest_port":80,"proto":"TCP","http":{"hostname":"updates.example.net","url":"/download/pkg.tar.gz","http_user_agent":"python-requests/2.31.0","http_method":"POST","protocol":"HTTP/1.1","status":200,"length":220649}}'
+        expect: {src_endpoint.ip: 192.0.2.14, dst_endpoint.port: 80, connection_info.protocol_num: 6}

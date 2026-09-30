@@ -31,6 +31,11 @@ type extracted struct {
 func (p *Parser) extract(x *Extractor, raw []byte) (*extracted, error) {
 	switch x.Kind {
 	case "regex":
+		// RE2 reads each invalid byte as U+FFFD, which \S and . happily match, so a
+		// corrupted host name would "parse". Corrupt bytes are a mismatch, not a field.
+		if !utf8.Valid(raw) {
+			return nil, nil
+		}
 		return extractRegex(x, raw), nil
 	case "kv":
 		return extractKV(x, raw), nil

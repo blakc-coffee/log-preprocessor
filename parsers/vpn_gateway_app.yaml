@@ -1,0 +1,20 @@
+id: vpn_gateway_app
+version: 1.0.0
+vendor: example
+product: vpn-gateway
+timezone: "+05:30"
+match:
+  signature: 'com\.example\.vpn\.\w+ - '
+ocsf_defaults: {class_uid: 3002, category_uid: 3}
+extractors:
+  - id: session_failure
+    kind: regex
+    pattern: '^(?P<ts>\d{4}-\d{2}-\d{2}T[\d:.]+[+-]\d{2}:\d{2}) (?P<level>[A-Z]+) \[(?P<component>[^\]]+)\] (?P<logger>\S+) - session setup failed for user (?P<user>\S+)(?P<trace>(?s:\n.*))$'
+    map:
+      - {from: ts, to: time, type: time, layout: rfc3339}
+      - {from: level, to: severity_id, type: enum, enum: {ERROR: 4, WARN: 3, INFO: 1}, default: 99}
+      - {from: user, to: actor.user.name, type: string}
+      - {const: 1, to: activity_id}
+    tests:
+      - raw: "2026-09-28T09:00:43.262+05:30 ERROR [vpn-gw] com.example.vpn.SessionHandler - session setup failed for user frank\n\tat com.example.net.SocketFactory.connect(SocketFactory.java:149)\nCaused by: java.io.IOException: broken pipe\n\t... 15 more"
+        expect: {actor.user.name: frank, severity_id: 4}

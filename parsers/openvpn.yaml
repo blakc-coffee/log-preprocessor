@@ -1,0 +1,61 @@
+id: openvpn
+version: 1.0.0
+vendor: openvpn
+product: openvpn
+timezone: "+05:30"
+match:
+  signature: 'openvpn\[\d+\]: \S+/[\d.]+:\d+ '
+ocsf_defaults: {class_uid: 3002, category_uid: 3}
+extractors:
+  - id: ovpn_learn
+    kind: regex
+    pattern: '^(?P<ts>[A-Z][a-z]{2} +\d+ [\d:]+) (?P<host>\S+) openvpn\[(?P<pid>\d+)\]: (?P<user>[^/\s]+)/(?P<peer_ip>[\d.]+):(?P<peer_port>\d+) MULTI: (?P<verb>Learn): (?P<ip>[\d.]+) -> (?P<user2>[^/\s]+)/(?P<peer_ip2>[\d.]+):(?P<peer_port2>\d+)$'
+    render: '{ts} {host} openvpn[{pid}]: {user}/{peer_ip}:{peer_port} MULTI: {verb}: {ip} -> {user2}/{peer_ip2}:{peer_port2}'
+    map:
+      - {from: ts, to: time, type: time, layout: "Jan _2 15:04:05"}
+      - {from: ip, to: src_endpoint.ip, type: ip}
+      - {from: user, to: actor.user.name, type: string}
+      - {const: 1, to: severity_id}
+      - {const: 1, to: activity_id}
+    tests:
+      - raw: 'Sep 28 09:00:00 vpn01 openvpn[3301]: carol/203.0.113.191:40464 MULTI: Learn: 10.8.0.249 -> carol/203.0.113.191:40464'
+        expect: {src_endpoint.ip: 10.8.0.249, actor.user.name: carol}
+  - id: ovpn_connect
+    kind: regex
+    pattern: '^(?P<ts>[A-Z][a-z]{2} +\d+ [\d:]+) (?P<host>\S+) openvpn\[(?P<pid>\d+)\]: (?P<user>[^/\s]+)/(?P<peer_ip>[\d.]+):(?P<peer_port>\d+) \[(?P<cn>[^\]]+)\] Peer Connection Initiated with \[AF_INET\](?P<peer_ip2>[\d.]+):(?P<peer_port2>\d+)$'
+    render: '{ts} {host} openvpn[{pid}]: {user}/{peer_ip}:{peer_port} [{cn}] Peer Connection Initiated with [AF_INET]{peer_ip2}:{peer_port2}'
+    map:
+      - {from: ts, to: time, type: time, layout: "Jan _2 15:04:05"}
+      - {from: peer_ip, to: src_endpoint.ip, type: ip}
+      - {from: peer_port, to: src_endpoint.port, type: port}
+      - {from: user, to: actor.user.name, type: string}
+      - {const: 1, to: severity_id}
+      - {const: 1, to: activity_id}
+    tests:
+      - raw: 'Sep 28 09:03:18 vpn01 openvpn[3301]: carol/203.0.113.128:56747 [carol] Peer Connection Initiated with [AF_INET]203.0.113.128:56747'
+        expect: {src_endpoint.ip: 203.0.113.128, src_endpoint.port: 56747, actor.user.name: carol}
+  - id: ovpn_disconnect
+    kind: regex
+    pattern: '^(?P<ts>[A-Z][a-z]{2} +\d+ [\d:]+) (?P<host>\S+) openvpn\[(?P<pid>\d+)\]: (?P<user>[^/\s]+)/(?P<peer_ip>[\d.]+):(?P<peer_port>\d+) (?P<verb>SIGTERM)(?P<sigdetail>\[[^\]]*\]) received, client-instance exiting$'
+    render: '{ts} {host} openvpn[{pid}]: {user}/{peer_ip}:{peer_port} {verb}{sigdetail} received, client-instance exiting'
+    map:
+      - {from: ts, to: time, type: time, layout: "Jan _2 15:04:05"}
+      - {from: peer_ip, to: src_endpoint.ip, type: ip}
+      - {from: peer_port, to: src_endpoint.port, type: port}
+      - {from: user, to: actor.user.name, type: string}
+      - {const: 1, to: severity_id}
+      - {const: 2, to: activity_id}
+    tests:
+      - raw: 'Sep 28 09:05:03 vpn01 openvpn[3301]: judy/203.0.113.182:38508 SIGTERM[soft,remote-exit] received, client-instance exiting'
+        expect: {src_endpoint.ip: 203.0.113.182, src_endpoint.port: 38508, actor.user.name: judy}
+# A client-instance exit line carries no tunnel address. It is emitted as a
+# release with an empty ip and the peer (user + public address) in host;
+# enrich.Enricher completes it from the address the same peer Learned.
+identity:
+  kind: vpn
+  when: {field: verb, in: [Learn, SIGTERM]}
+  action: {field: verb, enum: {Learn: bind, SIGTERM: release}}
+  ip: ip
+  host: peer_ip
+  user: user
+  at: ts

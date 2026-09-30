@@ -1,0 +1,31 @@
+id: radius_acct
+version: 1.0.0
+vendor: freeradius
+product: radiusd
+timezone: "+05:30"
+match:
+  signature: 'radiusd\[\d+\]: Acct-Status-Type='
+ocsf_defaults: {class_uid: 3002, category_uid: 3}
+extractors:
+  - id: radius_acct
+    kind: regex
+    pattern: '^(?P<ts>[A-Z][a-z]{2} +\d+ [\d:]+) (?P<host>\S+) radiusd\[(?P<pid>\d+)\]: Acct-Status-Type=(?P<status>Start|Stop) User-Name="(?P<user>[^"]*)" Framed-IP-Address=(?P<ip>[\d.]+) Calling-Station-Id="(?P<station>[0-9a-fA-F-]{17})" NAS-IP-Address=(?P<nas_ip>[\d.]+) NAS-Port-Type=(?P<nas_port_type>\w+) Acct-Session-Id="(?P<session>[^"]*)"(?P<tail>(?: Acct-Session-Time=\d+ Acct-Terminate-Cause=\S+)?)$'
+    render: '{ts} {host} radiusd[{pid}]: Acct-Status-Type={status} User-Name="{user}" Framed-IP-Address={ip} Calling-Station-Id="{station}" NAS-IP-Address={nas_ip} NAS-Port-Type={nas_port_type} Acct-Session-Id="{session}"{tail}'
+    map:
+      - {from: ts, to: time, type: time, layout: "Jan _2 15:04:05"}
+      - {from: ip, to: src_endpoint.ip, type: ip}
+      - {from: user, to: actor.user.name, type: string}
+      - {const: 1, to: severity_id}
+      - {from: status, to: activity_id, type: enum, enum: {Start: 1, Stop: 2}, default: 99}
+    tests:
+      - raw: 'Sep 28 09:00:19 radius01 radiusd[2201]: Acct-Status-Type=Start User-Name="alice" Framed-IP-Address=10.1.4.7 Calling-Station-Id="aa-bb-cc-cd-79-68" NAS-IP-Address=10.1.0.1 NAS-Port-Type=Ethernet Acct-Session-Id="A1B20000"'
+        expect: {src_endpoint.ip: 10.1.4.7, actor.user.name: alice, activity_id: 1}
+      - raw: 'Sep 28 09:42:14 radius01 radiusd[2201]: Acct-Status-Type=Stop User-Name="carol" Framed-IP-Address=10.1.4.9 Calling-Station-Id="aa-bb-cc-8a-06-2d" NAS-IP-Address=10.1.0.1 NAS-Port-Type=Ethernet Acct-Session-Id="A1B20004" Acct-Session-Time=2439 Acct-Terminate-Cause=User-Request'
+        expect: {src_endpoint.ip: 10.1.4.9, actor.user.name: carol, activity_id: 2}
+identity:
+  kind: radius
+  when: {field: status, in: [Start, Stop]}
+  action: {field: status, enum: {Start: bind, Stop: release}}
+  ip: ip
+  user: user
+  at: ts

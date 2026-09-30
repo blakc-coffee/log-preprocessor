@@ -1,0 +1,36 @@
+id: fortinet
+version: 1.0.0
+vendor: fortinet
+product: fortigate
+timezone: "+05:30"
+match:
+  signature: '\btype="?traffic"?(?: |$)'
+ocsf_defaults: {class_uid: 4001, category_uid: 4}
+extractors:
+  - id: fgt_traffic
+    kind: kv
+    skip_prefix: '^(?:<\d+>)?'
+    pair_sep: " "
+    kv_sep: "="
+    quote: '"'
+    render: auto
+    map:
+      - {from: [date, time], to: time, type: time, layout: "2006-01-02 15:04:05"}
+      - {from: level, to: severity_id, type: enum, enum: {emergency: 6, alert: 5, critical: 5, error: 4, warning: 3, notice: 2, information: 1, debug: 1}, default: 99}
+      - {from: srcip, to: src_endpoint.ip, type: ip}
+      - {from: srcport, to: src_endpoint.port, type: port}
+      - {from: dstip, to: dst_endpoint.ip, type: ip}
+      - {from: dstport, to: dst_endpoint.port, type: port}
+      - {from: proto, to: connection_info.protocol_num, type: int}
+      - {from: proto, to: connection_info.protocol_name, type: enum, enum: {"6": tcp, "17": udp, "1": icmp}, default: other}
+      - {from: sentbyte, to: traffic.bytes_out, type: uint}
+      - {from: rcvdbyte, to: traffic.bytes_in, type: uint}
+      - {from: sentpkt, to: traffic.packets_out, type: uint}
+      - {from: rcvdpkt, to: traffic.packets_in, type: uint}
+      - {from: action, to: action_id, type: enum, enum: {accept: 1, close: 1, deny: 2, dropped: 2, "client-rst": 2, "server-rst": 2, timeout: 1}, default: 99}
+      - {from: action, to: disposition_id, type: enum, enum: {accept: 1, close: 1, deny: 2, dropped: 6, "client-rst": 21, "server-rst": 21, timeout: 1}, default: 99}
+      - {from: duration, to: duration, type: duration, unit: s}
+      - {const: 6, to: activity_id}
+    tests:
+      - raw: 'date=2026-09-28 time=09:00:02 devname="FG-01" devid="FG100E0000000001" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" tz="+0530" srcip=10.1.4.25 srcport=53513 srcintf="port1" srcintfrole="lan" dstip=203.0.113.125 dstport=143 dstintf="port2" dstintfrole="wan" sessionid=601829 proto=6 action="close" policyid=2 policytype="policy" service="IMAP" trandisp="snat" transip=198.51.100.7 transport=36817 duration=554 sentbyte=734601 rcvdbyte=677693 sentpkt=331 rcvdpkt=397 appcat="unscanned"'
+        expect: {src_endpoint.ip: 10.1.4.25, src_endpoint.port: 53513, dst_endpoint.port: 143, connection_info.protocol_name: tcp, traffic.bytes_out: 734601, action_id: 1, severity_id: 2}
