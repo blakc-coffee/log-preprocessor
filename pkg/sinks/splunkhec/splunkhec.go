@@ -16,10 +16,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/sinks"
-	"github.com/blakc-coffee/sluice/pkg/sinks/internal/mapping"
-	"github.com/blakc-coffee/sluice/pkg/sinks/spool"
-	"github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/sinks"
+	"github.com/dark-14100/sluice/pkg/sinks/internal/mapping"
+	"github.com/dark-14100/sluice/pkg/sinks/spool"
+	"github.com/dark-14100/sluice/pkg/types"
 )
 
 // Config contains HEC settings. TokenFile is required; inline secrets are not accepted.

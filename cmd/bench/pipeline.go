@@ -15,11 +15,11 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/blakc-coffee/sluice/contracts"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/normalizer"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
-	parquetsink "github.com/blakc-coffee/sluice/pkg/sinks/parquet"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/contracts"
+	"github.com/dark-14100/sluice/pkg/dataplane/normalizer"
+	"github.com/dark-14100/sluice/pkg/dataplane/parsers"
+	parquetsink "github.com/dark-14100/sluice/pkg/sinks/parquet"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 const compressionSampleLimit = 10000

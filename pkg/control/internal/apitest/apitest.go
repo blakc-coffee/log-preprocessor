@@ -15,7 +15,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
 
-	"github.com/blakc-coffee/sluice/contracts"
+	"github.com/dark-14100/sluice/contracts"
 )
 
 // Contract holds the compiled schemas.

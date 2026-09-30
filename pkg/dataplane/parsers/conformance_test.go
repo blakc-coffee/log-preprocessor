@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/sluice/contracts/conformance"
+	"github.com/dark-14100/sluice/contracts/conformance"
 )
 
 type adapter struct{ engine *Engine }

@@ -12,9 +12,9 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/record"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault/record"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 const (

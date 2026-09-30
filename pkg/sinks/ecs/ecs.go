@@ -10,9 +10,9 @@ import (
 	"io"
 	"sync"
 
-	"github.com/blakc-coffee/sluice/pkg/sinks"
-	"github.com/blakc-coffee/sluice/pkg/sinks/internal/mapping"
-	"github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/sinks"
+	"github.com/dark-14100/sluice/pkg/sinks/internal/mapping"
+	"github.com/dark-14100/sluice/pkg/types"
 )
 
 // RawProvider retrieves vault bytes for explicit raw export.

@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault/memvault"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // ocsfVersion is contracts/ocsf/VERSION.

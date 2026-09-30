@@ -17,8 +17,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/blakc-coffee/sluice/pkg/sinks"
-	"github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/sinks"
+	"github.com/dark-14100/sluice/pkg/types"
 )
 
 const (

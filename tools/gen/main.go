@@ -15,7 +15,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blakc-coffee/sluice/tools/gen/internal/gen"
+	"github.com/dark-14100/sluice/tools/gen/internal/gen"
 )
 
 func main() {

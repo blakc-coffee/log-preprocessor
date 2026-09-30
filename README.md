@@ -32,7 +32,7 @@ Pick the route that matches the machine. All routes give the same `sluice` binar
 | A laptop, no Docker | [Release binaries](#c-release-binaries--go-install--homebrew) | yes, once |
 | Only the Python sidecar | [`pip install sluice-intel`](#d-the-intelligence-sidecar-alone) | yes, once |
 
-Replace `OWNER` below with the GitHub account that publishes the repo.
+Replace `dark-14100` below with the GitHub account that publishes the repo.
 
 ### A. Offline bundle (air-gapped hosts)
 
@@ -53,14 +53,14 @@ Details: [`offline/README.md`](offline/README.md).
 ### B. Container images
 
 ```sh
-docker pull ghcr.io/OWNER/sluice:<version>
-docker pull ghcr.io/OWNER/sluice-intel:<version>
+docker pull ghcr.io/dark-14100/sluice:<version>
+docker pull ghcr.io/dark-14100/sluice-intel:<version>
 ```
 
 Then use the compose file from the repo, with `ULPF_TAG=<version>` set (the variable keeps its old name for now):
 
 ```sh
-git clone https://github.com/OWNER/sluice && cd sluice
+git clone https://github.com/dark-14100/sluice && cd sluice
 ULPF_TAG=<version> docker compose up -d --wait
 ```
 
@@ -73,16 +73,16 @@ Each release carries `sluice`, `vaultctl` and `ingestd` for linux and darwin on 
 
 ```sh
 # a release tarball
-curl -LO https://github.com/OWNER/sluice/releases/download/v<version>/sluice_<version>_linux_amd64.tar.gz
+curl -LO https://github.com/dark-14100/sluice/releases/download/v<version>/sluice_<version>_linux_amd64.tar.gz
 shasum -a 256 -c --ignore-missing checksums.txt
 tar -xzf sluice_<version>_linux_amd64.tar.gz
 
 # or with Go 1.25+ (the CLIs only)
-go install github.com/OWNER/sluice/cmd/vaultctl@v<version>
-go install github.com/OWNER/sluice/cmd/sluice@v<version>
+go install github.com/dark-14100/sluice/cmd/vaultctl@v<version>
+go install github.com/dark-14100/sluice/cmd/sluice@v<version>
 
 # or Homebrew
-brew install OWNER/tap/sluice
+brew install dark-14100/tap/sluice
 ```
 
 The `sluice` binary embeds the web UI, so it needs nothing else to serve it.
@@ -252,7 +252,7 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 gh release create vX.Y.Z dist/* --title vX.Y.Z
 ```
 
-Also push the images (`docker tag` and `docker push` to `ghcr.io/OWNER/sluice*`) and upload the Python package
+Also push the images (`docker tag` and `docker push` to `ghcr.io/dark-14100/sluice*`) and upload the Python package
 (`cd intel && python -m build && twine upload dist/*`). The bundle is architecture-specific: build it on, or with
 buildx for, each target architecture.
 
@@ -282,5 +282,5 @@ offline/    the offline install package (README, compose; generated files are gi
 
 ## License
 
-MIT (add a `LICENSE` file before publishing). Developed for the Smart India Hackathon 2026, NTRO problem statement
+MIT, see [`LICENSE`](LICENSE). Developed for the Smart India Hackathon 2026, NTRO problem statement
 SIH26156.

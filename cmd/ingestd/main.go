@@ -36,10 +36,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/source"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest/source"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 const (

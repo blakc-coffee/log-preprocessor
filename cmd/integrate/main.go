@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blakc-coffee/sluice/contracts/integration"
+	"github.com/dark-14100/sluice/contracts/integration"
 )
 
 func main() {

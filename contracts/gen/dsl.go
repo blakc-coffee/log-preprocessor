@@ -10,8 +10,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/blakc-coffee/sluice/contracts"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/contracts"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // A just-enough reader for the DSL examples (contracts/dsl/examples), used to

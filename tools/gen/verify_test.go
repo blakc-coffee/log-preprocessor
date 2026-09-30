@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blakc-coffee/sluice/tools/gen/internal/gen"
+	"github.com/dark-14100/sluice/tools/gen/internal/gen"
 )
 
 // TestManifestIsSelfConsistent re-derives every number in the manifest from the

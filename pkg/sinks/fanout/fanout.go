@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/sinks"
-	"github.com/blakc-coffee/sluice/pkg/sinks/spool"
-	"github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/sinks"
+	"github.com/dark-14100/sluice/pkg/sinks/spool"
+	"github.com/dark-14100/sluice/pkg/types"
 )
 
 // Config controls bounded delivery and retry behavior.

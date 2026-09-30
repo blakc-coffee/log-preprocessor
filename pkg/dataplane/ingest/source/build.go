@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"regexp"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/frame"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest/frame"
 )
 
 // Build turns the configuration into live sources. Listeners bind here,

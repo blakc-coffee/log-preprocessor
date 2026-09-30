@@ -30,8 +30,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/blakc-coffee/sluice/contracts"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/contracts"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // Engine compiles a parser document.

@@ -1,4 +1,4 @@
-module github.com/blakc-coffee/sluice
+module github.com/dark-14100/sluice
 
 go 1.25.0
 

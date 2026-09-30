@@ -133,6 +133,6 @@ docker compose -f docker-compose.airgap-test.yml up -d
 - Dynamic Identity Timeline: correlates DHCP leases, RADIUS authentications, and VPN sessions
 - Open standard output: OCSF v1.1.0 and ECS export sinks
 
-**Repository:** `github.com/blakc-coffee/sluice`
+**Repository:** `github.com/dark-14100/sluice`
 **License:** MIT
 

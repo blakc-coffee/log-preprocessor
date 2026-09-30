@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	builtin "github.com/blakc-coffee/sluice/parsers"
+	builtin "github.com/dark-14100/sluice/parsers"
 
-	"github.com/blakc-coffee/sluice/contracts/conformance"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
+	"github.com/dark-14100/sluice/contracts/conformance"
+	"github.com/dark-14100/sluice/pkg/dataplane/parsers"
 )
 
 type rec struct {

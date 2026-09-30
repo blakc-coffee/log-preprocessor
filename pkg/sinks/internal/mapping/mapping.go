@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/types"
 )
 
 // Fields is the exporter-neutral projection of a normalized event.

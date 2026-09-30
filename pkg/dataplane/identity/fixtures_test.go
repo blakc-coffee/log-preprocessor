@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault/memvault"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // The acceptance test from PRD_CONTRACTS 6.4: replay the DHCP, RADIUS and

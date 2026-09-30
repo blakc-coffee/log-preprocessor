@@ -5,7 +5,7 @@ package sinks
 import (
 	"errors"
 
-	"github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/types"
 )
 
 // Sink aliases the frozen cross-workstream sink contract.

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // claim is one time-bounded binding of an IP, the same model the identity

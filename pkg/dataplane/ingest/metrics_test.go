@@ -8,10 +8,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault/memvault"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // gather collects a registry into a name -> metric family map.

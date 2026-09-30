@@ -1,8 +1,10 @@
 [project]
 name = "sluice-intel"
 version = "0.1.0"
-description = "ULPF intelligence sidecar: drift detection, semantic typing, parser proposals. Propose-only, off the hot path."
+description = "Sluice intelligence sidecar: drift detection, semantic typing, parser proposals. Propose-only, off the hot path."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.13,<3",
@@ -12,6 +14,10 @@ dependencies = [
   "cachetools>=5,<7",  # drain3 imports it but does not declare it
   "httpx>=0.28,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/dark-14100/sluice"
+Source = "https://github.com/dark-14100/sluice"
 
 [project.optional-dependencies]
 test = ["pytest>=9,<10"]

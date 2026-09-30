@@ -28,7 +28,7 @@ import (
 	"fmt"
 	"io"
 
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // Defaults. MaxFrameBytes matches limits.max_frame_bytes in the ingest config,

@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/store"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/store"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 type Enricher struct {

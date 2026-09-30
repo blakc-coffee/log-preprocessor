@@ -2,55 +2,55 @@
 # Handles below are the repository owner until each workstream's GitHub
 # account is known; replace per line. Contract paths need the arbiter too.
 
-/pkg/types/                          @blakc-coffee
-/contracts/                          @blakc-coffee
-/docs/spec.md                        @blakc-coffee
-/DESIGN.md                           @blakc-coffee
-/docs/integration.md                 @blakc-coffee
-/pkg/dataplane/identity/             @blakc-coffee
-/intel/                              @blakc-coffee
-/presentation/                       @blakc-coffee
-/README.md                           @blakc-coffee
-/CODEOWNERS                          @blakc-coffee
-/.github/PULL_REQUEST_TEMPLATE.md            @blakc-coffee
+/pkg/types/                          @dark-14100
+/contracts/                          @dark-14100
+/docs/spec.md                        @dark-14100
+/DESIGN.md                           @dark-14100
+/docs/integration.md                 @dark-14100
+/pkg/dataplane/identity/             @dark-14100
+/intel/                              @dark-14100
+/presentation/                       @dark-14100
+/README.md                           @dark-14100
+/CODEOWNERS                          @dark-14100
+/.github/PULL_REQUEST_TEMPLATE.md            @dark-14100
 
 # Ingestion & vault (Codex #1)
-/tools/gen/                          @blakc-coffee
-/testdata/                           @blakc-coffee
-/pkg/dataplane/ingest/               @blakc-coffee
-/pkg/dataplane/vault/                @blakc-coffee
-/cmd/ingestd/                        @blakc-coffee
-/cmd/vaultctl/                       @blakc-coffee
-/configs/ingest.dev.yaml             @blakc-coffee
-/docs/vault-format.md                @blakc-coffee
+/tools/gen/                          @dark-14100
+/testdata/                           @dark-14100
+/pkg/dataplane/ingest/               @dark-14100
+/pkg/dataplane/vault/                @dark-14100
+/cmd/ingestd/                        @dark-14100
+/cmd/vaultctl/                       @dark-14100
+/configs/ingest.dev.yaml             @dark-14100
+/docs/vault-format.md                @dark-14100
 
 # Parsing & normalization (Claude Code #1)
-/pkg/dataplane/parsers/              @blakc-coffee
-/pkg/dataplane/normalizer/           @blakc-coffee
-/pkg/dataplane/quarantine/           @blakc-coffee
-/pkg/dataplane/replay/               @blakc-coffee
-/pkg/dataplane/registry/             @blakc-coffee
-/pkg/dataplane/enrich/               @blakc-coffee
-/pkg/dataplane/store/                @blakc-coffee
-/pkg/dataplane/admin/                @blakc-coffee
-/pkg/dataplane/app/                  @blakc-coffee
-/pkg/dataplane/telemetry/            @blakc-coffee
-/parsers/                            @blakc-coffee
-/cmd/dataplane/                      @blakc-coffee
+/pkg/dataplane/parsers/              @dark-14100
+/pkg/dataplane/normalizer/           @dark-14100
+/pkg/dataplane/quarantine/           @dark-14100
+/pkg/dataplane/replay/               @dark-14100
+/pkg/dataplane/registry/             @dark-14100
+/pkg/dataplane/enrich/               @dark-14100
+/pkg/dataplane/store/                @dark-14100
+/pkg/dataplane/admin/                @dark-14100
+/pkg/dataplane/app/                  @dark-14100
+/pkg/dataplane/telemetry/            @dark-14100
+/parsers/                            @dark-14100
+/cmd/dataplane/                      @dark-14100
 
 # Control plane & frontend (Claude Code #2)
-/frontend/                           @blakc-coffee
-/pkg/control/                        @blakc-coffee
-/cmd/control/                        @blakc-coffee
+/frontend/                           @dark-14100
+/pkg/control/                        @dark-14100
+/cmd/control/                        @dark-14100
 
 # Sinks, packaging & QA (Codex #2)
-/pkg/sinks/                          @blakc-coffee
-/tests/                              @blakc-coffee
-/cmd/bench/                          @blakc-coffee
-/cmd/sluice/                           @blakc-coffee
-/benchmarks/                         @blakc-coffee
-/Dockerfile                          @blakc-coffee
-/docker-compose*.yml                 @blakc-coffee
-/scripts/verify_airgap.sh            @blakc-coffee
-/scripts/demo*.sh                    @blakc-coffee
-/docs/design-tokens.md               @blakc-coffee
+/pkg/sinks/                          @dark-14100
+/tests/                              @dark-14100
+/cmd/bench/                          @dark-14100
+/cmd/sluice/                           @dark-14100
+/benchmarks/                         @dark-14100
+/Dockerfile                          @dark-14100
+/docker-compose*.yml                 @dark-14100
+/scripts/verify_airgap.sh            @dark-14100
+/scripts/demo*.sh                    @dark-14100
+/docs/design-tokens.md               @dark-14100

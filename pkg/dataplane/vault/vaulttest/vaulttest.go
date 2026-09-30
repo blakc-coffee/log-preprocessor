@@ -29,8 +29,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/merkle"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault/merkle"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // Factory tells the suite how to build a vault and what to expect of it.

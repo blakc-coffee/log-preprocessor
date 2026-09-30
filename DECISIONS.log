@@ -10,7 +10,7 @@ affects: .gitignore, testdata/, DECISIONS.log
 why: The ingest config (PRD section 8) also writes ./data/checkpoints; no runtime state under data/ belongs in the repo.
 affects: .gitignore
 
-[2026-09-29 02:12] Go module path assumed to be github.com/blakc-coffee/sluice.
+[2026-09-29 02:12] Go module path assumed to be github.com/dark-14100/sluice.
 why: PRD_INGESTION_vault_SCOPED 9.2 says go.mod is owned by the Contracts workstream and to stop rather than invent a module path. No Contracts agent is running here and no go.mod exists, so the path is taken from the existing git remote (`git remote -v`) rather than invented. Revisit if Contracts ships a different one.
 affects: go.mod (not yet created), every package import path
 
@@ -22,7 +22,7 @@ affects: all build/test milestones (M0-M5)
 why: PRD targets Go 1.22+. The go.mod directive is the language version the code is written against, deliberately not the installed toolchain, so a newer local toolchain cannot let a 1.23+ feature slip in unnoticed.
 affects: go.mod
 
-[2026-09-29 02:20] Module path set to github.com/blakc-coffee/sluice.
+[2026-09-29 02:20] Module path set to github.com/dark-14100/sluice.
 why: Confirmed with the user. Taken from the existing git remote rather than invented, per PRD_INGESTION 9.2. Supersedes the 02:12 assumption.
 affects: go.mod, every import path
 

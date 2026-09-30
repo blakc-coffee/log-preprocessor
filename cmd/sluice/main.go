@@ -19,11 +19,11 @@ import (
 	"strings"
 	"time"
 
-	controlregistry "github.com/blakc-coffee/sluice/pkg/control/registry"
-	controlserver "github.com/blakc-coffee/sluice/pkg/control/server"
-	controlui "github.com/blakc-coffee/sluice/pkg/control/ui"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	controlregistry "github.com/dark-14100/sluice/pkg/control/registry"
+	controlserver "github.com/dark-14100/sluice/pkg/control/server"
+	controlui "github.com/dark-14100/sluice/pkg/control/ui"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault/memvault"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 var (

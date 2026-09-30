@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/sluice/contracts"
+	"github.com/dark-14100/sluice/contracts"
 )
 
 const corpus = "../../testdata/sample"

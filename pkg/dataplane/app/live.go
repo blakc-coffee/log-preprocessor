@@ -9,12 +9,12 @@ import (
 	"log/slog"
 	"sync"
 
-	builtin "github.com/blakc-coffee/sluice/parsers"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/source"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/parsers"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/registry"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	builtin "github.com/dark-14100/sluice/parsers"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest/source"
+	"github.com/dark-14100/sluice/pkg/dataplane/parsers"
+	"github.com/dark-14100/sluice/pkg/dataplane/registry"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // LoadBuiltins activates the embedded parsers that are not already in the

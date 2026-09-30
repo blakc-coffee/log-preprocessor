@@ -29,7 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // Kinds of identity fact.

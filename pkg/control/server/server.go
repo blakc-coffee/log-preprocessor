@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/control/adminclient"
-	"github.com/blakc-coffee/sluice/pkg/control/registry"
-	"github.com/blakc-coffee/sluice/pkg/control/ui"
+	"github.com/dark-14100/sluice/pkg/control/adminclient"
+	"github.com/dark-14100/sluice/pkg/control/registry"
+	"github.com/dark-14100/sluice/pkg/control/ui"
 )
 
 // Config wires the server. Admin is required; everything else has a default.

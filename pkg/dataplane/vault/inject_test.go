@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // Failure injection.

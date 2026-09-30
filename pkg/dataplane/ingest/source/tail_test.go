@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/source"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest/source"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // tailFixture is a file being written to while a tail follows it.

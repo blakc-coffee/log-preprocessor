@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/frame"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest/frame"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // FileMode selects one-shot or following behaviour.

@@ -40,7 +40,7 @@ import (
 	"math"
 	"time"
 
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // Version is the record body version. A decoder rejects anything else rather

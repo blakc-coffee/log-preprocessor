@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // Binding is one claim as the admin timeline shows it.

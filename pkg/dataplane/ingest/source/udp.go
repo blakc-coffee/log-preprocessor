@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // UDP defaults.

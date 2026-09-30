@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 type Store struct {

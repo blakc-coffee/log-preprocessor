@@ -17,7 +17,7 @@
 package sniff
 
 import (
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // Window is how much of a record is examined. Everything past it is ignored,

@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault"
 )
 
 func runVerify(args []string, stdout, stderr io.Writer) int {

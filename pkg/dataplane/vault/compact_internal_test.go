@@ -13,8 +13,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/record"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault/record"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // Internal tests: these reach into compaction's unexported pieces, because the

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/memvault"
-	"github.com/blakc-coffee/sluice/pkg/dataplane/vault/vaulttest"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault/memvault"
+	"github.com/dark-14100/sluice/pkg/dataplane/vault/vaulttest"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // fixedNow keeps seal timestamps deterministic.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // claim is one holder's tenure of an address under one kind of evidence,

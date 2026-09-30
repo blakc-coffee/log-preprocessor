@@ -29,8 +29,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/sniff"
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest/sniff"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // Defaults.

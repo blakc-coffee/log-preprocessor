@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blakc-coffee/sluice/contracts/conformance"
+	"github.com/dark-14100/sluice/contracts/conformance"
 )
 
 // pyEngine drives the sidecar's Python reference evaluator (intel/ulpf_intel/dsl_cli.py) as an Engine.

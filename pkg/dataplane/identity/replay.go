@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	types "github.com/blakc-coffee/sluice/pkg/types"
+	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // FactExtractor turns one stored record into an identity fact, or nil if the record is not one. In the data

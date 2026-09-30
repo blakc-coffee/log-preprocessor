@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blakc-coffee/sluice/pkg/dataplane/ingest/source"
+	"github.com/dark-14100/sluice/pkg/dataplane/ingest/source"
 )
 
 // TestGlobMatchingNothingIsNotAnError, and its opposite.

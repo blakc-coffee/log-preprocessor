@@ -3,7 +3,7 @@ package apitest
 import (
 	"testing"
 
-	"github.com/blakc-coffee/sluice/contracts"
+	"github.com/dark-14100/sluice/contracts"
 )
 
 // recorder captures a Fatalf instead of stopping the test, so the negative
