@@ -101,17 +101,20 @@ The Python import package is still named `ulpf_intel`. Sidecar details: [`intel/
 
 ## First run
 
-**Installed the binary** (Homebrew or a release tarball): no files or config needed.
+**Installed the binary** (Homebrew or a release tarball): no files or config needed. Just run:
 
 ```sh
-sluice all        # terminal 1: starts Sluice. Data goes in ~/.sluice
-sluice tui        # terminal 2: the terminal interface (or open http://127.0.0.1:8000 for the web UI)
+sluice
 ```
 
-Send it something to look at (there is sample data in the repo's `testdata/sample/`):
-`curl -X POST --data-binary @cisco_asa.log localhost:8080/ingest/asa`. Native `sluice all` runs the data plane, web UI and
-ingest; the Python sidecar that proposes parsers for unrecognised formats is separate (`pip install sluice-intel`).
-The container deployment includes it.
+That starts everything in one terminal: the web UI at **http://127.0.0.1:8000**, syslog on 5514, HTTP ingest on 8080, and
+the full-screen terminal UI. A banner confirms both the web UI and the terminal UI are up. Press `o` to open the web UI in your
+browser, `i` to ingest a log file, `q` to quit and stop. Data is kept in `~/.sluice`. If a Sluice is already running, it
+attaches to that one instead.
+
+Sample logs to try are in the repo's `testdata/sample/` (press `i` in the TUI and give it a path). The Python sidecar that
+proposes parsers for unrecognised formats is separate (`pip install sluice-intel`; the container deployment includes it).
+For a server with no terminal UI, use `sluice all`.
 
 **Docker:**
 
@@ -135,8 +138,8 @@ build time.
 
 ## Terminal UI
 
-Prefer the terminal to a browser? `sluice tui` is a full-screen client for a running Sluice. No commands to remember:
-arrow keys, and every screen lists its own keys at the bottom.
+Bare `sluice` opens this for you (and starts Sluice if it is not running). `sluice tui` opens it against a Sluice that is
+already running, on this or another host. No commands to remember: arrow keys, and every screen lists its own keys at the bottom.
 
 ```sh
 sluice tui                                # connects to http://127.0.0.1:8000
@@ -152,7 +155,7 @@ docker compose exec sluice sluice tui     # inside the container, nothing to ins
 | **4 Proposals** | Parser proposals from the sidecar. **Enter** shows the parser, **a** approves it and replays the quarantine. |
 | **5 Vault** | Chain status. **v** re-reads and re-hashes every record (deep verify). |
 
-Keys: `tab` / `1`-`5` switch screens, `↑` `↓` select, `i` ingest a file, `r` refresh, `q` quit. It needs a terminal
+Keys: `tab` / `1`-`5` switch screens, `↑` `↓` select, `i` ingest a file, `o` open the web UI, `r` refresh, `q` quit. It needs a terminal
 that supports full-screen apps (any modern one, including VS Code's).
 
 ## Send it logs

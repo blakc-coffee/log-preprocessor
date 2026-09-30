@@ -15,7 +15,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -168,6 +170,7 @@ type model struct {
 	detail     string
 	dscroll    int
 	note, warn string
+	banner     string // always-visible line under the tabs, e.g. where the web UI is
 	mode       string // "", "confirm", "path", "source"
 	buf, path  string
 }
@@ -292,6 +295,13 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.note = "refreshed"
+	case "o":
+		if err := openBrowser(m.c.base); err != nil {
+			m.warn = "could not open a browser: " + err.Error()
+		} else {
+			m.note = "opened " + m.c.base + " in your browser"
+		}
+		return m, nil
 	case "i":
 		m.mode, m.buf = "path", ""
 		return m, nil
@@ -469,7 +479,7 @@ func (m model) View() string {
 	if pad < 0 {
 		pad = 0
 	}
-	return m.fit(okSty.Render("sluice")+"  "+strings.Join(head, "")) + "\n\n" + body + strings.Repeat("\n", pad) + "\n\n" + foot
+	return m.fit(okSty.Render("sluice")+"  "+strings.Join(head, "")) + "\n" + m.fit(okSty.Render(m.banner)) + "\n" + body + strings.Repeat("\n", pad) + "\n\n" + foot
 }
 
 func (m model) footer() string {
@@ -488,7 +498,7 @@ func (m model) footer() string {
 	case m.note != "":
 		return m.fit(okSty.Render(m.note))
 	}
-	keys := "tab/1-5 switch · ↑↓ select · i ingest a file · r refresh · q quit"
+	keys := "tab/1-5 switch · ↑↓ select · i ingest a file · o open web UI · r refresh · q quit"
 	switch m.tab {
 	case tEvents:
 		keys = "enter open event · " + keys
@@ -540,7 +550,11 @@ func (m model) body() string {
 			return fmt.Sprintf("%-7d %-19s %-8s %s [%s]", r.RecordID, short(r.SourceID, 19), r.Stage, r.Error, r.Status)
 		})
 	case tProps:
-		return okSty.Render("Parser proposals from the intelligence sidecar. Nothing activates until you approve.") + "\n\n" +
+		empty := ""
+		if len(m.props) == 0 {
+			empty = "\n" + dimSty.Render("Proposals come from the Python sidecar (pip install sluice-intel); the Docker deployment includes it.")
+		}
+		return okSty.Render("Parser proposals from the intelligence sidecar. Nothing activates until you approve.") + empty + "\n\n" +
 			m.list("id                 kind  status     source                parser", 2, len(m.props), func(i int) string {
 				p := m.props[i]
 				return fmt.Sprintf("%-18s %-5s %-10s %-21s %s", p.ID, p.Kind, p.Status, short(p.SourceID, 21), p.ParserID)
@@ -621,6 +635,26 @@ func short(s string, n int) string {
 	return s
 }
 
+func openBrowser(url string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url).Start()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	default:
+		return exec.Command("xdg-open", url).Start()
+	}
+}
+
+func newTUIClient(base, ingest, user, pass string, insecure bool) *tuiClient {
+	tr := &http.Transport{Proxy: nil}
+	if insecure {
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // explicit opt-in flag
+	}
+	return &tuiClient{base: strings.TrimRight(base, "/"), ingest: strings.TrimRight(ingest, "/"), user: user, pass: pass,
+		http: &http.Client{Transport: tr, Timeout: 30 * time.Second}}
+}
+
 func runTUI(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -638,18 +672,20 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
-	lipgloss.SetHasDarkBackground(true) // skip the terminal background query: it can stall on terminals that never answer
-	tr := &http.Transport{Proxy: nil}
-	if *insecure {
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // explicit opt-in flag
-	}
-	c := &tuiClient{base: strings.TrimRight(*base, "/"), ingest: strings.TrimRight(*ingest, "/"), user: *user, pass: *pass,
-		http: &http.Client{Transport: tr, Timeout: 30 * time.Second}}
+	c := newTUIClient(*base, *ingest, *user, *pass, *insecure)
 	if err := c.do("GET", "/api/telemetry", nil, nil); err != nil {
 		fmt.Fprintf(stderr, "sluice tui: no Sluice is answering at %s (%v).\nStart one first, in another terminal:  sluice all   (or: docker compose up -d)\nThen run  sluice tui  again.\n", c.base, err)
 		return exitFailure
 	}
-	if _, err := tea.NewProgram(newModel(c), tea.WithAltScreen(), tea.WithOutput(stdout)).Run(); err != nil {
+	return runTUIWith(c, "", stdout, stderr)
+}
+
+// runTUIWith shows the terminal UI for an already-reachable Sluice. banner is an always-visible line.
+func runTUIWith(c *tuiClient, banner string, stdout, stderr io.Writer) int {
+	lipgloss.SetHasDarkBackground(true) // skip the terminal background query: it can stall on terminals that never answer
+	m := newModel(c)
+	m.banner = banner
+	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithOutput(stdout)).Run(); err != nil {
 		fmt.Fprintln(stderr, "sluice tui:", err)
 		return exitFailure
 	}

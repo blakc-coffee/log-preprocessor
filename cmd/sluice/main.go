@@ -42,7 +42,10 @@ func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		usage(stderr)
+		if isTerminal(os.Stdin) && isTerminal(os.Stdout) {
+			return runInteractive(stdout, stderr) // just `sluice`: start everything and show the UI
+		}
+		usage(stderr) // scripts and pipes get the usage text, as before
 		return exitUsage
 	}
 	switch args[0] {
@@ -102,14 +105,21 @@ func runHealthcheck(stderr io.Writer) int {
 	return exitOK
 }
 
+func isTerminal(f *os.File) bool {
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
 func usage(w io.Writer) {
 	fmt.Fprint(w, `Sluice: air-gapped log ingestion, tamper-evident vaulting and OCSF normalization.
 
-Get started (two terminals):
-  sluice all        start everything: web UI on http://127.0.0.1:8000, syslog on 5514, HTTP ingest on 8080
-  sluice tui        full-screen terminal interface for a running Sluice
+Get started:
+  sluice            start everything and open the terminal UI. The web UI is at http://127.0.0.1:8000,
+                    syslog is on 5514, HTTP ingest on 8080. Press q to stop.
 
 Other commands:
+  sluice all        the same server with no terminal UI (for servers and containers)
+  sluice tui        terminal UI for a Sluice that is already running (any host: --url)
   sluice all --config FILE    run with your own configuration (see configs/production.yaml)
   sluice verify               check the vault's hash chain
   sluice passwd NAME ROLE     make a sign-in line (ROLE: approver or viewer)
