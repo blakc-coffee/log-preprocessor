@@ -55,6 +55,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runSelftest(args[1:], stdout, stderr)
 	case "passwd":
 		return runPasswd(args[1:], os.Stdin, stdout, stderr)
+	case "tui":
+		return runTUI(args[1:], stdout, stderr)
 	case "healthcheck":
 		return runHealthcheck(stderr)
 	case "all", "start":
@@ -98,7 +100,7 @@ func runHealthcheck(stderr io.Writer) int {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, "usage: sluice <all|start|passwd|selftest|verify|version> [options]")
+	fmt.Fprintln(w, "usage: sluice <all|start|tui|passwd|selftest|verify|version> [options]")
 }
 
 type check struct {

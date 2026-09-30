@@ -15,7 +15,7 @@ raw bytes intact and replayed from the vault once an analyst approves a mined pa
 
 Built for the NTRO problem statement SIH26156 (Smart India Hackathon 2026).
 
-- [Install](#install) · [First run](#first-run) · [Send it logs](#send-it-logs) · [Sign-in and TLS](#sign-in-and-tls)
+- [Install](#install) · [First run](#first-run) · [Terminal UI](#terminal-ui) · [Send it logs](#send-it-logs) · [Sign-in and TLS](#sign-in-and-tls)
 - [Verify the vault](#verify-the-vault) · [Architecture](#architecture) · [Air-gap](#air-gap-and-zero-egress)
 - [Develop](#develop-from-source) · [Cutting a release](#cutting-a-release) · [Docs](#docs)
 
@@ -118,6 +118,28 @@ Check it is healthy: `docker compose exec sluice sluice healthcheck`, and `sluic
 build time.
 
 `configs/demo.yaml` has **no sign-in** (`allow_insecure: true`). It is for trying the product. Do not expose it.
+
+## Terminal UI
+
+Prefer the terminal to a browser? `sluice tui` is a full-screen client for a running Sluice. No commands to remember:
+arrow keys, and every screen lists its own keys at the bottom.
+
+```sh
+sluice tui                                # connects to http://127.0.0.1:8000
+sluice tui --url https://host:8000 --user alice --password ...   # remote / sign-in (or SLUICE_URL, SLUICE_USER, SLUICE_PASSWORD)
+docker compose exec sluice sluice tui     # inside the container, nothing to install
+```
+
+| Screen | What you do there |
+|---|---|
+| **1 Dashboard** | Live events/s, vault status, per-source record counts. Press **i** to send a log file into Sluice. |
+| **2 Events** | Browse parsed events. **Enter** shows the original raw bytes, their SHA-256 and the OCSF result. |
+| **3 Quarantine** | Every record no parser understood, per source, still byte-exact in the vault. |
+| **4 Proposals** | Parser proposals from the sidecar. **Enter** shows the parser, **a** approves it and replays the quarantine. |
+| **5 Vault** | Chain status. **v** re-reads and re-hashes every record (deep verify). |
+
+Keys: `tab` / `1`-`5` switch screens, `↑` `↓` select, `i` ingest a file, `r` refresh, `q` quit. It needs a terminal
+that supports full-screen apps (any modern one, including VS Code's).
 
 ## Send it logs
 
