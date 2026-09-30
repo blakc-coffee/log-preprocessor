@@ -139,5 +139,5 @@ dist: vendor ## Cross-compile sluice, vaultctl, ingestd (linux+darwin, amd64+arm
 	  cp LICENSE README.md $$d/ 2>/dev/null; \
 	  tar -C dist -czf $$d.tar.gz $$(basename $$d) && rm -rf $$d; \
 	done; done
-	cd dist && rm -f checksums.txt && shasum -a 256 sluice* > checksums.txt
 	tar -C . -cf - vendor | zstd -19 -T0 -f -o dist/sluice_$(VERSION)_vendor.tar.zst
+	cd dist && rm -f checksums.txt && shasum -a 256 sluice* > checksums.txt
