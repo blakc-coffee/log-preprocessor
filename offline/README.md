@@ -19,5 +19,5 @@ UI: http://127.0.0.1:8000. Ingest: UDP/TCP 5514, HTTP 8080 (loopback only). Oper
 - **Building the bundle** (`make bundle`, on a connected machine) pulls base images by pinned digest (`IMAGES.md`)
   and Python wheels (`make wheels`). Go is built from the committed `vendor/`. The UI build still runs `npm ci`,
   so it is **not** yet offline (docs/TODO.md: npm cache).
-- Images are built for the architecture of the machine that ran `make bundle` (`IMAGES.md` lists it).
+- Each bundle holds images for one architecture (`IMAGES.md` lists it); use the amd64 or arm64 bundle that matches the host.
 - Not included: SBOM (`syft` not installed at build time).

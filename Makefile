@@ -120,16 +120,18 @@ wheels: ## Download the sidecar's Python wheels (+ build backend) into intel/whe
 	  docker run --rm --platform linux/$$a -v "$(CURDIR)/intel:/src:ro" -v "$(CURDIR)/intel/wheels/$$a:/w" $(PYIMG) \
 	    sh -c 'cp -r /src /tmp/s && pip wheel -q -w /w /tmp/s setuptools wheel && rm -f /w/sluice_intel-*.whl /w/ulpf_intel-*.whl' || exit 1; done
 
-bundle: vendor wheels ## Build both images and write the carry-across package into offline/ (see offline/README.md)
-	docker build --target sluice  -t sluice:$(VERSION)       --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILT_AT=$$(date -u +%Y-%m-%dT%H:%M:%SZ) .
-	docker build --target intel -t sluice-intel:$(VERSION) .
-	docker save sluice:$(VERSION) sluice-intel:$(VERSION) | zstd -19 -T0 -f -o offline/sluice-images-$(VERSION).tar.zst
+ARCH ?= $(shell docker info --format '{{.Architecture}}' | sed 's/aarch64/arm64/; s/x86_64/amd64/')
+
+bundle: vendor wheels ## Build both images for ARCH (default: host; make bundle ARCH=amd64) and write dist/sluice-offline-<ver>-<arch>.tar
+	docker build --platform linux/$(ARCH) --target sluice -t sluice:$(VERSION) --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILT_AT=$$(date -u +%Y-%m-%dT%H:%M:%SZ) .
+	docker build --platform linux/$(ARCH) --target intel -t sluice-intel:$(VERSION) .
+	docker save sluice:$(VERSION) sluice-intel:$(VERSION) | zstd -19 -T0 -f -o offline/sluice-images-$(VERSION)-$(ARCH).tar.zst
 	rm -rf offline/configs && cp -r configs offline/configs
 	printf 'ULPF_TAG=$(VERSION)\n' > offline/.env
-	sh scripts/write_images_md.sh > offline/IMAGES.md
-	cd offline && shasum -a 256 sluice-images-$(VERSION).tar.zst docker-compose.yml .env IMAGES.md README.md $$(find configs -type f | sort) > SHA256SUMS
-	mkdir -p dist && tar -cf dist/sluice-offline-$(VERSION).tar offline/README.md offline/docker-compose.yml offline/.env offline/IMAGES.md offline/SHA256SUMS offline/configs offline/sluice-images-$(VERSION).tar.zst
-	@echo "bundle: dist/sluice-offline-$(VERSION).tar (tag $(VERSION))"
+	ARCH=$(ARCH) sh scripts/write_images_md.sh > offline/IMAGES.md
+	cd offline && shasum -a 256 sluice-images-$(VERSION)-$(ARCH).tar.zst docker-compose.yml .env IMAGES.md README.md $$(find configs -type f | sort) > SHA256SUMS
+	mkdir -p dist && tar -cf dist/sluice-offline-$(VERSION)-$(ARCH).tar offline/README.md offline/docker-compose.yml offline/.env offline/IMAGES.md offline/SHA256SUMS offline/configs offline/sluice-images-$(VERSION)-$(ARCH).tar.zst
+	@echo "bundle: dist/sluice-offline-$(VERSION)-$(ARCH).tar"
 
 dist: vendor ## Cross-compile sluice, vaultctl, ingestd (linux+darwin, amd64+arm64) into dist/ with checksums
 	mkdir -p dist && rm -f dist/sluice_* dist/checksums.txt

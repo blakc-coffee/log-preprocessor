@@ -36,19 +36,19 @@ Replace `dark-14100` below with the GitHub account that publishes the repo.
 
 ### A. Offline bundle (air-gapped hosts)
 
-Download `sluice-offline-<version>.tar` from the Releases page on a connected machine, carry it across, then:
+Download `sluice-offline-<version>-<arch>.tar` (`amd64` for most servers, `arm64` for Apple silicon and ARM hosts; check with `uname -m`) from the Releases page on a connected machine, carry it across, then:
 
 ```sh
-tar -xf sluice-offline-<version>.tar && cd offline
+tar -xf sluice-offline-<version>-<arch>.tar && cd offline
 shasum -a 256 -c SHA256SUMS                      # every line must say OK
 zstd -dc sluice-images-*.tar.zst | docker load   # needs docker + zstd on the target
 $EDITOR configs/demo.yaml                        # optional; use configs/production.yaml for sign-in + TLS
 docker compose up -d --wait
 ```
 
-Nothing is pulled or built. Requirements on the target: Docker with Compose v2, `zstd`. The images are built for the
-architecture listed in `offline/IMAGES.md` (linux/arm64 or linux/amd64), so pick the bundle that matches the host.
-Details: [`offline/README.md`](offline/README.md).
+Nothing is pulled or built. Requirements on the target: Docker with Compose v2, `zstd`. Each bundle holds images for one
+architecture, named in `offline/IMAGES.md`; pick the one that matches the host. Details:
+[`offline/README.md`](offline/README.md).
 
 ### B. Container images
 
@@ -246,15 +246,15 @@ Shipped binaries are always `CGO_ENABLED=0`. The race detector needs cgo, so `ma
 
 ```sh
 make vendor                 # go mod vendor (vendor/ is generated, not committed)
-make bundle VERSION=x.y.z   # wheels + both images + offline/ (checksummed)
+make bundle VERSION=x.y.z ARCH=amd64   # wheels + both images + dist/sluice-offline-x.y.z-amd64.tar (repeat with ARCH=arm64)
 make dist   VERSION=x.y.z   # dist/: binaries for 4 platforms, checksums.txt, vendor tarball
 git tag vX.Y.Z && git push origin vX.Y.Z
 gh release create vX.Y.Z dist/* --title vX.Y.Z
 ```
 
 Also push the images (`docker tag` and `docker push` to `ghcr.io/dark-14100/sluice*`) and upload the Python package
-(`cd intel && python -m build && twine upload dist/*`). The bundle is architecture-specific: build it on, or with
-buildx for, each target architecture.
+(`cd intel && python -m build && twine upload dist/*`). Each bundle is architecture-specific; the non-host one builds
+under emulation and is slow.
 
 ## Repository layout
 
