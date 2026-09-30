@@ -27,7 +27,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -38,7 +37,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
-	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/frame"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest/source"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/vault"
 	types "github.com/blakc-coffee/log-preprocessor/pkg/types"
@@ -162,7 +160,7 @@ func serve(cfg *ingest.FileConfig, once bool, log *slog.Logger, stdout io.Writer
 		return err == nil
 	}
 
-	srcs, closeSources, err := buildSources(cfg, p.Metrics(), healthy, log)
+	srcs, closeSources, err := source.Build(cfg, p.Metrics(), healthy, log)
 	if err != nil {
 		return exitUsage, err
 	}
@@ -260,122 +258,6 @@ func serve(cfg *ingest.FileConfig, once bool, log *slog.Logger, stdout io.Writer
 	return exitOK, nil
 }
 
-// buildSources turns the configuration into live sources. Listeners bind here,
-// so a port conflict is a startup error rather than a surprise later.
-func buildSources(cfg *ingest.FileConfig, m *ingest.Metrics, healthy func() bool, log *slog.Logger) ([]ingest.Source, func(), error) {
-	peers := make([]source.PeerMapEntry, len(cfg.PeerMap))
-	for i, e := range cfg.PeerMap {
-		peers[i] = source.PeerMapEntry{CIDR: e.CIDR, SourceID: e.SourceID}
-	}
-	peerMap, err := source.NewPeerMap(peers)
-	if err != nil {
-		return nil, nil, err
-	}
-	if peerMap.Len() > 0 {
-		log.Info("peer map loaded", "entries", peerMap.Len())
-	}
-
-	var srcs []ingest.Source
-	var closers []func()
-	closeAll := func() {
-		for _, c := range closers {
-			c()
-		}
-	}
-
-	for _, s := range cfg.Sources {
-		switch s.Type {
-		case "udp":
-			u, err := source.NewUDP(source.UDPConfig{
-				ID: s.ID, Listen: s.Listen, Readers: s.Readers,
-				RecvBuffer: int(s.RecvBuffer), PeerMap: peerMap, Metrics: m, Log: log,
-			})
-			if err != nil {
-				closeAll()
-				return nil, nil, fmt.Errorf("source %s: %w", s.ID, err)
-			}
-			srcs = append(srcs, u)
-
-		case "tcp", "tls":
-			tc := source.TCPConfig{
-				ID: s.ID, Listen: s.Listen,
-				Framing:       framingMode(s.Framing),
-				MaxConns:      cfg.Limits.MaxConns,
-				IdleTimeout:   cfg.Limits.IdleTimeout.Std(),
-				MaxFrameBytes: int(cfg.Limits.MaxFrameBytes),
-				MaxOctetLen:   int(cfg.Limits.MaxOctetLen),
-				PeerMap:       peerMap,
-				Metrics:       m,
-				Log:           log,
-			}
-			if s.Type == "tls" {
-				tlsCfg, err := source.TLSConfig(s.Cert, s.Key, s.ClientCA)
-				if err != nil {
-					closeAll()
-					return nil, nil, fmt.Errorf("source %s: %w", s.ID, err)
-				}
-				tc.TLS = tlsCfg
-			}
-			t, err := source.NewTCP(tc)
-			if err != nil {
-				closeAll()
-				return nil, nil, fmt.Errorf("source %s: %w", s.ID, err)
-			}
-			srcs = append(srcs, t)
-
-		case "http":
-			h, err := source.NewHTTP(source.HTTPConfig{
-				ID: s.ID, Listen: s.Listen,
-				DynamicSources: s.DynamicSources,
-				AllowedSources: s.AllowedSources,
-				MaxBody:        int64(cfg.Limits.HTTPMaxBody),
-				MaxFrameBytes:  int(cfg.Limits.MaxFrameBytes),
-				MaxOctetLen:    int(cfg.Limits.MaxOctetLen),
-				Healthy:        healthy,
-				Metrics:        m,
-				Log:            log,
-			})
-			if err != nil {
-				closeAll()
-				return nil, nil, fmt.Errorf("source %s: %w", s.ID, err)
-			}
-			srcs = append(srcs, h)
-
-		case "file":
-			fc := source.FileConfig{
-				ID: s.ID, Paths: s.Paths,
-				Mode:            source.FileMode(orDefault(s.Mode, "once")),
-				From:            source.FileFrom(s.From),
-				Framing:         framingMode(s.Framing),
-				MaxFrameBytes:   int(cfg.Limits.MaxFrameBytes),
-				CheckpointDir:   s.CheckpointDir,
-				CheckpointEvery: s.CheckpointEvery,
-				PollInterval:    s.Poll.Std(),
-				Metrics:         m,
-				Log:             log,
-			}
-			if s.Multiline != nil {
-				re, err := regexp.Compile(s.Multiline.Start)
-				if err != nil {
-					closeAll()
-					return nil, nil, fmt.Errorf("source %s: multiline.start: %w", s.ID, err)
-				}
-				fc.Multiline = &source.MultilineConfig{
-					Start: re, MaxLines: s.Multiline.MaxLines,
-					Timeout: s.Multiline.Timeout.Std(),
-				}
-			}
-			f, err := source.NewFile(fc)
-			if err != nil {
-				closeAll()
-				return nil, nil, fmt.Errorf("source %s: %w", s.ID, err)
-			}
-			srcs = append(srcs, f)
-		}
-	}
-	return srcs, closeAll, nil
-}
-
 // onceWatcher signals when a one-shot source has finished, so --once knows
 // when there is nothing left to read.
 type onceWatcher struct {
@@ -386,23 +268,6 @@ type onceWatcher struct {
 func (o onceWatcher) Run(ctx context.Context, sink ingest.Sink) error {
 	defer o.done()
 	return o.Source.Run(ctx, sink)
-}
-
-func framingMode(s string) frame.Mode {
-	if s == "auto" {
-		return source.FramingAuto
-	}
-	if s == "" {
-		return frame.ModeLF
-	}
-	return frame.Mode(s)
-}
-
-func orDefault(s, d string) string {
-	if s == "" {
-		return d
-	}
-	return s
 }
 
 // newEmitter decides what happens to records once they are durable.

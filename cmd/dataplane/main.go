@@ -15,11 +15,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/blakc-coffee/log-preprocessor/contracts"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/admin"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/app"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/enrich"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/identity"
+	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/ingest"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/parsers"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/quarantine"
 	"github.com/blakc-coffee/log-preprocessor/pkg/dataplane/registry"
@@ -38,6 +38,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	dataDir := fs.String("data-dir", "data", "vault and parser registry directory")
 	listen := fs.String("listen", "127.0.0.1:9000", "admin API listen address")
 	syncMode := fs.String("sync", "always", "vault sync mode: always, interval, none")
+	sealEvery := fs.Duration("seal-interval", 5*time.Second, "vault seal interval; telemetry vault.records counts sealed records only")
+	ingestConfig := fs.String("ingest-config", "", "ingestd YAML: its sources and limits feed this data plane live (its vault section is ignored)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -62,7 +64,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			*listen = cfg.DataplaneListen
 		}
 	}
-	v, err := vault.Open(vault.Options{Dir: filepath.Join(*dataDir, "vault"), Sync: vault.SyncMode(*syncMode), Compact: true})
+	v, err := vault.Open(vault.Options{Dir: filepath.Join(*dataDir, "vault"), Sync: vault.SyncMode(*syncMode), Compact: true, SealInterval: *sealEvery})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -74,30 +76,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	entries, err := contracts.DSLExamples.ReadDir("dsl/examples")
+	if err := app.LoadBuiltins(engine, reg); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	events, err := store.Open(filepath.Join(*dataDir, "store.db"))
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	for _, entry := range entries {
-		src, readErr := contracts.DSLExamples.ReadFile("dsl/examples/" + entry.Name())
-		if readErr != nil {
-			fmt.Fprintln(stderr, readErr)
-			return 1
-		}
-		p, loadErr := engine.Load(src)
-		if loadErr != nil {
-			fmt.Fprintln(stderr, loadErr)
-			return 1
-		}
-		if !reg.Has(p.ID()) {
-			if _, addErr := reg.Add(src, true); addErr != nil {
-				fmt.Fprintln(stderr, addErr)
-				return 1
-			}
-		}
-	}
-	events := store.New()
+	defer events.Close()
 	quarantined := quarantine.New()
 	resolver := identity.New(identity.Config{})
 	pipeline := app.New(reg, events, quarantined, nil)
@@ -113,6 +101,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	server := &http.Server{Addr: *listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Live ingest: sources -> vault (durable) -> pipeline.
+	var live *app.Live
+	if *ingestConfig != "" {
+		cfg, err := ingest.LoadFile(*ingestConfig)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
+		if live, err = pipeline.StartIngest(ctx, stop, v, cfg, stderr, nil); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
+		fmt.Fprintf(stdout, "live ingest: %d sources\n", live.Sources)
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -123,6 +125,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintln(stderr, err)
 		return 1
+	}
+	stop()
+	if live != nil {
+		live.Wait() // ingest drains, closes out, pipeline consumes the rest
 	}
 	if err := pipeline.Close(); err != nil {
 		fmt.Fprintln(stderr, err)
