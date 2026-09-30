@@ -646,7 +646,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	c := &tuiClient{base: strings.TrimRight(*base, "/"), ingest: strings.TrimRight(*ingest, "/"), user: *user, pass: *pass,
 		http: &http.Client{Transport: tr, Timeout: 30 * time.Second}}
 	if err := c.do("GET", "/api/telemetry", nil, nil); err != nil {
-		fmt.Fprintf(stderr, "sluice tui: cannot use %s: %v\nStart Sluice first (docker compose up -d, or: sluice all --config configs/demo.yaml).\n", c.base, err)
+		fmt.Fprintf(stderr, "sluice tui: no Sluice is answering at %s (%v).\nStart one first, in another terminal:  sluice all   (or: docker compose up -d)\nThen run  sluice tui  again.\n", c.base, err)
 		return exitFailure
 	}
 	if _, err := tea.NewProgram(newModel(c), tea.WithAltScreen(), tea.WithOutput(stdout)).Run(); err != nil {

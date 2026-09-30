@@ -1,0 +1,18 @@
+# Keep the build context small: none of this is needed to build the images.
+.git
+**/node_modules
+**/dist
+!pkg/control/ui/dist
+offline
+data
+bin
+*.tar
+*.tar.gz
+*.zst
+intel/.venv
+intel/*.egg-info
+intel/dist
+presentation
+prd
+*.docx
+store.test
