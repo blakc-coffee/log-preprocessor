@@ -16,7 +16,7 @@ extractors:
       - {from: dst_ip, to: dst_endpoint.ip, type: ip}
 `;
 
-const footer = () => screen.getByRole('contentinfo', { name: /verification/i });
+const footer = () => screen.getByRole('group', { name: /verification/i });
 
 describe('Lineage Explorer', () => {
   it('lists events in the unified schema with telemetry', async () => {

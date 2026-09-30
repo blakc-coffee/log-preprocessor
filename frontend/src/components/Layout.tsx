@@ -37,7 +37,7 @@ export function Layout() {
                 end={t.end}
                 className={({ isActive }) =>
                   cx(
-                    'relative flex items-center px-2 text-ui whitespace-nowrap',
+                    'relative flex items-center px-2 text-ui font-bold whitespace-nowrap',
                     isActive ? 'text-text-primary' : 'text-text-muted hover:text-text-primary',
                   )
                 }

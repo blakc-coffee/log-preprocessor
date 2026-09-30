@@ -68,7 +68,7 @@ export function Pill({
   title,
 }: {
   children: ReactNode;
-  tone?: 'muted' | 'verified' | 'primary';
+  tone?: 'muted' | 'verified';
   className?: string;
   title?: string;
 }) {
@@ -77,7 +77,7 @@ export function Pill({
       title={title}
       className={cx(
         'inline-flex items-center gap-1.5 bg-card border border-border rounded-pill px-2.5 py-0.5 text-label font-medium uppercase tracking-label whitespace-nowrap',
-        tone === 'verified' ? 'text-mint' : tone === 'primary' ? 'text-text-primary' : 'text-text-muted',
+        tone === 'verified' ? 'text-mint' : 'text-text-muted',
         className,
       )}
     >
@@ -124,20 +124,10 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   },
 );
 
-export function Select({
-  className,
-  children,
-  compact,
-  ...rest
-}: SelectHTMLAttributes<HTMLSelectElement> & { compact?: boolean }) {
+export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
-      className={cx(
-        field,
-        compact ? 'font-mono text-code pl-2 py-1' : 'text-body pl-3 py-2',
-        'pr-8 appearance-none bg-no-repeat',
-        className,
-      )}
+      className={cx(field, 'text-body pl-3 py-2', 'pr-8 appearance-none bg-no-repeat', className)}
       style={{ backgroundImage: CHEVRON, backgroundPosition: 'right 10px center' }}
       {...rest}
     >
@@ -364,11 +354,26 @@ export function KV({ k, v, title }: { k: string; v: ReactNode; title?: string })
 }
 
 /** A mono block on the canvas colour, inside a card: raw text, YAML, signatures. */
-export function CodeBlock({ children, className, label }: { children: ReactNode; className?: string; label?: string }) {
+/** `hash` sets DESIGN.md's 11px mono size for SHA-256 strings. */
+export function CodeBlock({
+  children,
+  className,
+  label,
+  hash,
+}: {
+  children: ReactNode;
+  className?: string;
+  label?: string;
+  hash?: boolean;
+}) {
   return (
     <div className={cx('bg-canvas border border-border rounded-button px-4 py-3 min-w-0', className)}>
       {label && <Label className="block mb-1">{label}</Label>}
-      <pre className="font-mono text-code text-text-primary whitespace-pre-wrap break-all">{children}</pre>
+      <pre
+        className={cx('font-mono text-text-primary whitespace-pre-wrap break-all', hash ? 'text-label' : 'text-code')}
+      >
+        {children}
+      </pre>
     </div>
   );
 }

@@ -99,16 +99,23 @@ export function Explorer() {
     setHeld([]);
     seq.current = undefined;
   }, [filters]);
+  // The newest sequence the list has seen. The tail starts from here whenever
+  // its own cursor is unset (first load, or a filter change). max_seq is the
+  // server's global high-water mark, so it is valid for any filter; relying
+  // on it *changing* would stall the tail when a new filter returns the same
+  // value.
+  const latestSeq = useRef<number | undefined>(undefined);
   useEffect(() => {
-    if (seq.current === undefined && maxSeq !== undefined) seq.current = maxSeq;
+    latestSeq.current = maxSeq;
   }, [maxSeq]);
   useEffect(() => {
     if (!live) return;
     const ac = new AbortController();
     const t = setInterval(async () => {
-      if (seq.current === undefined) return;
+      const since = seq.current ?? latestSeq.current;
+      if (since === undefined) return;
       try {
-        const r = await fetchTail(filters, seq.current, ac.signal);
+        const r = await fetchTail(filters, since, ac.signal);
         seq.current = r.max_seq;
         if (!r.events.length) return;
         const fresh = [...r.events].reverse(); // newest first
@@ -154,7 +161,9 @@ export function Explorer() {
   );
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (eventId || e.metaKey || e.ctrlKey || e.altKey) return;
+      // Ask the DOM whether a dialog is open: the eventId in this closure can
+      // lag a keypress that follows closing the modal.
+      if (document.querySelector('[aria-modal="true"]') || e.metaKey || e.ctrlKey || e.altKey) return;
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
       if (e.key === '/') {

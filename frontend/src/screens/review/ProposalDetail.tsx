@@ -96,7 +96,7 @@ export function ProposalDetail({ proposal: listed, history }: { proposal: Propos
           <h2 className="text-heading font-semibold truncate">
             {p.kind === 'new' ? 'New parser' : 'Parser patch'} · {p.parser_id}
           </h2>
-          <Pill tone={p.status === 'approved' ? 'verified' : 'primary'}>{p.status}</Pill>
+          <Pill tone={p.status === 'approved' ? 'verified' : 'muted'}>{p.status}</Pill>
         </div>
         <p className="text-body text-text-muted">
           Source {p.source_id} · {p.kind === 'patch' ? `patches ${p.base_version}` : 'no parser today'} ·{' '}
@@ -134,7 +134,7 @@ export function ProposalDetail({ proposal: listed, history }: { proposal: Propos
                     key={h}
                     className={cx(
                       h === 'Type' && 'hidden xl:table-cell',
-                      'text-left text-label font-medium uppercase tracking-label text-text-muted pb-2 pr-3 border-b border-border',
+                      'bg-canvas h-10 px-3 text-left text-label font-medium uppercase tracking-label text-text-muted border-b border-border',
                     )}
                   >
                     {h}
@@ -150,17 +150,16 @@ export function ProposalDetail({ proposal: listed, history }: { proposal: Propos
                 );
                 return (
                   <tr key={f.field} className={cx('border-b border-border align-top', check && 'bg-selected')}>
-                    <td className="py-2 pr-3 font-mono text-code truncate" title={`${f.field} (${f.type})`}>
+                    <td className="py-2 px-3 font-mono text-code truncate" title={`${f.field} (${f.type})`}>
                       {f.field}
                     </td>
-                    <td className="py-2 pr-3">
+                    <td className="py-2 px-3">
                       {check && pending ? (
                         <>
                           <Select
                             aria-label={`OCSF path for ${f.field}`}
                             value={f.ocsf_path}
                             onChange={(e) => editField(f, e.target.value)}
-                            compact
                             className="w-full"
                           >
                             <option value="">(unmapped)</option>
@@ -181,12 +180,12 @@ export function ProposalDetail({ proposal: listed, history }: { proposal: Propos
                       )}
                     </td>
                     <td className="hidden xl:table-cell py-2 pr-3 truncate">{f.type}</td>
-                    <td className="py-2 pr-3 whitespace-nowrap">
+                    <td className="py-2 px-3 whitespace-nowrap">
                       <Meter value={f.confidence} label={`Confidence for ${f.field}`} size="sm" className="mr-2" />
                       {fmtPct(f.confidence)}
                       {check && <span className="block text-label text-text-primary">check</span>}
                     </td>
-                    <td className="py-2 text-text-muted">
+                    <td className="py-2 px-3 text-text-muted">
                       <span className="line-clamp-2" title={f.evidence}>
                         {f.evidence}
                       </span>

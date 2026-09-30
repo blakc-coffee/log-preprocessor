@@ -22,7 +22,7 @@ export function Tabs<T extends string>({
           aria-selected={value === t.value}
           onClick={() => onChange(t.value)}
           className={cx(
-            'relative pb-2 text-ui',
+            'relative pb-2 text-ui font-bold',
             value === t.value ? 'text-text-primary' : 'text-text-muted hover:text-text-primary',
           )}
         >

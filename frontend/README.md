@@ -84,6 +84,27 @@ serve `contracts/golden/*.json`: explorer, the modal's three checks (pass, tampe
 unsealed), the approve flow (recorded name, below-threshold confirmation, stale 409, replay progress),
 structured YAML edits, and the admin-down banner.
 
+### End to end (Playwright, dev machine only)
+
+```sh
+make ui-e2e                          # builds UI + binary, runs every spec in local Google Chrome
+cd frontend && npx playwright test --ui       # interactive runner, watch each step
+cd frontend && npx playwright show-report     # HTML report with a screenshot of every screen
+```
+
+Playwright starts its own `bin/control --mock` on port 8765, so a demo on 8000 is not disturbed. It
+drives the installed Google Chrome (`channel: 'chrome'`) and downloads no browsers; per the PRD it
+stays out of CI and the container. Every spec runs at 1440×900 and 1024×768.
+
+- `e2e/screens.spec.ts`: each screen and the modal render with no console errors, and pass a layout
+  and design audit (nothing scrolls sideways, no text spills out of a cell, only `#333` borders, no
+  shadows, gradients or blur). Also covers tabs, the About panel, keyboard navigation, search and live tail.
+- `e2e/verify.spec.ts`: a sealed event passes all three browser checks; a byte altered in transit
+  fails them even with the server claiming `sha_match: true`; an unsealed event goes from pending to
+  passed; "Download raw" saves exactly the vault's bytes.
+- `e2e/demo.spec.ts`: drift → review the patch and its diff → approve with a recorded name → replay
+  drains the quarantine → recovered events show `fortinet@1.0.1` → the registry audit trail names the approver.
+
 ## Dependencies
 
 Pinned exactly in `package.json`; `.npmrc` sets `ignore-scripts=true`. Versions respect this

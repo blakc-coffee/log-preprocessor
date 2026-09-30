@@ -197,15 +197,7 @@ export default function ReviewQueue() {
                       {x.score}
                     </Td>
                     <Td dense>
-                      <Pill
-                        tone={
-                          x.status === 'approved' || x.status === 'resolved'
-                            ? 'verified'
-                            : x.active
-                              ? 'primary'
-                              : 'muted'
-                        }
-                      >
+                      <Pill tone={x.status === 'approved' || x.status === 'resolved' ? 'verified' : 'muted'}>
                         {x.status}
                       </Pill>
                     </Td>

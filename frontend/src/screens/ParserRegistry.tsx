@@ -241,7 +241,7 @@ function ParserDetail({ p }: { p: ParserInfo }) {
             <div key={v.version} className="bg-canvas border border-border rounded-button px-4 py-3 space-y-1">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-code">{v.version}</span>
-                {v.active && <Pill tone="primary">active</Pill>}
+                {v.active && <Pill>active</Pill>}
                 <span className="flex-1" />
                 {!v.active && (
                   <Button

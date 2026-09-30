@@ -8,8 +8,14 @@ import reactHooks from 'eslint-plugin-react-hooks';
 const noHtmlSinks = [
   'error',
   { selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']", message: 'Never render content as HTML.' },
-  { selector: "MemberExpression[property.name=/^(innerHTML|outerHTML)$/]", message: 'Never write HTML strings into the DOM.' },
-  { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'Never write HTML strings into the DOM.' },
+  {
+    selector: 'MemberExpression[property.name=/^(innerHTML|outerHTML)$/]',
+    message: 'Never write HTML strings into the DOM.',
+  },
+  {
+    selector: "CallExpression[callee.property.name='insertAdjacentHTML']",
+    message: 'Never write HTML strings into the DOM.',
+  },
   { selector: "CallExpression[callee.name='eval']", message: 'No eval.' },
   { selector: "NewExpression[callee.name='Function']", message: 'No new Function.' },
 ];
