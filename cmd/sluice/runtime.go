@@ -111,6 +111,39 @@ func loadRuntimeConfig(path string) (runtimeConfig, error) {
 	return cfg, nil
 }
 
+// defaultIngestYAML is what `sluice all` uses with no --config: syslog on 5514 (UDP and TCP) and
+// HTTP ingest on 8080, loopback only.
+const defaultIngestYAML = `sources:
+  - {id: syslog-udp, type: udp, listen: "127.0.0.1:5514", readers: 1}
+  - {id: syslog-tcp, type: tcp, listen: "127.0.0.1:5514", framing: auto}
+  - {id: http, type: http, listen: "127.0.0.1:8080", dynamic_sources: true}
+`
+
+// defaultRuntimeConfig runs Sluice with no files at all: data under ~/.sluice, everything on
+// loopback, no sign-in (nothing is reachable from another machine).
+func defaultRuntimeConfig() (runtimeConfig, error) {
+	dir := filepath.Join(".", "sluice-data")
+	if home, err := os.UserHomeDir(); err == nil {
+		dir = filepath.Join(home, ".sluice", "data")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return runtimeConfig{}, err
+	}
+	ingestPath := filepath.Join(dir, "ingest.yaml")
+	if _, err := os.Stat(ingestPath); errors.Is(err, os.ErrNotExist) { // never overwrite the user's edits
+		if err := os.WriteFile(ingestPath, []byte(defaultIngestYAML), 0o600); err != nil {
+			return runtimeConfig{}, err
+		}
+	}
+	return runtimeConfig{
+		DataDir:         dir,
+		DataPlaneListen: dataPlaneAddress,
+		ControlListen:   controlAddress,
+		Sinks:           []string{"parquet", "ocsfjson", "ecs"},
+		IngestConfig:    ingestPath,
+	}, nil
+}
+
 type unifiedRuntime struct {
 	cfg         runtimeConfig
 	vault       *vault.Vault
@@ -342,11 +375,21 @@ func (rt *unifiedRuntime) close() error {
 func runStart(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	configPath := fs.String("config", "configs/demo.yaml", "shared Sluice YAML configuration")
+	configPath := fs.String("config", "", "YAML configuration (default: built-in, data in ~/.sluice)")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
-	cfg, err := loadRuntimeConfig(*configPath)
+	var cfg runtimeConfig
+	var err error
+	if *configPath == "" {
+		cfg, err = defaultRuntimeConfig()
+		if err == nil {
+			fmt.Fprintf(stdout, "Sluice: no --config given, using built-in defaults. Data is kept in %s\n", cfg.DataDir)
+			fmt.Fprintln(stdout, "        Open http://127.0.0.1:8000, or run `sluice tui` in another terminal. Ctrl+C stops.")
+		}
+	} else {
+		cfg, err = loadRuntimeConfig(*configPath)
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, "sluice:", err)
 		return exitFailure

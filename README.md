@@ -77,15 +77,16 @@ curl -LO https://github.com/dark-14100/sluice/releases/download/v<version>/sluic
 shasum -a 256 -c --ignore-missing checksums.txt
 tar -xzf sluice_<version>_linux_amd64.tar.gz
 
-# or with Go 1.25+ (the CLIs only)
+# or with Go 1.25+, for the command-line tools only
 go install github.com/dark-14100/sluice/cmd/vaultctl@v<version>
-go install github.com/dark-14100/sluice/cmd/sluice@v<version>
+go install github.com/dark-14100/sluice/cmd/ingestd@v<version>
 
 # or Homebrew
 brew install dark-14100/tap/sluice
 ```
 
-The `sluice` binary embeds the web UI, so it needs nothing else to serve it.
+The release and Homebrew `sluice` binary embeds the web UI, so it needs nothing else to serve it. (`go install` of
+`cmd/sluice` builds without the UI, because the UI build output is not in git: use a release binary, Homebrew or Docker.)
 
 ### D. The intelligence sidecar alone
 
@@ -100,9 +101,22 @@ The Python import package is still named `ulpf_intel`. Sidecar details: [`intel/
 
 ## First run
 
+**Installed the binary** (Homebrew or a release tarball): no files or config needed.
+
 ```sh
-docker compose up -d --wait        # or: ./sluice all --config configs/demo.yaml
-open http://127.0.0.1:8000         # the analyst UI
+sluice all        # terminal 1: starts Sluice. Data goes in ~/.sluice
+sluice tui        # terminal 2: the terminal interface (or open http://127.0.0.1:8000 for the web UI)
+```
+
+Send it something to look at (there is sample data in the repo's `testdata/sample/`):
+`curl -X POST --data-binary @cisco_asa.log localhost:8080/ingest/asa`. Native `sluice all` runs the data plane, web UI and
+ingest; the Python sidecar that proposes parsers for unrecognised formats is separate (`pip install sluice-intel`).
+The container deployment includes it.
+
+**Docker:**
+
+```sh
+docker compose up -d --wait        # sluice + sidecar; UI at http://127.0.0.1:8000
 ```
 
 Ports (all published on the host's `127.0.0.1` only):

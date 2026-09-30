@@ -133,7 +133,8 @@ bundle: vendor wheels ## Build both images for ARCH (default: host; make bundle 
 	mkdir -p dist && tar -cf dist/sluice-offline-$(VERSION)-$(ARCH).tar offline/README.md offline/docker-compose.yml offline/.env offline/IMAGES.md offline/SHA256SUMS offline/configs offline/sluice-images-$(VERSION)-$(ARCH).tar.zst
 	@echo "bundle: dist/sluice-offline-$(VERSION)-$(ARCH).tar"
 
-dist: vendor ## Cross-compile sluice, vaultctl, ingestd (linux+darwin, amd64+arm64) into dist/ with checksums
+dist: vendor ui ## Cross-compile sluice, vaultctl, ingestd (linux+darwin, amd64+arm64) into dist/ with checksums
+	@test -f pkg/control/ui/dist/index.html || { echo 'dist: the web UI is not built into pkg/control/ui/dist (make ui)'; exit 1; }
 	mkdir -p dist && rm -f dist/sluice_* dist/checksums.txt
 	@for os in linux darwin; do for arch in amd64 arm64; do \
 	  d=dist/sluice_$(VERSION)_$${os}_$${arch}; mkdir -p $$d; \

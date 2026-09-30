@@ -46,6 +46,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	switch args[0] {
+	case "help", "-h", "--help":
+		usage(stdout)
+		return exitOK
 	case "version":
 		fmt.Fprintf(stdout, "sluice %s commit=%s built=%s\n", version, commit, builtAt)
 		return exitOK
@@ -100,7 +103,21 @@ func runHealthcheck(stderr io.Writer) int {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, "usage: sluice <all|start|tui|passwd|selftest|verify|version> [options]")
+	fmt.Fprint(w, `Sluice: air-gapped log ingestion, tamper-evident vaulting and OCSF normalization.
+
+Get started (two terminals):
+  sluice all        start everything: web UI on http://127.0.0.1:8000, syslog on 5514, HTTP ingest on 8080
+  sluice tui        full-screen terminal interface for a running Sluice
+
+Other commands:
+  sluice all --config FILE    run with your own configuration (see configs/production.yaml)
+  sluice verify               check the vault's hash chain
+  sluice passwd NAME ROLE     make a sign-in line (ROLE: approver or viewer)
+  sluice selftest             offline self-test, including a no-network check
+  sluice version
+
+Data is kept in ~/.sluice when no --config is given.
+`)
 }
 
 type check struct {
