@@ -2,6 +2,7 @@
 name = "sluice-intel"
 version = "0.1.0"
 description = "ULPF intelligence sidecar: drift detection, semantic typing, parser proposals. Propose-only, off the hot path."
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.13,<3",

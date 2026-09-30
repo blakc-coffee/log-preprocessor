@@ -1,218 +1,286 @@
 # Sluice
 
-> Formerly ULPF: Universal Log Pre-processing Framework.
+**Air-gapped log ingestion, tamper-evident vaulting and normalization to OCSF.**
+Formerly ULPF (Universal Log Pre-processing Framework).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](go.mod)
-[![Architecture](https://img.shields.io/badge/Air--Gap-Sovereign%20%7C%20Zero--Egress-3fcb7f)](#sovereign-air-gap--zero-egress-guarantee)
-[![Compliance](https://img.shields.io/badge/Schema-OCSF%20v1.1.0-9984d8)](contracts/ocsf/)
+[![Air-gap](https://img.shields.io/badge/Air--Gap-Zero--Egress-3fcb7f)](#air-gap-and-zero-egress)
+[![Schema](https://img.shields.io/badge/Schema-OCSF%20v1.1.0-9984d8)](contracts/ocsf/)
 
-**SIH 2026 Problem Statement ID:** SIH26156  
-**Sponsoring Agency:** National Technical Research Organisation (NTRO)  
-**Theme:** Cybersecurity, Forensics & High-Throughput Systems Engineering  
+Sluice takes raw logs from heterogeneous security devices (Cisco ASA, Fortinet, Palo Alto, Suricata, OpenVPN, DHCP,
+RADIUS), writes every record **byte-exact** into an append-only Merkle-chained vault *before* acknowledging it, then
+parses and normalizes to OCSF v1.1.0. Formats it does not recognise are never dropped: they are quarantined with the
+raw bytes intact and replayed from the vault once an analyst approves a mined parser proposal.
+
+Built for the NTRO problem statement SIH26156 (Smart India Hackathon 2026).
+
+- [Install](#install) · [First run](#first-run) · [Send it logs](#send-it-logs) · [Sign-in and TLS](#sign-in-and-tls)
+- [Verify the vault](#verify-the-vault) · [Architecture](#architecture) · [Air-gap](#air-gap-and-zero-egress)
+- [Develop](#develop-from-source) · [Cutting a release](#cutting-a-release) · [Docs](#docs)
 
 ---
 
-## Executive Summary
+## Install
 
-The **Universal Log Pre-processing Framework (ULPF)** is a sovereign, high-throughput, air-gap-compliant log ingestion, forensic vaulting, normalization, and intelligence engine. Designed specifically for critical infrastructure defense, ULPF eliminates vendor lock-in and "log babel" across heterogeneous security perimeters (Cisco ASA, Fortinet, Palo Alto, Suricata, OpenVPN, DHCP, RADIUS).
+Pick the route that matches the machine. All routes give the same `sluice` binary or image.
 
-ULPF provides a **mathematical guarantee of bit-for-bit losslessness**: every raw record is vaulted into an append-only, content-addressed cryptographic Merkle tree (with Zstandard compression and SHA-256 receipts) *before* ingestion ACK. Unrecognized or drifting formats are never discarded—they are quarantined with raw bytes intact and automatically replayed into open-standard **OCSF v1.1.0** records upon human approval of mined parser proposals.
+| You have | Use | Needs network |
+|---|---|---|
+| An **air-gapped** host | [Offline bundle](#a-offline-bundle-air-gapped-hosts) | no |
+| Docker and a registry | [Container images](#b-container-images) | yes, once |
+| A laptop, no Docker | [Release binaries](#c-release-binaries--go-install--homebrew) | yes, once |
+| Only the Python sidecar | [`pip install sluice-intel`](#d-the-intelligence-sidecar-alone) | yes, once |
 
----
+Replace `OWNER` below with the GitHub account that publishes the repo.
 
-## Architecture: The Three Strictly Separated Planes
+### A. Offline bundle (air-gapped hosts)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   DATA PLANE (Go · :9000)                                   │
-│  Ingest (Syslog/Net/File) ──► Write-Ahead Vault ──► Parser Engine (DFA) ──► OCSF Normalizer │
-│                                (zstd + SHA-256)            │                      │         │
-│                                       ▲              Quarantine Store             │         │
-│                                       │                    │                      ▼         │
-│                                 Vault Replay ◄────── Human Approval ◄──── Export Sinks      │
-│                                                            ▲           (Parquet/JSON/ECS)   │
-└────────────────────────────────────────────────────────────┼────────────────────────────────┘
-                                                             │
-┌────────────────────────────────────────────────────────────┼────────────────────────────────┐
-│                              CONTROL PLANE (React · :8000) │                                │
-│  Analyst UI: Lineage Explorer · Review Queue · Parser Registry · Identity Timeline · Vault │
-│  Thin Go static server embedding compiled React dist/ via //go:embed                        │
-│  In-Browser Cryptographic Verifier: independent SHA-256 & RFC 9162 inclusion proofs        │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-                                                             ▲
-┌────────────────────────────────────────────────────────────┼────────────────────────────────┐
-│                           INTELLIGENCE PLANE (Python · off-path)                            │
-│  Drain3 Template Miner · Structural Drift Scorer · Semantic Typer · RE2-Safe Proposals      │
-│  Propose-only: reads quarantine samples via Admin API; cannot activate parsers directly     │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+Download `sluice-offline-<version>.tar` from the Releases page on a connected machine, carry it across, then:
+
+```sh
+tar -xf sluice-offline-<version>.tar && cd offline
+shasum -a 256 -c SHA256SUMS                      # every line must say OK
+zstd -dc sluice-images-*.tar.zst | docker load   # needs docker + zstd on the target
+$EDITOR configs/demo.yaml                        # optional; use configs/production.yaml for sign-in + TLS
+docker compose up -d --wait
 ```
 
-### 1. Data Plane (Go · `127.0.0.1:9000`)
-* **Zero Discard Policy:** Write-ahead persistence in `pkg/dataplane/vault/`. Raw bytes are compressed with Zstandard and committed to a cryptographic Merkle tree before any receipt ACK.
-* **Deterministic DFA Parser Engine:** Uses Go stdlib DFA regex with named capture groups. Strictly linear time \(O(n)\), mathematically immune to Regular Expression Denial of Service (ReDoS).
-* **OCSF Normalization:** Automatically maps extracted entities to Open Cybersecurity Schema Framework (OCSF v1.1.0). Unrecognized vendor attributes are preserved in `unmapped{}`.
-* **Quarantine & Replay Engine:** Erroneous or unparsed records are quarantined. Once a parser proposal is approved, the replay manager re-reads raw bytes from the vault and re-normalizes them without data loss.
+Nothing is pulled or built. Requirements on the target: Docker with Compose v2, `zstd`. The images are built for the
+architecture listed in `offline/IMAGES.md` (linux/arm64 or linux/amd64), so pick the bundle that matches the host.
+Details: [`offline/README.md`](offline/README.md).
 
-### 2. Control Plane (React 18 + Go · `127.0.0.1:8000`)
-* **Air-Gapped Forensic UI:** Zero external CDNs, self-hosted WOFF2 typography (Cormorant Garamond, Inter, JetBrains Mono), strictly styled with `#333333` borders and `#050607` card contrast.
-* **Client-Side Cryptographic Verifier:** The browser independently recomputes the SHA-256 hash of raw bytes, reconstructs the Merkle leaf, and validates RFC 9162 inclusion proofs against segment seals. It never relies on unverified server claims.
-* **Analyst Workflows:** Interactive Lineage Explorer (virtualized, live tail, forensic split-hex modal), Quarantine Review Queue with diff inspection, Parser Version Registry with SQLite pre-write audit logging, and Dynamic Identity Timeline.
+### B. Container images
 
-### 3. Intelligence Plane (Python · Off Hot-Path)
-* **Drain3 & Structural Fingerprinting:** Mines log clusters and computes drift scores without touching the hot path.
-* **Automated Parser Proposal:** Formulates declarative parser YAML proposals for CSV, KV, JSON, CEF/LEEF, and free-text syslog.
-* **Human-in-the-Loop Governance:** The intelligence plane has no authority to activate parsers. It submits proposals to the data plane in `pending` state; activation requires explicit analyst sign-off.
-
----
-
-## Measured Empirical Performance
-
-All benchmarks measured against realistic, mixed-vendor multi-gigabyte corpora (`testdata/sample/`) under sustained load:
-
-| Metric | Measured Result | Benchmark Standard / Verification |
-| :--- | :---: | :--- |
-| **Parsing & Ingestion Throughput** | **86,716 EPS** | Sustained single-node in-memory throughput (`cmd/bench`) |
-| **Parquet Lake Storage Compression** | **40.59x** | Columnar lake sink with Zstandard block compression |
-| **Merkle Vault Storage Compression** | **6.63x** | Zstandard block-level raw byte vault compaction |
-| **Parse Latency (p99)** | **340.6 µs** | Sub-millisecond determinism under maximum load |
-| **Memory Footprint (RSS)** | **143.1 MB** | Strict memory bounding under continuous streaming load |
-| **Forensic Losslessness** | **100% Bit-for-Bit** | Cryptographically verified across all 13 corpus files (`tests/lossless_test.go`) |
-| **Bundle Size (Frontend UI)** | **87 KB** | Air-gapped static distribution (budget: 300 KB) |
-
----
-
-## Sovereign Air-Gap & Zero-Egress Guarantee
-
-ULPF is designed from the ground up for classified, disconnected, and sovereign infrastructure environments:
-
-1. **Docker Network Isolation:** `docker-compose.airgap-test.yml` defines `driver: bridge` with `internal: true`, which disables the default gateway and blocks all outbound traffic; `scripts/verify_airgap.sh` runs against it. `docker-compose.yml` uses a normal bridge because Docker cannot publish ports from an internal network; there the guarantee is that the binary has no outbound code, proven under `--network none`.
-2. **Loopback Port Binding:** Natively, services bind to `127.0.0.1` (`:8000` Control UI, `:9000` Data Plane API). In the container only the Control UI binds `0.0.0.0` (inside its namespace) and Compose publishes it on the host's `127.0.0.1`; the Data Plane API, which has no sign-in, never leaves the container's loopback. Enable sign-in and TLS with `configs/production.yaml` (`sluice passwd`).
-3. **Zero External Assets:** All typography (Inter, JetBrains Mono, Cormorant Garamond) is bundled as local WOFF2 files. No external CDN calls, telemetry, or remote dependencies exist.
-4. **Automated Egress Verification:** [`scripts/verify_airgap.sh`](scripts/verify_airgap.sh) executes `sluice selftest --egress` inside the running container, asserting that public DNS lookups and TCP connections to `1.1.1.1:443` and `8.8.8.8:53` fail with non-zero exit codes.
-
----
-
-## Quick Start & Execution Guide
-
-### Prerequisites
-* Go 1.25+ (for native execution)
-* Docker & Docker Compose (for containerized execution)
-* Python 3.11+ (optional, for offline intelligence miner)
-
-### Option A: Run via Docker Compose (Recommended Air-Gap Stack)
-```bash
-# 1. Launch the isolated air-gapped stack
-docker compose -f docker-compose.airgap-test.yml up -d
-
-# 2. Access the Control Plane UI in your browser
-open http://127.0.0.1:8000
-
-# 3. Verify zero-egress compliance
-bash scripts/verify_airgap.sh
+```sh
+docker pull ghcr.io/OWNER/sluice:<version>
+docker pull ghcr.io/OWNER/sluice-intel:<version>
 ```
 
-### Option B: Run Natively via Unified Operator CLI (`sluice`)
-```bash
-# 1. Compile the unified binary (zero CGO)
-CGO_ENABLED=0 go build -o bin/sluice ./cmd/sluice
+Then use the compose file from the repo, with `ULPF_TAG=<version>` set (the variable keeps its old name for now):
 
-# 2. Run the offline self-test (validates vault, SQLite, and network egress)
-./bin/sluice selftest
+```sh
+git clone https://github.com/OWNER/sluice && cd sluice
+ULPF_TAG=<version> docker compose up -d --wait
+```
 
-# 3. Start the entire pipeline (Data Plane :9000 + Control Plane :8000)
+Running `docker compose up` builds the images locally instead, which does need network. See
+[Develop from source](#develop-from-source).
+
+### C. Release binaries, `go install`, Homebrew
+
+Each release carries `sluice`, `vaultctl` and `ingestd` for linux and darwin on amd64 and arm64, plus `checksums.txt`.
+
+```sh
+# a release tarball
+curl -LO https://github.com/OWNER/sluice/releases/download/v<version>/sluice_<version>_linux_amd64.tar.gz
+shasum -a 256 -c --ignore-missing checksums.txt
+tar -xzf sluice_<version>_linux_amd64.tar.gz
+
+# or with Go 1.25+ (the CLIs only)
+go install github.com/OWNER/sluice/cmd/vaultctl@v<version>
+go install github.com/OWNER/sluice/cmd/sluice@v<version>
+
+# or Homebrew
+brew install OWNER/tap/sluice
+```
+
+The `sluice` binary embeds the web UI, so it needs nothing else to serve it.
+
+### D. The intelligence sidecar alone
+
+```sh
+pip install sluice-intel          # Python 3.11+
+python -m ulpf_intel --admin http://127.0.0.1:9000 --state-dir ./intel-state
+```
+
+The Python import package is still named `ulpf_intel`. Sidecar details: [`intel/README.md`](intel/README.md).
+
+---
+
+## First run
+
+```sh
+docker compose up -d --wait        # or: ./sluice all --config configs/demo.yaml
+open http://127.0.0.1:8000         # the analyst UI
+```
+
+Ports (all published on the host's `127.0.0.1` only):
+
+| Port | What |
+|---|---|
+| 8000 | Control plane and UI |
+| 5514 udp+tcp | Syslog ingest (TCP framing is auto-detected, including octet-counted) |
+| 8080 | HTTP ingest: `POST /ingest/<source-id>` |
+| 9000 | Admin API. **Container loopback only**, never published: it can approve parsers and has no sign-in. |
+
+Check it is healthy: `docker compose exec sluice sluice healthcheck`, and `sluice version` prints the tag, commit and
+build time.
+
+`configs/demo.yaml` has **no sign-in** (`allow_insecure: true`). It is for trying the product. Do not expose it.
+
+## Send it logs
+
+```sh
+# syslog over UDP
+printf '<134>Sep 30 10:00:00 fw1 test message\n' | nc -u -w1 127.0.0.1 5514
+
+# syslog over TCP
+printf '<134>Sep 30 10:00:00 fw1 test message\n' | nc -w1 127.0.0.1 5514
+
+# a whole file over HTTP (the last path segment is the source id)
+curl -fsS -X POST --data-binary @testdata/sample/cisco_asa.log 127.0.0.1:8080/ingest/asa
+```
+
+Then open the UI (Lineage Explorer for parsed events, Review Queue for anything the parsers did not recognise).
+Sources are configured in `configs/ingest.container.yaml`; file tailing is available in the native `ingestd`
+(`configs/ingest.dev.yaml`).
+
+## Sign-in and TLS
+
+The demo config has neither. For a real deployment, start from `configs/production.yaml`. A control plane bound to
+`0.0.0.0` **refuses to start without `auth_users_file`**.
+
+```sh
+printf '%s' 'a-long-passphrase'  | docker run --rm -i sluice:<version> passwd alice approver >> users
+printf '%s' 'another-passphrase' | docker run --rm -i sluice:<version> passwd bob   viewer   >> users
+```
+
+Mount `users`, `tls.crt`, `tls.key` read-only under `/etc/sluice/`. `approver` can approve, reject and roll back
+parsers, and every approval is recorded under the login. `viewer` is read-only. Passwords are PBKDF2-SHA256 and at
+least 12 characters. Put a reverse proxy in front if the port is reachable by anyone you do not trust. Backup,
+restore, upgrades, sizing and monitoring: [`docs/operations.md`](docs/operations.md).
+
+## Verify the vault
+
+The vault is the system of record. Everything else can be rebuilt from it.
+
+```sh
+vaultctl --dir ./data/vault stats
+vaultctl --dir ./data/vault verify --deep; echo "exit=$?"    # 0 intact, 1 tampered, 2 unreadable
+vaultctl --dir ./data/vault get 1 --raw | shasum -a 256       # byte-exact original of record 1
+vaultctl --dir ./data/vault proof 1 > p.json && vaultctl verify-proof p.json
+```
+
+Vaulting is **tamper-evident, not tamper-proof**: someone with write access to the whole directory can rewrite it
+consistently. Pin the chain head somewhere else with `scripts/anchor_head.sh` to defeat that.
+
+---
+
+## Architecture
+
+Three strictly separated planes:
+
+```
+DATA PLANE (Go, :9000, loopback)
+  Ingest (syslog / file / HTTP) -> Write-ahead vault -> Parser engine (RE2) -> OCSF normalizer -> Sinks
+                                        ^                    |                                   (Parquet / OCSF JSON / ECS)
+                                        |               Quarantine
+                                        +--- Replay <--- Human approval
+
+CONTROL PLANE (Go + React, :8000)
+  Analyst UI: lineage explorer, review queue, parser registry, identity timeline, vault view.
+  In-browser verifier: recomputes SHA-256 and RFC 9162 inclusion proofs itself.
+
+INTELLIGENCE PLANE (Python, off the hot path)
+  Drain3 template mining, drift scoring, semantic typing, parser proposals.
+  Propose-only: reads quarantine through the admin API and cannot activate anything.
+```
+
+- **Zero discard.** A record is durable in the vault before it is acknowledged or forwarded. Overload
+  back-pressures; it never drops silently.
+- **Linear-time parsing.** Go's RE2 engine with named capture groups is immune to regex denial of service.
+- **OCSF v1.1.0.** Unmapped vendor attributes are preserved in `unmapped{}`.
+- **Human in the loop.** Parser proposals arrive as `pending`. Only an analyst can activate one.
+
+## Air-gap and zero-egress
+
+1. **The binary has no outbound code.** `sluice selftest --egress` and `scripts/verify_airgap.sh` prove public DNS and
+   TCP connections fail under `--network none` and on an internal Docker network.
+2. **Loopback binding.** Services bind `127.0.0.1`; Compose publishes only the control plane, ingest ports and HTTP
+   ingest, on the host's loopback. The admin API never leaves the container.
+3. **No external assets.** Fonts are bundled; no CDN, telemetry or remote calls.
+
+Honest scope: the **runtime** needs no network, and the **install** needs none via the offline bundle. **Building** the
+bundle needs a connected machine: it pulls base images by pinned digest and Python wheels, and the UI build runs
+`npm ci` (a fully offline build is still on `docs/TODO.md`). `docker-compose.yml` uses an ordinary bridge network
+because Docker cannot publish ports from an internal one; `docker-compose.airgap-test.yml` is the internal-network
+variant the verifier runs.
+
+## What is and is not claimed
+
+- Byte-exact round trip of all 7598 fixture records, checked against SHA-256 and byte offsets.
+- 200 `kill -9` crash cycles, no acknowledged record lost. That proves the recovery logic. It does **not** prove
+  power-loss durability, because SIGKILL does not discard the page cache.
+- A 10-row tamper matrix with none undetected.
+- Throughput and fsync numbers are **Linux-only and not yet recorded**. macOS `fsync` is a full-drive flush, so numbers
+  measured there are not reported. Figures in `docs/operations.md` are labelled with their hardware and sync mode.
+- No retention or expiry yet, no high availability, no encryption at rest (use an encrypted volume). See
+  [`docs/TODO.md`](docs/TODO.md).
+
+---
+
+## Develop from source
+
+Requirements: Go 1.25+, Docker, Node 22 (UI), Python 3.11+ (sidecar tests). On macOS with Homebrew Go, put it on
+`PATH`: `export PATH="/opt/homebrew/bin:$PATH"`.
+
+```sh
+make check          # the gate: fmt, vet, race tests, determinism, CGO_ENABLED=0 build
+make test           # ingest and vault tests
+make contract-test  # schemas, OpenAPI and goldens
+make ui-test        # frontend tests and lint
+make build          # bin/ingestd bin/vaultctl
+make ui && CGO_ENABLED=0 go build -o bin/sluice ./cmd/sluice
 ./bin/sluice all --config configs/demo.yaml
+bash scripts/demo.sh                 # scripted demo: ingest, quarantine, approve, replay
+bash scripts/verify_airgap.sh        # zero-egress proof (needs Docker)
+make help                            # every target
 ```
 
-### Option C: Run the Automated 2-Minute Live Demo
-```bash
-# Ingests samples, triggers quarantine, approves proposal, and replays from vault
-bash scripts/demo.sh
+Shipped binaries are always `CGO_ENABLED=0`. The race detector needs cgo, so `make race` sets it separately.
 
-# Reset demo data
-bash scripts/demo_reset.sh
+## Cutting a release
+
+`make bundle` and `make dist` need a connected machine and Docker.
+
+```sh
+make vendor                 # go mod vendor (vendor/ is generated, not committed)
+make bundle VERSION=x.y.z   # wheels + both images + offline/ (checksummed)
+make dist   VERSION=x.y.z   # dist/: binaries for 4 platforms, checksums.txt, vendor tarball
+git tag vX.Y.Z && git push origin vX.Y.Z
+gh release create vX.Y.Z dist/* --title vX.Y.Z
 ```
 
----
+Also push the images (`docker tag` and `docker push` to `ghcr.io/OWNER/sluice*`) and upload the Python package
+(`cd intel && python -m build && twine upload dist/*`). The bundle is architecture-specific: build it on, or with
+buildx for, each target architecture.
 
-## Verification & Test Suites
-
-The repository enforces end-to-end correctness across all gates:
-
-```bash
-# 1. Run all integration tests (lossless verification, Merkle tamper matrix, Palo Alto replay)
-CGO_ENABLED=0 go test -v ./tests/...
-
-# 2. Run cryptographic tamper test
-go test -v -run TestMerkleTamperMatrix ./tests/
-
-# 3. Run 500-record quarantine replay test
-go test -v -run TestPaloAltoReplayAcceptance ./tests/
-
-# 4. Run benchmarks
-go run ./cmd/bench/main.go --duration 30s
-```
-
----
-
-## Offline Parser Proposer Tool
-
-Generate parser YAML proposals directly from raw log files without running the full cluster:
-
-```bash
-# Offline proposal generation
-python intel/proposer.py testdata/palo_alto_unknown.log --source-id palo_alto --output config/parsers/palo_alto.yaml
-
-# Online mode against live Data Plane
-python intel/proposer.py --admin http://127.0.0.1:9000 --once
-```
-
----
-
-## Repository Layout
+## Repository layout
 
 ```text
-├── cmd/
-│   ├── sluice/                 # Unified operator CLI (start, selftest, verify, version)
-│   ├── bench/                # Empirical benchmark harness
-│   ├── dataplane/            # Standalone Data Plane daemon (:9000)
-│   └── control/              # Standalone Control Plane server (:8000)
-├── pkg/
-│   ├── types/events.go       # FROZEN CONTRACT: UEF, RawRecord, NormalizedEvent, Quarantine
-│   ├── dataplane/
-│   │   ├── ingest/           # Multi-protocol ingestion (Syslog UDP/TCP/TLS, File, HTTP)
-│   │   ├── vault/            # Cryptographic Merkle tree vault (Zstd + SHA-256)
-│   │   ├── parsers/          # DFA regex parser engine & loader
-│   │   ├── normalizer/       # OCSF v1.1.0 normalizer & mapper
-│   │   ├── store/            # SQLite event store & quarantine index
-│   │   ├── replay/           # Replay manager pulling raw bytes from vault
-│   │   ├── enrich/           # Dynamic IP-to-entity identity enrichment
-│   │   ├── admin/            # Data Plane loopback REST API
-│   │   └── app/              # Pipeline lifecycle coordinator
-│   ├── control/              # Control server, SQLite audit registry & UI embedder
-│   └── sinks/                # Export sinks: Parquet (zstd), OCSF JSON, ECS, Splunk HEC, Spool
-├── frontend/                 # React 18, TypeScript, Tailwind v4 SPA (6 forensic screens)
-├── intel/                    # Intelligence sidecar: Drain3 miner, drift scorer, proposer CLI
-├── tests/                    # Integration QA: lossless_test, merkle_test, replay_test
-├── testdata/                 # Byte-exact test fixtures & manifest.json
-├── configs/                  # Production, demo, and air-gap configurations
-└── scripts/                  # Automated demo runner and zero-egress verifier
+cmd/        sluice (operator CLI + unified runtime), dataplane, control, ingestd, vaultctl, bench, integrate
+pkg/        types (frozen contract), dataplane/{ingest,vault,parsers,normalizer,store,replay,enrich,admin,app},
+            control (server, audit registry, embedded UI), sinks
+frontend/   React 18 + TypeScript UI
+intel/      Python intelligence sidecar
+parsers/    built-in parsers (embedded)
+configs/    demo, production, air-gap and ingest configs
+contracts/  JSON Schemas, OpenAPI, OCSF, goldens
+testdata/   byte-exact fixtures and manifest.json (schema v1, frozen)
+scripts/    demo, e2e and zero-egress verifier
+offline/    the offline install package (README, compose; generated files are gitignored)
 ```
 
----
+## Docs
 
-## Team Roster & Ownership Map
-
-| Workstream | Owner | Primary Paths |
-| :--- | :--- | :--- |
-| **Lead Architecture & Governance** | Antigravity Pro | `go.mod`, `pkg/types/`, `docs/`, `presentation/`, `README.md`, `intel/proposer.py` |
-| **Data Plane Engineering** | Claude Code #1 | `pkg/dataplane/`, `cmd/dataplane/`, `config/parsers/` |
-| **Control Plane & Frontend** | Claude Code #2 | `frontend/`, `pkg/control/`, `cmd/control/` |
-| **Systems Packaging, Sinks & QA**| Codex #2 | `pkg/sinks/`, `cmd/sluice/`, `cmd/bench/`, `tests/`, `Dockerfile`, `scripts/` |
-| **Test Corpus & Cryptographic Fixtures** | Codex #1 | `testdata/`, `tools/gen/` |
-
----
+[`docs/operations.md`](docs/operations.md) run and maintain it ·
+[`docs/vault-format.md`](docs/vault-format.md) on-disk format ·
+[`docs/integration.md`](docs/integration.md) integration steps ·
+[`docs/TODO.md`](docs/TODO.md) what is not built ·
+[`DECISIONS.log`](DECISIONS.log) every decision, with reasons.
 
 ## License
 
-Distributed under the **MIT License**. Developed for the National Technical Research Organisation (NTRO) Smart India Hackathon 2026.
+MIT (add a `LICENSE` file before publishing). Developed for the Smart India Hackathon 2026, NTRO problem statement
+SIH26156.

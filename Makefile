@@ -126,10 +126,11 @@ bundle: vendor wheels ## Build both images and write the carry-across package in
 	printf 'ULPF_TAG=$(VERSION)\n' > offline/.env
 	sh scripts/write_images_md.sh > offline/IMAGES.md
 	cd offline && shasum -a 256 sluice-images-$(VERSION).tar.zst docker-compose.yml .env IMAGES.md README.md $$(find configs -type f | sort) > SHA256SUMS
-	@echo "bundle: offline/ (tag $(VERSION)) - carry that directory across"
+	mkdir -p dist && tar -cf dist/sluice-offline-$(VERSION).tar offline/README.md offline/docker-compose.yml offline/.env offline/IMAGES.md offline/SHA256SUMS offline/configs offline/sluice-images-$(VERSION).tar.zst
+	@echo "bundle: dist/sluice-offline-$(VERSION).tar (tag $(VERSION))"
 
 dist: vendor ## Cross-compile sluice, vaultctl, ingestd (linux+darwin, amd64+arm64) into dist/ with checksums
-	rm -rf dist && mkdir -p dist
+	mkdir -p dist && rm -f dist/sluice_* dist/checksums.txt
 	@for os in linux darwin; do for arch in amd64 arm64; do \
 	  d=dist/sluice_$(VERSION)_$${os}_$${arch}; mkdir -p $$d; \
 	  for c in sluice vaultctl ingestd; do \
@@ -137,5 +138,5 @@ dist: vendor ## Cross-compile sluice, vaultctl, ingestd (linux+darwin, amd64+arm
 	  cp LICENSE README.md $$d/ 2>/dev/null; \
 	  tar -C dist -czf $$d.tar.gz $$(basename $$d) && rm -rf $$d; \
 	done; done
-	cd dist && shasum -a 256 *.tar.gz > checksums.txt
+	cd dist && rm -f checksums.txt && shasum -a 256 sluice* > checksums.txt
 	tar -C . -cf - vendor | zstd -19 -T0 -f -o dist/sluice_$(VERSION)_vendor.tar.zst
