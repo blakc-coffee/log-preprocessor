@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/dark-14100/sluice/pkg/anchor"
 	"io"
 	"log/slog"
 	"net"
@@ -66,6 +67,10 @@ type runtimeConfig struct {
 	TLSKey  string `yaml:"tls_key"`
 	// AllowInsecure permits the control plane on 0.0.0.0 with no sign-in. For demos.
 	AllowInsecure bool `yaml:"allow_insecure"`
+	// AnchorKey is the ed25519 private key that signs chain checkpoints. Default: keys/anchor.key in
+	// data_dir. Put it on a path the host's administrators cannot reach (a mounted secret, a USB
+	// stick) to make the checkpoints mean more; see pkg/anchor.
+	AnchorKey string `yaml:"anchor_key"`
 }
 
 func loadRuntimeConfig(path string) (runtimeConfig, error) {
@@ -145,6 +150,8 @@ func defaultRuntimeConfig() (runtimeConfig, error) {
 }
 
 type unifiedRuntime struct {
+	anchorKey   anchor.Key
+	anchorLog   string
 	cfg         runtimeConfig
 	vault       *vault.Vault
 	pipeline    *app.App
@@ -169,7 +176,16 @@ func newUnifiedRuntime(cfg runtimeConfig, stderr io.Writer) (_ *unifiedRuntime, 
 	if err != nil {
 		return nil, err
 	}
-	rt := &unifiedRuntime{cfg: cfg, vault: v, metrics: reg0}
+	keyPath := cfg.AnchorKey
+	if keyPath == "" {
+		keyPath = filepath.Join(cfg.DataDir, "keys", "anchor.key")
+	}
+	key, kerr := anchor.LoadOrCreateKey(keyPath)
+	if kerr != nil {
+		_ = v.Close()
+		return nil, kerr
+	}
+	rt := &unifiedRuntime{cfg: cfg, vault: v, metrics: reg0, anchorKey: key, anchorLog: filepath.Join(cfg.DataDir, "anchors.log")}
 	defer func() {
 		if err != nil {
 			_ = rt.close()
@@ -322,6 +338,7 @@ func (rt *unifiedRuntime) serve(ctx context.Context, stdout io.Writer) error {
 		scheme = "https"
 	}
 	fmt.Fprintf(stdout, "Sluice control plane on %s://%s (sign-in %s)\n", scheme, controlLn.Addr(), map[bool]string{true: "on", false: "OFF"}[rt.users != nil])
+	go rt.signLoop(ctx, stdout)
 	type serveResult struct {
 		name string
 		err  error
@@ -371,8 +388,59 @@ func (rt *unifiedRuntime) close() error {
 	}
 	if rt.vault != nil {
 		errs = append(errs, rt.vault.Close())
+		errs = append(errs, rt.signFinal()) // closing sealed the active segment: cover it too
 	}
 	return errors.Join(errs...)
+}
+
+// signCheckpoint signs the vault's current chain head if it moved since the last checkpoint.
+func (rt *unifiedRuntime) signCheckpoint(ctx context.Context) error {
+	return signHead(ctx, rt.vault, rt.anchorKey, rt.anchorLog)
+}
+
+type headSealer interface {
+	Head(context.Context) ([32]byte, types.RecordID, error)
+	Seals(context.Context) ([]types.SegmentSeal, error)
+}
+
+func signHead(ctx context.Context, v headSealer, key anchor.Key, logPath string) error {
+	head, through, err := v.Head(ctx)
+	if err != nil || through == 0 {
+		return err
+	}
+	seals, err := v.Seals(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = anchor.Append(logPath, key, head, uint64(through), uint64(len(seals)), time.Now())
+	return err
+}
+
+// signLoop signs a checkpoint soon after each seal. Errors are reported, never fatal: a missed
+// tick is caught up by the next one.
+func (rt *unifiedRuntime) signLoop(ctx context.Context, out io.Writer) {
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := rt.signCheckpoint(ctx); err != nil && ctx.Err() == nil {
+				fmt.Fprintln(out, "sluice: checkpoint signing:", err)
+			}
+		}
+	}
+}
+
+// signFinal reopens the closed vault read-only and signs its final head.
+func (rt *unifiedRuntime) signFinal() error {
+	v, err := vault.Open(vault.Options{Dir: filepath.Join(rt.cfg.DataDir, "vault"), ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	defer v.Close()
+	return signHead(context.Background(), v, rt.anchorKey, rt.anchorLog)
 }
 
 func runStart(args []string, stdout, stderr io.Writer) int {

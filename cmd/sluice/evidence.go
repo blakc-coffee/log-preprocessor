@@ -11,15 +11,21 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/dark-14100/sluice/pkg/dataplane/parsers"
 	"github.com/dark-14100/sluice/pkg/evidence"
 	types "github.com/dark-14100/sluice/pkg/types"
 )
 
 // buildEvidence collects everything Verify needs for one event from a running Sluice.
 func buildEvidence(c *tuiClient, eventID string) (evidence.Bundle, error) {
+	return buildEvidenceWith(c, eventID, c.dataDir, "")
+}
+
+func buildEvidenceWith(c *tuiClient, eventID, dataDir, checkpoint string) (evidence.Bundle, error) {
 	esc := url.PathEscape(eventID)
 	var b evidence.Bundle
 
@@ -62,6 +68,7 @@ func buildEvidence(c *tuiClient, eventID string) (evidence.Bundle, error) {
 
 	b = evidence.Bundle{
 		Format: evidence.Format, CreatedAt: time.Now().UTC(), Source: c.base, Event: eventJSON,
+		Engine: parsers.EngineVersion, Sluice: version,
 		Record: evidence.Record{Seq: ev.RecordID, SourceID: ev.SourceID, ReceivedAt: raw.ReceivedAt, Origin: raw.Origin,
 			Terminator: raw.Terminator, Fragment: raw.Fragment, RawBase64: raw.RawBase64},
 		Proof: *lin.Proof, Chain: lin.Chain,
@@ -69,6 +76,12 @@ func buildEvidence(c *tuiClient, eventID string) (evidence.Bundle, error) {
 	if yaml, err := c.get("/api/parsers/" + url.PathEscape(ev.ParserID) + "/versions/" + url.PathEscape(ev.ParserVersion)); err == nil {
 		b.Parser = &evidence.Parser{ID: ev.ParserID, Version: ev.ParserVersion, YAML: string(yaml)}
 	} // without the parser the bundle still proves the record; it just cannot re-derive the event
+	if dataDir != "" {
+		// Best effort: a missing checkpoint leaves the bundle valid, just without a signature.
+		if err := attachAnchor(&b, dataDir, checkpoint); err != nil {
+			b.Anchor = nil
+		}
+	}
 	return b, nil
 }
 
@@ -93,6 +106,8 @@ func runEvidence(args []string, stdout, stderr io.Writer) int {
 	pass := fs.String("password", envOr("SLUICE_PASSWORD", ""), "sign-in password")
 	insecure := fs.Bool("insecure", false, "accept a self-signed TLS certificate")
 	out := fs.String("o", "", "output file (default evidence-<record>.json)")
+	checkpoint := fs.String("checkpoint", "", "use the signed checkpoint whose head starts with this (one you hold, from `sluice anchor`), instead of the earliest that covers the record")
+	dataDir := fs.String("data-dir", envOr("SLUICE_DATA", ""), "Sluice data directory, to attach the signed checkpoint (default ~/.sluice/data if it has one)")
 	// Go's flag package stops at the first positional, so accept the event id before or after the flags.
 	var pos []string
 	rest := args
@@ -111,7 +126,13 @@ func runEvidence(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	c := newTUIClient(*base, "", *user, *pass, *insecure)
-	b, err := buildEvidence(c, pos[0])
+	dd := *dataDir
+	if dd == "" {
+		if _, err := os.Stat(filepath.Join(defaultDataDir(), "anchors.log")); err == nil {
+			dd = defaultDataDir()
+		}
+	}
+	b, err := buildEvidenceWith(c, pos[0], dd, *checkpoint)
 	if err != nil {
 		fmt.Fprintln(stderr, "sluice evidence:", err)
 		return exitFailure
@@ -126,7 +147,11 @@ func runEvidence(args []string, stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 	rep := evidence.Verify(b, evidence.Options{})
-	fmt.Fprintf(stdout, "wrote %s (%d bytes)\nself-check:\n", file, len(data))
+	fmt.Fprintf(stdout, "wrote %s (%d bytes)\n", file, len(data))
+	if b.Anchor == nil {
+		fmt.Fprintln(stdout, "note: no signed checkpoint attached (pass --data-dir with the Sluice data directory) so this proves self-consistency only")
+	}
+	fmt.Fprintln(stdout, "self-check:")
 	writeReport(stdout, rep)
 	if !rep.OK {
 		return exitFailure
@@ -140,6 +165,7 @@ func runVerifyEvidence(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("verify-evidence", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	anchor := fs.String("anchor", "", "a chain value or head you got from somewhere the operator cannot edit")
+	pubkey := fs.String("pubkey", "", "the signing public key (hex) you recorded independently, from `sluice anchor`")
 	var pos []string
 	rest := args
 	for len(rest) > 0 {
@@ -166,7 +192,7 @@ func runVerifyEvidence(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "sluice verify-evidence: not a valid evidence file:", err)
 		return exitUsage
 	}
-	rep := evidence.Verify(b, evidence.Options{Anchor: *anchor})
+	rep := evidence.Verify(b, evidence.Options{Anchor: *anchor, PublicKey: *pubkey})
 	fmt.Fprintf(stdout, "evidence for record %d (%s)\n", b.Record.Seq, b.Record.SourceID)
 	writeReport(stdout, rep)
 	if !rep.OK {
@@ -174,8 +200,8 @@ func runVerifyEvidence(args []string, stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 	fmt.Fprintln(stdout, "\nRESULT: VERIFIED.")
-	if strings.TrimSpace(*anchor) == "" {
-		fmt.Fprintln(stdout, "Note: no --anchor was given, so this shows the bundle is internally consistent. To show it is the chain the operator published, compare the chain value with one you recorded independently.")
+	if strings.TrimSpace(*anchor) == "" && strings.TrimSpace(*pubkey) == "" {
+		fmt.Fprintln(stdout, "Note: no --pubkey or --anchor was given, so a signature (if present) is only as trustworthy as the key in the bundle. To show this is the chain the operator published, pass the public key or chain value you recorded independently.")
 	}
 	return exitOK
 }

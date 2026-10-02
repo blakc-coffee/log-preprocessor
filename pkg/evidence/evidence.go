@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dark-14100/sluice/pkg/anchor"
 	"github.com/dark-14100/sluice/pkg/dataplane/normalizer"
 	"github.com/dark-14100/sluice/pkg/dataplane/parsers"
 	"github.com/dark-14100/sluice/pkg/dataplane/vault/merkle"
@@ -42,12 +43,23 @@ const Format = "sluice-evidence/1"
 type Bundle struct {
 	Format    string               `json:"format"`
 	CreatedAt time.Time            `json:"created_at"`
-	Source    string               `json:"source,omitempty"` // where it was exported from; informational
-	Event     json.RawMessage      `json:"event"`            // the normalized event exactly as served
+	Source    string               `json:"source,omitempty"`         // where it was exported from; informational
+	Engine    string               `json:"engine_version,omitempty"` // parser engine the exporter re-derived the event with
+	Sluice    string               `json:"sluice_version,omitempty"` // informational
+	Event     json.RawMessage      `json:"event"`                    // the normalized event exactly as served
 	Record    Record               `json:"record"`
 	Proof     types.InclusionProof `json:"proof"`
 	Chain     Chain                `json:"chain"`
 	Parser    *Parser              `json:"parser,omitempty"`
+	Anchor    *Anchor              `json:"anchor,omitempty"`
+}
+
+// Anchor ties the record's chain to a signed checkpoint: the checkpoint, the key that signed it,
+// and the segment seals between the record's segment and the checkpoint.
+type Anchor struct {
+	Checkpoint anchor.Checkpoint   `json:"checkpoint"`
+	PublicKey  string              `json:"public_key"` // hex ed25519
+	Links      []types.SegmentSeal `json:"links"`
 }
 
 // Record is the vault record, field for field what the vault hashed.
@@ -90,6 +102,9 @@ type Report struct {
 
 // Options tune Verify.
 type Options struct {
+	// PublicKey is a signing key you trust (hex), obtained independently of the operator. When set,
+	// the bundle's checkpoint must be signed by it.
+	PublicKey string
 	// Anchor is a chain value or head obtained independently of the operator. When set, it must
 	// equal the bundle's segment chain value or its recorded head.
 	Anchor string
@@ -165,7 +180,56 @@ func Verify(b Bundle, opt Options) (r Report) {
 	}
 
 	r.Checks = append(r.Checks, deriveCheck(b, ev, rec))
+	r.Checks = append(r.Checks, checkpointChecks(b, opt)...)
 	return r
+}
+
+// checkpointChecks verifies the signed checkpoint section: the signature, that the chain from this
+// record's segment reaches the checkpoint's head, and (if asked) that the key is the trusted one.
+func checkpointChecks(b Bundle, opt Options) []Check {
+	const covered = "signed checkpoint covers this record's chain"
+	const trusted = "checkpoint was signed by the key you trust"
+	if b.Anchor == nil {
+		return []Check{{Name: covered, Skip: true, Detail: "no signed checkpoint in the bundle (export with --data-dir, or the record is not sealed into a checkpoint yet)"}}
+	}
+	pub, err := anchor.ParsePublicKey(b.Anchor.PublicKey)
+	if err != nil {
+		return []Check{{Name: covered, Detail: "bundled public key: " + err.Error()}}
+	}
+	cp := b.Anchor.Checkpoint
+	if err := cp.Verify(pub); err != nil {
+		return []Check{{Name: covered, Detail: err.Error()}}
+	}
+	if b.Record.Seq == 0 || b.Record.Seq > cp.SealedThrough {
+		return []Check{{Name: covered, Detail: fmt.Sprintf("record %d is beyond the checkpoint (covers up to %d)", b.Record.Seq, cp.SealedThrough)}}
+	}
+	running := b.Proof.Chain
+	segment := b.Proof.Segment
+	for _, l := range b.Anchor.Links {
+		if l.Segment != segment+1 || l.Prev != running || merkle.ChainHash(l.Prev, l.Root, l.Segment, l.Count) != l.Chain {
+			return []Check{{Name: covered, Detail: fmt.Sprintf("the chain breaks at segment %d", l.Segment)}}
+		}
+		running, segment = l.Chain, l.Segment
+	}
+	if hex.EncodeToString(running[:]) != cp.Head || segment != cp.Segments {
+		return []Check{{Name: covered, Detail: "walking the chain from this record's segment does not reach the signed head"}}
+	}
+	out := []Check{{Name: covered, OK: true, Detail: fmt.Sprintf("signed by key %s over %d segment(s), head %s, %s", cp.KeyID, cp.Segments, short(cp.Head), cp.SignedAt.Format("2006-01-02 15:04:05 UTC")+" (the signer's clock)")}}
+	switch want := strings.TrimSpace(opt.PublicKey); {
+	case want == "":
+		out = append(out, Check{Name: trusted, Skip: true, Detail: fmt.Sprintf("no --pubkey given. Compare key %s with one you recorded independently, otherwise the bundle could carry its own key", cp.KeyID)})
+	default:
+		trust, err := anchor.ParsePublicKey(want)
+		switch {
+		case err != nil:
+			out = append(out, Check{Name: trusted, Detail: "--pubkey: " + err.Error()})
+		case anchor.KeyID(trust) != cp.KeyID || !trust.Equal(pub):
+			out = append(out, Check{Name: trusted, Detail: fmt.Sprintf("signed by key %s, not the key %s you trust", cp.KeyID, anchor.KeyID(trust))})
+		default:
+			out = append(out, Check{Name: trusted, OK: true, Detail: "key " + cp.KeyID})
+		}
+	}
+	return out
 }
 
 // deriveCheck re-runs the bundled parser on the raw bytes and compares the OCSF it produces.
@@ -200,10 +264,21 @@ func deriveCheck(b Bundle, ev eventView, rec types.RawRecord) (c Check) {
 	if err1 != nil || err2 != nil {
 		return Check{Name: name, Detail: fmt.Sprintf("cannot compare: %v %v", err1, err2)}
 	}
+	differs := b.Engine != "" && b.Engine != parsers.EngineVersion
 	if !bytes.Equal(want, got) {
-		return Check{Name: name, Detail: "the parser produces a different OCSF object from the bundled event"}
+		// Fail closed even when the engines differ: letting an unmatched engine version excuse a mismatch
+		// would let a forger claim an old engine. The detail says how to tell the two cases apart.
+		d := "the parser produces a different OCSF object from the bundled event"
+		if differs {
+			d += fmt.Sprintf(" (the bundle was verified with parser engine %s and this verifier is engine %s: if the bundle is genuine, check it with a Sluice release that has engine %s)", b.Engine, parsers.EngineVersion, b.Engine)
+		}
+		return Check{Name: name, Detail: d}
 	}
-	return Check{Name: name, OK: true, Detail: fmt.Sprintf("parser %s@%s", b.Parser.ID, b.Parser.Version)}
+	d := fmt.Sprintf("parser %s@%s, engine %s", b.Parser.ID, b.Parser.Version, parsers.EngineVersion)
+	if differs {
+		d += fmt.Sprintf(" (the bundle was made with engine %s; same result)", b.Engine)
+	}
+	return Check{Name: name, OK: true, Detail: d}
 }
 
 // canon re-encodes JSON with sorted keys and numbers kept as written, so two encodings of the

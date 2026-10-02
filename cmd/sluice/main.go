@@ -63,6 +63,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runPasswd(args[1:], os.Stdin, stdout, stderr)
 	case "tui":
 		return runTUI(args[1:], stdout, stderr)
+	case "anchor":
+		return runAnchor(args[1:], stdout, stderr)
 	case "evidence":
 		return runEvidence(args[1:], stdout, stderr)
 	case "verify-evidence":
@@ -126,6 +128,7 @@ Other commands:
   sluice tui        terminal UI for a Sluice that is already running (any host: --url)
   sluice all --config FILE    run with your own configuration (see configs/production.yaml)
   sluice verify               check the vault's hash chain
+  sluice anchor               show and verify the signed chain checkpoints, and the key to publish
   sluice evidence EVENT_ID    export a portable proof that a parsed event came from one original, unaltered log
   sluice verify-evidence FILE check such a proof offline, with no Sluice running
   sluice passwd NAME ROLE     make a sign-in line (ROLE: approver or viewer)

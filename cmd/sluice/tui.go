@@ -28,6 +28,7 @@ import (
 )
 
 type tuiClient struct {
+	dataDir                  string // Sluice's data directory, when known, so exports can attach the signed checkpoint
 	base, ingest, user, pass string
 	http                     *http.Client
 }

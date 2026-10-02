@@ -18,6 +18,7 @@ func runInteractive(stdout, stderr io.Writer) int {
 	c := newTUIClient("http://127.0.0.1:8000", "http://127.0.0.1:8080", "", "", false)
 
 	if c.do("GET", "/api/telemetry", nil, nil) == nil { // one is already running: just attach
+		c.dataDir = defaultDataDir()
 		fmt.Fprintf(stdout, "✓ Sluice is already running. Web UI: %s\n", c.base)
 		return runTUIWith(c, "✓ web UI live at "+c.base+"  ·  ✓ terminal UI ready  ·  attached to a running Sluice", stdout, stderr)
 	}
@@ -69,6 +70,7 @@ func runInteractive(stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 
+	c.dataDir = cfg.DataDir
 	fmt.Fprintf(stdout, "✓ Web UI is live:   %s   (open it in your browser)\n", c.base)
 	fmt.Fprintf(stdout, "✓ Terminal UI:      starting now\n  Send logs to syslog 127.0.0.1:5514 (UDP/TCP) or HTTP 127.0.0.1:8080. Data: %s\n", cfg.DataDir)
 	code := runTUIWith(c, "✓ web UI live at "+c.base+"  ·  ✓ terminal UI ready  ·  o opens the web UI", stdout, stderr)

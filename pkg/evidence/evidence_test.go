@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/dark-14100/sluice/pkg/anchor"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -172,3 +174,131 @@ func hexSum(b []byte) string {
 }
 
 func sha256sum(b []byte) [32]byte { return sha256.Sum256(b) }
+
+// withCheckpoint extends the bundle's chain by two more sealed segments and signs the new head, the
+// shape a real vault produces: record in segment 1, a checkpoint over segments 1-3.
+func withCheckpoint(t *testing.T, b Bundle) (Bundle, anchor.Key) {
+	t.Helper()
+	k, err := anchor.LoadOrCreateKey(filepath.Join(t.TempDir(), "key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := b.Proof.Chain
+	var links []types.SegmentSeal
+	for seg := uint64(2); seg <= 3; seg++ {
+		root := [32]byte{byte(seg), 0xaa}
+		seal := types.SegmentSeal{Segment: seg, FirstSeq: seg * 10, LastSeq: seg*10 + 4, Count: 5, Root: root, Prev: running}
+		seal.Chain = merkle.ChainHash(running, root, seg, 5)
+		links = append(links, seal)
+		running = seal.Chain
+	}
+	cp := anchor.Sign(k, running, 34, 3, time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC), nil)
+	b.Anchor = &Anchor{Checkpoint: cp, PublicKey: hex.EncodeToString(k.Public), Links: links}
+	b.Chain = Chain{Head: cp.Head, SealedThrough: 34}
+	return b, k
+}
+
+func TestSignedCheckpointVerifiesAndPinsTheKey(t *testing.T) {
+	b, k := withCheckpoint(t, build(t))
+	r := Verify(b, Options{PublicKey: hex.EncodeToString(k.Public)})
+	if !r.OK {
+		t.Fatalf("a genuine checkpoint must pass: %v", failed(r))
+	}
+	covered := false
+	for _, c := range r.Checks {
+		covered = covered || (c.Name == "signed checkpoint covers this record's chain" && c.OK)
+	}
+	if !covered {
+		t.Fatalf("the coverage check did not pass: %+v", r.Checks)
+	}
+	// Without a trusted key the signature still verifies, but trust is reported as not established.
+	if r := Verify(b, Options{}); !r.OK {
+		t.Fatalf("no --pubkey: %v", failed(r))
+	}
+}
+
+func TestCheckpointForgeriesAreCaught(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(b *Bundle, other anchor.Key)
+		opt    func(k anchor.Key) Options
+		want   string
+	}{
+		{"head edited", func(b *Bundle, _ anchor.Key) { b.Anchor.Checkpoint.Head = strings.Repeat("ab", 32) }, nil, "signed checkpoint covers this record's chain"},
+		{"covers fewer records", func(b *Bundle, _ anchor.Key) { b.Anchor.Checkpoint.SealedThrough = 1 }, nil, "signed checkpoint covers this record's chain"},
+		{"a link removed", func(b *Bundle, _ anchor.Key) { b.Anchor.Links = b.Anchor.Links[:1] }, nil, "signed checkpoint covers this record's chain"},
+		{"a link's root edited", func(b *Bundle, _ anchor.Key) { b.Anchor.Links[0].Root[0] ^= 1 }, nil, "signed checkpoint covers this record's chain"},
+		{"record's chain value swapped", func(b *Bundle, _ anchor.Key) { b.Proof.Chain[0] ^= 1 }, nil, "signed checkpoint covers this record's chain"},
+		{"signature from another key", func(b *Bundle, other anchor.Key) {
+			b.Anchor.Checkpoint = anchor.Sign(other, mustHead(t, b.Anchor.Checkpoint.Head), 34, 3, time.Now(), nil)
+		}, nil, "signed checkpoint covers this record's chain"},
+		{"attacker signs with own key and bundles it", func(b *Bundle, other anchor.Key) {
+			b.Anchor.Checkpoint = anchor.Sign(other, mustHead(t, b.Anchor.Checkpoint.Head), 34, 3, time.Now(), nil)
+			b.Anchor.PublicKey = hex.EncodeToString(other.Public)
+		}, func(k anchor.Key) Options { return Options{PublicKey: hex.EncodeToString(k.Public)} }, "checkpoint was signed by the key you trust"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			b, k := withCheckpoint(t, build(t))
+			other, _ := anchor.LoadOrCreateKey(filepath.Join(t.TempDir(), "other"))
+			c.mutate(&b, other)
+			opt := Options{}
+			if c.opt != nil {
+				opt = c.opt(k)
+			}
+			r := Verify(b, opt)
+			if r.OK {
+				t.Fatal("forged checkpoint passed")
+			}
+			hit := false
+			for _, f := range failed(r) {
+				hit = hit || f == c.want
+			}
+			if !hit {
+				t.Fatalf("expected %q to fail, failed: %v", c.want, failed(r))
+			}
+		})
+	}
+}
+
+func mustHead(t *testing.T, h string) [32]byte {
+	t.Helper()
+	raw, err := hex.DecodeString(h)
+	if err != nil || len(raw) != 32 {
+		t.Fatal("bad head")
+	}
+	var out [32]byte
+	copy(out[:], raw)
+	return out
+}
+
+func deriveResult(r Report) Check {
+	for _, c := range r.Checks {
+		if c.Name == "re-parsing the raw bytes reproduces the event" {
+			return c
+		}
+	}
+	return Check{}
+}
+
+func TestEngineVersionNeverExcusesAForgery(t *testing.T) {
+	// A genuine bundle from another engine version still passes when the output is identical.
+	b := build(t)
+	b.Engine = "0"
+	if c := deriveResult(Verify(b, Options{})); !c.OK || !strings.Contains(c.Detail, "engine 0") {
+		t.Fatalf("same output under a different engine must pass and say so: %+v", c)
+	}
+	// A forged event must fail whatever engine the bundle claims, and say how to tell the cases apart.
+	for _, claimed := range []string{"", "1", "0", "999"} {
+		f := build(t)
+		f.Engine = claimed
+		f.Event = []byte(strings.Replace(string(f.Event), `"10.0.0.2"`, `"10.9.9.9"`, 1))
+		c := deriveResult(Verify(f, Options{}))
+		if c.OK || c.Skip {
+			t.Fatalf("a forged event passed or was skipped when the bundle claimed engine %q", claimed)
+		}
+		if claimed != "" && claimed != "1" && !strings.Contains(c.Detail, "engine "+claimed) {
+			t.Fatalf("the failure should explain the engine difference: %q", c.Detail)
+		}
+	}
+}

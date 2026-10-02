@@ -110,3 +110,9 @@ func (p *Parser) Version() string    { return p.doc.Version }
 func (p *Parser) Vendor() string     { return p.doc.Vendor }
 func (p *Parser) Product() string    { return p.doc.Product }
 func (p *Parser) Document() Document { return p.doc }
+
+// EngineVersion identifies the parsing behaviour: the same parser YAML run on the same bytes gives
+// the same OCSF for any build with the same EngineVersion. Bump it in any change that alters that
+// output (new field handling, time parsing, type conversion), so evidence bundles, which re-run the
+// parser to prove an event derives from its raw record, can tell an engine change from a forgery.
+const EngineVersion = "1"
