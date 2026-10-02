@@ -313,7 +313,16 @@ func Open(opts Options) (*Vault, error) {
 		return nil, err
 	}
 
-	if err := os.MkdirAll(opts.Dir, 0o700); err != nil {
+	if opts.ReadOnly {
+		// A reader must never create anything: a mistyped --dir would otherwise yield an empty "vault"
+		// and a success exit code, and a tool pointed at the wrong place would litter it.
+		if fi, err := os.Stat(opts.Dir); err != nil || !fi.IsDir() {
+			if err == nil {
+				err = fmt.Errorf("%s is not a directory", opts.Dir)
+			}
+			return nil, fmt.Errorf("vault: cannot open %s read-only: %w", opts.Dir, err)
+		}
+	} else if err := os.MkdirAll(opts.Dir, 0o700); err != nil {
 		return nil, err
 	}
 	v := &Vault{
