@@ -31,6 +31,15 @@ an offline machine cannot build, and there is no single file to carry across.
 - [ ] A browser check of the UI against the real data plane (only the API and unit tests were exercised).
 - [ ] Power-loss test (the crash suite kills the process, it does not cut power).
 
+## 2b. Evidence and integrity (next, to strengthen the "provable logs" claim)
+
+- [ ] Signed seals (ed25519, VT-11) and an automatic external anchor for the chain head. Today the evidence bundle proves
+      self-consistency; only an `--anchor` the operator cannot edit proves it is the published chain.
+- [ ] Evidence bundles for a *range* of records and for a quarantined record (today: one parsed event).
+- [ ] A browser-side verifier for a bundle (the UI already verifies single proofs).
+- [ ] Prior art to differentiate from (checked 2026-10-02): immudb, Trillian, AWS CloudTrail digest validation,
+      rsyslog+Guardtime KSI. Commercial SIEMs (Splunk, Elastic, Graylog, Chronicle, Datadog) were NOT checked.
+
 ## 3. Known gaps in the deployment
 
 - [ ] Retention/expiry: the vault has none. Pruning a segment breaks the chain; a chain-preserving prune is unbuilt.

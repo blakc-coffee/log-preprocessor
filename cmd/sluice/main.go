@@ -63,6 +63,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runPasswd(args[1:], os.Stdin, stdout, stderr)
 	case "tui":
 		return runTUI(args[1:], stdout, stderr)
+	case "evidence":
+		return runEvidence(args[1:], stdout, stderr)
+	case "verify-evidence":
+		return runVerifyEvidence(args[1:], stdout, stderr)
 	case "healthcheck":
 		return runHealthcheck(stderr)
 	case "all", "start":
@@ -122,6 +126,8 @@ Other commands:
   sluice tui        terminal UI for a Sluice that is already running (any host: --url)
   sluice all --config FILE    run with your own configuration (see configs/production.yaml)
   sluice verify               check the vault's hash chain
+  sluice evidence EVENT_ID    export a portable proof that a parsed event came from one original, unaltered log
+  sluice verify-evidence FILE check such a proof offline, with no Sluice running
   sluice passwd NAME ROLE     make a sign-in line (ROLE: approver or viewer)
   sluice selftest             offline self-test, including a no-network check
   sluice version

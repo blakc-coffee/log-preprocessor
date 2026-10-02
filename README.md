@@ -150,13 +150,37 @@ docker compose exec sluice sluice tui     # inside the container, nothing to ins
 | Screen | What you do there |
 |---|---|
 | **1 Dashboard** | Live events/s, vault status, per-source record counts. Press **i** to send a log file into Sluice. |
-| **2 Events** | Browse parsed events. **Enter** shows the original raw bytes, their SHA-256 and the OCSF result. |
+| **2 Events** | Browse parsed events. **Enter** shows the original raw bytes, their SHA-256 and the OCSF result; **e** exports a portable proof ([below](#prove-an-event-came-from-the-original-log)). |
 | **3 Quarantine** | Every record no parser understood, per source, still byte-exact in the vault. |
 | **4 Proposals** | Parser proposals from the sidecar. **Enter** shows the parser, **a** approves it and replays the quarantine. |
 | **5 Vault** | Chain status. **v** re-reads and re-hashes every record (deep verify). |
 
 Keys: `tab` / `1`-`5` switch screens, `↑` `↓` select, `i` ingest a file, `o` open the web UI, `r` refresh, `q` quit. It needs a terminal
 that supports full-screen apps (any modern one, including VS Code's).
+
+## Prove an event came from the original log
+
+Every parsed event can be exported with a portable proof that it derives from one original log record, and that the record
+is exactly what the vault sealed. Anyone can check the file offline, with no Sluice, no network and no trust in the operator.
+
+```sh
+sluice evidence 47.cisco_asa@1.0.0        # or press e on an event in the terminal UI
+sluice verify-evidence evidence-47.json   # on any machine; exit 0 verified, 1 failed
+```
+
+The file holds the parsed event, the full vault record (raw bytes, source, origin, time), the Merkle inclusion proof, and the
+exact parser that produced the event. Verification checks that:
+
+1. the raw bytes hash to the event's SHA-256;
+2. the re-encoded record hashes to the vault's Merkle leaf, and the leaf is in the segment's tree;
+3. the segment's chain value follows from the tree root;
+4. **re-running the bundled parser on the raw bytes reproduces the event.** Editing only the *parsed* event (the raw bytes
+   untouched) passes the cryptographic checks and is caught only by this step.
+
+**What it does not show on its own:** that this chain is the one the operator published. Someone who can rewrite the whole
+vault consistently could forge a consistent bundle. Record the chain value (printed by `sluice evidence`) somewhere the
+operator cannot edit, and pass it as `--anchor`. Signed seals and automatic external anchoring are not built yet
+([`docs/TODO.md`](docs/TODO.md)); see also `scripts/anchor_head.sh`.
 
 ## Send it logs
 

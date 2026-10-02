@@ -24,6 +24,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dark-14100/sluice/pkg/evidence"
 )
 
 type tuiClient struct {
@@ -31,10 +32,13 @@ type tuiClient struct {
 	http                     *http.Client
 }
 
-func (c *tuiClient) do(method, path string, body []byte, out any) error {
+// get returns the raw response body of a GET.
+func (c *tuiClient) get(path string) ([]byte, error) { return c.send("GET", path, nil) }
+
+func (c *tuiClient) send(method, path string, body []byte) ([]byte, error) {
 	req, err := http.NewRequest(method, c.base+path, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -44,18 +48,23 @@ func (c *tuiClient) do(method, path string, body []byte, out any) error {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("401: sign-in required (use --user / --password)")
+		return nil, fmt.Errorf("401: sign-in required (use --user / --password)")
 	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(b)))
+		return nil, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(b)))
 	}
-	if out == nil {
-		return nil
+	return b, nil
+}
+
+func (c *tuiClient) do(method, path string, body []byte, out any) error {
+	b, err := c.send(method, path, body)
+	if err != nil || out == nil {
+		return err
 	}
 	return json.Unmarshal(b, out)
 }
@@ -171,6 +180,7 @@ type model struct {
 	dscroll    int
 	note, warn string
 	banner     string // always-visible line under the tabs, e.g. where the web UI is
+	detailID   string // event id behind the open detail pane, for exporting evidence
 	mode       string // "", "confirm", "path", "source"
 	buf, path  string
 }
@@ -266,6 +276,10 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch s {
 		case "esc", "q", "enter":
 			m.detail = ""
+		case "e":
+			if m.detailID != "" {
+				return m, m.exportEvidence(m.detailID)
+			}
 		case "down", "j":
 			m.dscroll++
 		case "up", "k":
@@ -305,7 +319,16 @@ func (m model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		m.mode, m.buf = "path", ""
 		return m, nil
+	case "e":
+		if m.tab == tEvents && len(m.events) > 0 {
+			return m, m.exportEvidence(m.events[m.cursor[tEvents]].EventID)
+		}
+		return m, nil
 	case "enter":
+		m.detailID = ""
+		if m.tab == tEvents && len(m.events) > 0 {
+			m.detailID = m.events[m.cursor[tEvents]].EventID
+		}
 		return m, m.open()
 	case "a":
 		if m.tab == tProps && len(m.props) > 0 {
@@ -413,6 +436,27 @@ func (m model) approve() tea.Cmd {
 	}
 }
 
+// exportEvidence writes a portable proof for one event into the current directory and checks it.
+func (m model) exportEvidence(eventID string) tea.Cmd {
+	c := m.c
+	return func() tea.Msg {
+		b, err := buildEvidence(c, eventID)
+		if err != nil {
+			return errMsg{err}
+		}
+		data, _ := json.MarshalIndent(b, "", "  ")
+		file := fmt.Sprintf("evidence-%d.json", b.Record.Seq)
+		if err := os.WriteFile(file, data, 0o600); err != nil {
+			return errMsg{err}
+		}
+		rep := evidence.Verify(b, evidence.Options{})
+		if !rep.OK {
+			return errMsg{fmt.Errorf("wrote %s but its own check FAILED: do not trust it", file)}
+		}
+		return noteMsg(fmt.Sprintf("✓ wrote %s: raw log, Merkle proof and parser. Anyone can check it offline: sluice verify-evidence %s", file, file))
+	}
+}
+
 // open shows the selected row in the detail pane.
 func (m model) open() tea.Cmd {
 	c := m.c
@@ -501,7 +545,7 @@ func (m model) footer() string {
 	keys := "tab/1-5 switch · ↑↓ select · i ingest a file · o open web UI · r refresh · q quit"
 	switch m.tab {
 	case tEvents:
-		keys = "enter open event · " + keys
+		keys = "enter open event · e export evidence · " + keys
 	case tProps:
 		keys = "enter view · a approve · " + keys
 	case tVault:
@@ -527,7 +571,7 @@ func (m model) detailView() string {
 	for _, l := range lines[m.dscroll:end] {
 		out = append(out, m.fit(l))
 	}
-	return strings.Join(out, "\n") + "\n" + dimSty.Render("↑↓ scroll · esc close")
+	return strings.Join(out, "\n") + "\n" + dimSty.Render("↑↓ scroll · e export evidence (proof this event came from the original log) · esc close")
 }
 
 func (m model) body() string {
