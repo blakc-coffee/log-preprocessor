@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dark-14100/sluice/pkg/dataplane/atomicfile"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +34,52 @@ type Server struct {
 	alerts    []types.DriftAlert
 	proposals map[string]types.Proposal
 	next      uint64
+	statePath string // where proposals, alerts and the id counter survive a restart; empty = memory only
+}
+
+// adminState is what is written to disk. Ids come from next, so it must persist too: otherwise a
+// restart reissues old proposal ids and the approval audit trail would point at the wrong proposal.
+type adminState struct {
+	Next      uint64                    `json:"next"`
+	Proposals map[string]types.Proposal `json:"proposals"`
+	Alerts    []types.DriftAlert        `json:"alerts"`
+}
+
+// Persist makes proposals, drift alerts and the id counter survive restarts, loading what an
+// earlier run saved from path. Call it once, before serving.
+func (s *Server) Persist(path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.statePath = path
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var st adminState
+	if err := json.Unmarshal(b, &st); err != nil {
+		return fmt.Errorf("admin state %s: %w", path, err)
+	}
+	if st.Proposals != nil {
+		s.proposals = st.Proposals
+	}
+	s.alerts, s.next = st.Alerts, st.Next
+	return nil
+}
+
+// saveLocked writes the state; the caller holds s.mu. A failed save is logged by the caller's
+// request failing: losing a proposal silently is the bug this exists to prevent.
+func (s *Server) saveLocked() error {
+	if s.statePath == "" {
+		return nil
+	}
+	b, err := json.Marshal(adminState{Next: s.next, Proposals: s.proposals, Alerts: s.alerts})
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(s.statePath, b, 0o600)
 }
 
 func New(vault types.Vault, pipeline *app.App, reg *registry.Registry, replays *replay.Manager, resolver *identity.Resolver) *Server {
@@ -290,6 +338,7 @@ func (s *Server) setProposalStatus(id, status string) {
 	if proposal, ok := s.proposals[id]; ok {
 		proposal.Status = status
 		s.proposals[id] = proposal
+		_ = s.saveLocked() // the parser is already active; the status is best-effort here
 	}
 }
 func (s *Server) parserVersion(w http.ResponseWriter, r *http.Request) {
@@ -452,6 +501,10 @@ func (s *Server) drift(w http.ResponseWriter, r *http.Request) {
 	alert.ID = fmt.Sprintf("drift-%06d", s.next)
 	alert.Status = "open"
 	s.alerts = append(s.alerts, alert)
+	if err := s.saveLocked(); err != nil {
+		fail(w, 500, "persist_failed", err.Error())
+		return
+	}
 	write(w, 201, alert)
 }
 func (s *Server) proposalList(w http.ResponseWriter, r *http.Request) {
@@ -478,6 +531,10 @@ func (s *Server) proposalList(w http.ResponseWriter, r *http.Request) {
 		p.CreatedAt = time.Now().UTC()
 	}
 	s.proposals[p.ID] = p
+	if err := s.saveLocked(); err != nil {
+		fail(w, 500, "persist_failed", err.Error())
+		return
+	}
 	write(w, 201, p)
 }
 func (s *Server) proposalOne(w http.ResponseWriter, r *http.Request) {
@@ -505,6 +562,10 @@ func (s *Server) proposalOne(w http.ResponseWriter, r *http.Request) {
 		}
 		p.Status = "rejected"
 		s.proposals[id] = p
+		if err := s.saveLocked(); err != nil {
+			fail(w, 500, "persist_failed", err.Error())
+			return
+		}
 	}
 	write(w, 200, p)
 }

@@ -4,6 +4,7 @@ package registry
 import (
 	"errors"
 	"fmt"
+	"github.com/dark-14100/sluice/pkg/dataplane/atomicfile"
 	"os"
 	"path/filepath"
 	"sort"
@@ -195,7 +196,7 @@ func (r *Registry) Rollback(id, version string) (*parsers.Parser, error) {
 	}
 	e.active = version
 	if r.dir != "" {
-		return e.versions[version], os.WriteFile(filepath.Join(r.dir, id, "active"), []byte(version+"\n"), 0o640)
+		return e.versions[version], atomicfile.Write(filepath.Join(r.dir, id, "active"), []byte(version+"\n"), 0o640)
 	}
 	return e.versions[version], nil
 }
@@ -229,10 +230,12 @@ func (r *Registry) persistLocked(id, version string, src []byte) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, version+".yaml"), src, 0o640); err != nil {
+	// The version file first, the pointer to it last: a crash in between leaves the previous
+	// active version, never a pointer to a file that is not there.
+	if err := atomicfile.Write(filepath.Join(dir, version+".yaml"), src, 0o640); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "active"), []byte(version+"\n"), 0o640)
+	return atomicfile.Write(filepath.Join(dir, "active"), []byte(version+"\n"), 0o640)
 }
 func bumpPatch(version string) string {
 	parts := strings.Split(version, ".")

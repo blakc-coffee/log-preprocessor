@@ -215,6 +215,9 @@ func newUnifiedRuntime(cfg runtimeConfig, stderr io.Writer) (_ *unifiedRuntime, 
 	}
 	replays := replay.New(v, rt.pipeline)
 	adminHandler := admin.New(v, rt.pipeline, reg, replays, resolver)
+	if err = adminHandler.Persist(filepath.Join(cfg.DataDir, "admin-state.json")); err != nil {
+		return nil, err
+	}
 	rt.adminHTTP = &http.Server{Addr: cfg.DataPlaneListen, Handler: adminHandler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second}
 
 	controlDir := filepath.Join(cfg.DataDir, "control")
