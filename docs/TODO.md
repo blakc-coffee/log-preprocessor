@@ -31,14 +31,20 @@ an offline machine cannot build, and there is no single file to carry across.
 - [ ] A browser check of the UI against the real data plane (only the API and unit tests were exercised).
 - [ ] Power-loss test (the crash suite kills the process, it does not cut power).
 
-## 2b. Evidence and integrity (next, to strengthen the "provable logs" claim)
+## 2b. Evidence and integrity (what is left)
 
-- [ ] Signed seals (ed25519, VT-11) and an automatic external anchor for the chain head. Today the evidence bundle proves
-      self-consistency; only an `--anchor` the operator cannot edit proves it is the published chain.
-- [ ] Evidence bundles for a *range* of records and for a quarantined record (today: one parsed event).
+Done: evidence bundles, signed chain checkpoints (`sluice anchor`), parser engine pin, `sluice demo`.
+
+- [ ] RFC 3161 timestamping (or another trusted time source) so a checkpoint proves *when*, not just *what*.
+- [ ] Key custody: HSM / external signer support so the private key never sits on the host; today only the `anchor_key` path.
+- [ ] Evidence for a *range* of records and for a quarantined record (today: one parsed event). Merkle multi-proofs.
+- [ ] RFC 9162 consistency proofs between two checkpoints (prove today's vault only appended to last week's).
 - [ ] A browser-side verifier for a bundle (the UI already verifies single proofs).
 - [ ] Prior art to differentiate from (checked 2026-10-02): immudb, Trillian, AWS CloudTrail digest validation,
-      rsyslog+Guardtime KSI. Commercial SIEMs (Splunk, Elastic, Graylog, Chronicle, Datadog) were NOT checked.
+      rsyslog+Guardtime KSI, Splunk data integrity control (SHA-256 per slice, operator-run). Chronicle, CrowdStrike LogScale,
+      Sumo Logic and Datadog were searched but not conclusively checked.
+- [ ] Quarantine "resolved" history and replay-job history are still memory-only (proposals, drift alerts and parsers persist).
+- [ ] `cmd/dataplane` (the standalone daemon) does not call `admin.Persist`.
 
 ## 3. Known gaps in the deployment
 

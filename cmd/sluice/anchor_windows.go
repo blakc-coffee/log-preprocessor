@@ -18,3 +18,8 @@ func runAnchor(_ []string, _ io.Writer, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "sluice anchor: requires the Unix runtime")
 	return exitFailure
 }
+
+func runDemo(_ []string, _ io.Writer, stderr io.Writer) int {
+	fmt.Fprintln(stderr, "sluice demo: requires the Unix runtime; use the Linux container")
+	return exitFailure
+}

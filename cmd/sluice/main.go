@@ -63,6 +63,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runPasswd(args[1:], os.Stdin, stdout, stderr)
 	case "tui":
 		return runTUI(args[1:], stdout, stderr)
+	case "demo":
+		return runDemo(args[1:], stdout, stderr)
 	case "anchor":
 		return runAnchor(args[1:], stdout, stderr)
 	case "evidence":
@@ -124,6 +126,7 @@ Get started:
                     syslog is on 5514, HTTP ingest on 8080. Press q to stop.
 
 Other commands:
+  sluice demo       a 1-minute guided demo on synthetic data: ingest, prove, tamper, detect (offline, leaves nothing behind)
   sluice all        the same server with no terminal UI (for servers and containers)
   sluice tui        terminal UI for a Sluice that is already running (any host: --url)
   sluice all --config FILE    run with your own configuration (see configs/production.yaml)

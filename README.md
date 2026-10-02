@@ -158,6 +158,16 @@ docker compose exec sluice sluice tui     # inside the container, nothing to ins
 Keys: `tab` / `1`-`5` switch screens, `↑` `↓` select, `i` ingest a file, `o` open the web UI, `r` refresh, `q` quit. It needs a terminal
 that supports full-screen apps (any modern one, including VS Code's).
 
+## See it in one minute
+
+```sh
+sluice demo        # offline, on synthetic data, leaves nothing behind
+```
+
+It ingests 100 logs (50 in a format Sluice has never seen), parses them to OCSF, proves the vault is intact, exports and
+verifies evidence for one event, then attacks the data three ways (a flipped byte on disk, an edited parsed event, a forged
+checkpoint) and shows each one caught.
+
 ## Prove an event came from the original log
 
 Every parsed event can be exported with a portable proof that it derives from one original log record, and that the record
@@ -168,20 +178,36 @@ sluice evidence 47.cisco_asa@1.0.0        # or press e on an event in the termin
 sluice verify-evidence evidence-47.json   # on any machine; exit 0 verified, 1 failed
 ```
 
-The file holds the parsed event, the full vault record (raw bytes, source, origin, time), the Merkle inclusion proof, and the
-exact parser that produced the event. Verification checks that:
+The file holds the parsed event, the full vault record (raw bytes, source, origin, time), the Merkle inclusion proof, the exact
+parser that produced the event, and a signed checkpoint. Verification checks that:
 
 1. the raw bytes hash to the event's SHA-256;
 2. the re-encoded record hashes to the vault's Merkle leaf, and the leaf is in the segment's tree;
 3. the segment's chain value follows from the tree root;
 4. **re-running the bundled parser on the raw bytes reproduces the event.** Editing only the *parsed* event (the raw bytes
-   untouched) passes the cryptographic checks and is caught only by this step.
+   untouched) passes the cryptographic checks and is caught only by this step;
+5. the chain from the record's segment reaches the head in a **signed checkpoint**, and the signature is valid.
 
-**What it does not show on its own:** that this chain is the one the operator published. Someone who can rewrite the whole
-vault consistently could forge a consistent bundle. Record the chain value (printed by `sluice evidence`) somewhere the
-operator cannot edit, and pass it as `--anchor`. Signed seals and automatic external anchoring are not built yet
-([`docs/TODO.md`](docs/TODO.md)); see also `scripts/anchor_head.sh`.
+### Signed checkpoints
 
+Within seconds of each seal (and once more at a clean shutdown) Sluice signs the chain head with an ed25519 key and appends it
+to `anchors.log`, each checkpoint chained to the previous one. Anyone holding an earlier checkpoint can detect a rewritten
+history.
+
+```sh
+sluice anchor                                        # verify the checkpoint log; prints the public key and latest checkpoint
+sluice evidence ID --checkpoint 6450ef11             # evidence against a checkpoint an auditor already holds
+sluice verify-evidence evidence-47.json --pubkey KEY # only accept a bundle signed by the key you recorded independently
+```
+
+**Honest limits.** Without `--pubkey` a bundle could carry its own key, so the signature is reported as *not established*, never as
+passed. The private key sits in `keys/anchor.key` by default: against an administrator of that machine the checkpoints protect only
+as far as you keep the key off the host (`anchor_key` in the config) and publish the public key and checkpoints somewhere they
+cannot edit. `signed_at` is the signer's own clock, not trusted time (no RFC 3161 timestamp yet). Checkpoints cover sealed
+segments; records in the active segment are covered at the next seal. This is the signed-tree-head idea from Certificate
+Transparency and CloudTrail digests, not new; what Sluice adds is tying a *parsed event* back to its raw record.
+
+## Send it logs
 ## Send it logs
 
 ```sh
